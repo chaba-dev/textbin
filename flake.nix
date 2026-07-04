@@ -18,7 +18,7 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             # Elixir
-            beam.packages.erlang_28.elixir
+            beam.packages.erlang_28.elixir_1_20
             beam.packages.erlang_28.rebar3
             erlang_28
 
@@ -37,6 +37,7 @@
             gopls
 
             # Tools
+            docker-compose
             yamllint
             shfmt
             shellcheck

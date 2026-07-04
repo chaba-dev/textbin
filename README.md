@@ -7,6 +7,16 @@ To start your Phoenix server:
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
+## Docker Compose
+
+Start Postgres for local development:
+
+```sh
+docker compose up db
+```
+
+Then run `mix setup` and `mix phx.server` locally as usual.
+
 Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
 
 ## Learn more

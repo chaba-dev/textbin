@@ -2,13 +2,26 @@ import Config
 
 # Configure your database
 config :kopynpaste, Kopynpaste.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "kopynpaste_dev",
+  username: System.get_env("DATABASE_USER") || "postgres",
+  password: System.get_env("DATABASE_PASSWORD") || "postgres",
+  hostname: System.get_env("DATABASE_HOST") || "localhost",
+  port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
+  database: System.get_env("DATABASE_NAME") || "kopynpaste_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
+
+dev_http_ip =
+  case System.get_env("PHX_BIND_IP") do
+    nil ->
+      {127, 0, 0, 1}
+
+    ip ->
+      ip
+      |> String.split(".")
+      |> Enum.map(&String.to_integer/1)
+      |> List.to_tuple()
+  end
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
@@ -19,7 +32,7 @@ config :kopynpaste, Kopynpaste.Repo,
 config :kopynpaste, KopynpasteWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  http: [ip: dev_http_ip, port: String.to_integer(System.get_env("PORT") || "4000")],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
