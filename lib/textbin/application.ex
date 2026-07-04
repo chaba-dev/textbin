@@ -1,4 +1,4 @@
-defmodule Kopynpaste.Application do
+defmodule Textbin.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
@@ -8,19 +8,19 @@ defmodule Kopynpaste.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      KopynpasteWeb.Telemetry,
-      Kopynpaste.Repo,
-      {DNSCluster, query: Application.get_env(:kopynpaste, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Kopynpaste.PubSub},
-      # Start a worker by calling: Kopynpaste.Worker.start_link(arg)
-      # {Kopynpaste.Worker, arg},
+      TextbinWeb.Telemetry,
+      Textbin.Repo,
+      {DNSCluster, query: Application.get_env(:textbin, :dns_cluster_query) || :ignore},
+      {Phoenix.PubSub, name: Textbin.PubSub},
+      # Start a worker by calling: Textbin.Worker.start_link(arg)
+      # {Textbin.Worker, arg},
       # Start to serve requests, typically the last entry
-      KopynpasteWeb.Endpoint
+      TextbinWeb.Endpoint
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Kopynpaste.Supervisor]
+    opts = [strategy: :one_for_one, name: Textbin.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
@@ -28,7 +28,7 @@ defmodule Kopynpaste.Application do
   # whenever the application is updated.
   @impl true
   def config_change(changed, _new, removed) do
-    KopynpasteWeb.Endpoint.config_change(changed, removed)
+    TextbinWeb.Endpoint.config_change(changed, removed)
     :ok
   end
 end

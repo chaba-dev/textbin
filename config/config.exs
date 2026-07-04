@@ -7,19 +7,19 @@
 # General application configuration
 import Config
 
-config :kopynpaste,
-  ecto_repos: [Kopynpaste.Repo],
+config :textbin,
+  ecto_repos: [Textbin.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint
-config :kopynpaste, KopynpasteWeb.Endpoint,
+config :textbin, TextbinWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [html: KopynpasteWeb.ErrorHTML, json: KopynpasteWeb.ErrorJSON],
+    formats: [html: TextbinWeb.ErrorHTML, json: TextbinWeb.ErrorJSON],
     layout: false
   ],
-  pubsub_server: Kopynpaste.PubSub,
+  pubsub_server: Textbin.PubSub,
   live_view: [signing_salt: "x2CzecmZ"]
 
 # Configures the mailer
@@ -29,12 +29,12 @@ config :kopynpaste, KopynpasteWeb.Endpoint,
 #
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
-config :kopynpaste, Kopynpaste.Mailer, adapter: Swoosh.Adapters.Local
+config :textbin, Textbin.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
-  kopynpaste: [
+  textbin: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
@@ -44,7 +44,7 @@ config :esbuild,
 # Configure tailwind (the version is required)
 config :tailwind,
   version: "4.1.7",
-  kopynpaste: [
+  textbin: [
     args: ~w(
       --input=assets/css/app.css
       --output=priv/static/assets/css/app.css

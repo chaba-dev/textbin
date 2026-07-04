@@ -1,4 +1,4 @@
-defmodule KopynpasteWeb.Telemetry do
+defmodule TextbinWeb.Telemetry do
   use Supervisor
   import Telemetry.Metrics
 
@@ -53,23 +53,23 @@ defmodule KopynpasteWeb.Telemetry do
       ),
 
       # Database Metrics
-      summary("kopynpaste.repo.query.total_time",
+      summary("textbin.repo.query.total_time",
         unit: {:native, :millisecond},
         description: "The sum of the other measurements"
       ),
-      summary("kopynpaste.repo.query.decode_time",
+      summary("textbin.repo.query.decode_time",
         unit: {:native, :millisecond},
         description: "The time spent decoding the data received from the database"
       ),
-      summary("kopynpaste.repo.query.query_time",
+      summary("textbin.repo.query.query_time",
         unit: {:native, :millisecond},
         description: "The time spent executing the query"
       ),
-      summary("kopynpaste.repo.query.queue_time",
+      summary("textbin.repo.query.queue_time",
         unit: {:native, :millisecond},
         description: "The time spent waiting for a database connection"
       ),
-      summary("kopynpaste.repo.query.idle_time",
+      summary("textbin.repo.query.idle_time",
         unit: {:native, :millisecond},
         description:
           "The time the connection spent waiting before being checked out for the query"
@@ -87,7 +87,7 @@ defmodule KopynpasteWeb.Telemetry do
     [
       # A module, function and arguments to be invoked periodically.
       # This function must call :telemetry.execute/3 and a metric must be added above.
-      # {KopynpasteWeb, :count_users, []}
+      # {TextbinWeb, :count_users, []}
     ]
   end
 end

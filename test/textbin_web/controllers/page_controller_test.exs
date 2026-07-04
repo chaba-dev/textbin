@@ -1,5 +1,5 @@
-defmodule KopynpasteWeb.PageControllerTest do
-  use KopynpasteWeb.ConnCase
+defmodule TextbinWeb.PageControllerTest do
+  use TextbinWeb.ConnCase
 
   test "GET /", %{conn: conn} do
     conn = get(conn, ~p"/")

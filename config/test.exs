@@ -5,26 +5,26 @@ import Config
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
-config :kopynpaste, Kopynpaste.Repo,
+config :textbin, Textbin.Repo,
   username: System.get_env("DATABASE_USER") || "postgres",
   password: System.get_env("DATABASE_PASSWORD") || "postgres",
   hostname: System.get_env("DATABASE_HOST") || "localhost",
   port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
   database:
     System.get_env("DATABASE_TEST_NAME") ||
-      "kopynpaste_test#{System.get_env("MIX_TEST_PARTITION")}",
+      "textbin_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
-config :kopynpaste, KopynpasteWeb.Endpoint,
+config :textbin, TextbinWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "f8D1o5YaSKcnXjDuXOXFWxC2O3mrCEWGLiE49/znplixrEcbiNl9ml7dJNKfgB29",
   server: false
 
 # In test we don't send emails
-config :kopynpaste, Kopynpaste.Mailer, adapter: Swoosh.Adapters.Test
+config :textbin, Textbin.Mailer, adapter: Swoosh.Adapters.Test
 
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false

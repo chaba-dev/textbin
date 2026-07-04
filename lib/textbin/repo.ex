@@ -1,5 +1,5 @@
-defmodule Kopynpaste.Repo do
+defmodule Textbin.Repo do
   use Ecto.Repo,
-    otp_app: :kopynpaste,
+    otp_app: :textbin,
     adapter: Ecto.Adapters.Postgres
 end

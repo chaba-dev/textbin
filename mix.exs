@@ -1,9 +1,9 @@
-defmodule Kopynpaste.MixProject do
+defmodule Textbin.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :kopynpaste,
+      app: :textbin,
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -20,7 +20,7 @@ defmodule Kopynpaste.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {Kopynpaste.Application, []},
+      mod: {Textbin.Application, []},
       extra_applications: [:logger, :runtime_tools]
     ]
   end
@@ -82,10 +82,10 @@ defmodule Kopynpaste.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind kopynpaste", "esbuild kopynpaste"],
+      "assets.build": ["compile", "tailwind textbin", "esbuild textbin"],
       "assets.deploy": [
-        "tailwind kopynpaste --minify",
-        "esbuild kopynpaste --minify",
+        "tailwind textbin --minify",
+        "esbuild textbin --minify",
         "phx.digest"
       ],
       precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]

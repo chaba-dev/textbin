@@ -1,4 +1,4 @@
-# Kopynpaste
+# Textbin
 
 To start your Phoenix server:
 

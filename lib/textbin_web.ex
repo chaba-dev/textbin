@@ -1,12 +1,12 @@
-defmodule KopynpasteWeb do
+defmodule TextbinWeb do
   @moduledoc """
   The entrypoint for defining your web interface, such
   as controllers, components, channels, and so on.
 
   This can be used in your application as:
 
-      use KopynpasteWeb, :controller
-      use KopynpasteWeb, :html
+      use TextbinWeb, :controller
+      use TextbinWeb, :html
 
   The definitions below will be executed for every controller,
   component, etc, so keep them short and clean, focused
@@ -40,7 +40,7 @@ defmodule KopynpasteWeb do
     quote do
       use Phoenix.Controller, formats: [:html, :json]
 
-      use Gettext, backend: KopynpasteWeb.Gettext
+      use Gettext, backend: TextbinWeb.Gettext
 
       import Plug.Conn
 
@@ -80,16 +80,16 @@ defmodule KopynpasteWeb do
   defp html_helpers do
     quote do
       # Translation
-      use Gettext, backend: KopynpasteWeb.Gettext
+      use Gettext, backend: TextbinWeb.Gettext
 
       # HTML escaping functionality
       import Phoenix.HTML
       # Core UI components
-      import KopynpasteWeb.CoreComponents
+      import TextbinWeb.CoreComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS
-      alias KopynpasteWeb.Layouts
+      alias TextbinWeb.Layouts
 
       # Routes generation with the ~p sigil
       unquote(verified_routes())
@@ -99,9 +99,9 @@ defmodule KopynpasteWeb do
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,
-        endpoint: KopynpasteWeb.Endpoint,
-        router: KopynpasteWeb.Router,
-        statics: KopynpasteWeb.static_paths()
+        endpoint: TextbinWeb.Endpoint,
+        router: TextbinWeb.Router,
+        statics: TextbinWeb.static_paths()
     end
   end
 

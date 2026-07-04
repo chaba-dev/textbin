@@ -1,5 +1,5 @@
 {
-  description = "Copy & Paste!";
+  description = "Textbin - paste and share snippets";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -37,6 +37,7 @@
             gopls
 
             # Tools
+            watchman
             docker-compose
             yamllint
             shfmt

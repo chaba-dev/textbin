@@ -1,6 +1,6 @@
-defmodule Kopynpaste do
+defmodule Textbin do
   @moduledoc """
-  Kopynpaste keeps the contexts that define your domain
+  Textbin keeps the contexts that define your domain
   and business logic.
 
   Contexts are also responsible for managing your data, regardless
