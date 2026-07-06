@@ -6,7 +6,7 @@ defmodule Textbin.Repo.Migrations.CreatePastes do
       add :id, :binary_id, primary_key: true
       add :content, :text, null: false
 
-      timestamps(type: :utc_datetime)
+      timestamps(type: :utc_datetime_usec, precision: 3)
     end
   end
 
