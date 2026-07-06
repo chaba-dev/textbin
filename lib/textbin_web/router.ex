@@ -21,9 +21,11 @@ defmodule TextbinWeb.Router do
   end
 
   # Other scopes may use custom stacks.
-  # scope "/api", TextbinWeb do
-  #   pipe_through :api
-  # end
+  scope "/api/v1", TextbinWeb do
+    pipe_through :api
+
+    resources "/pastes", PasteController, except: [:new, :edit]
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:textbin, :dev_routes) do
