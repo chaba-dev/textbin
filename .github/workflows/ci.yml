@@ -1,7 +1,7 @@
 ---
 name: CI
 
-on:
+"on":
   pull_request:
   push:
     branches: [main]
@@ -15,6 +15,42 @@ env:
   DATABASE_TEST_NAME: textbin_test
 
 jobs:
+  format:
+    name: Format
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.1"
+          elixir-version: "1.20"
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-format-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-format-${{ runner.os }}-
+            mix-${{ runner.os }}-
+
+      - name: Install Hex and Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
   test:
     name: Test
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -50,8 +86,9 @@ jobs:
           path: |
             deps
             _build
-          key: mix-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          key: mix-test-${{ runner.os }}-${{ hashFiles('mix.lock') }}
           restore-keys: |
+            mix-test-${{ runner.os }}-
             mix-${{ runner.os }}-
 
       - name: Install Hex and Rebar
@@ -61,9 +98,6 @@ jobs:
 
       - name: Install dependencies
         run: mix deps.get
-
-      - name: Check formatting
-        run: mix format --check-formatted
 
       - name: Compile
         run: mix compile --warnings-as-errors
