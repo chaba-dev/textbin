@@ -6,6 +6,10 @@ dev:
 test:
 	mix test
 
+.PHONY: lint
+lint:
+	mix credo
+
 .PHONY: up
 up:
 	docker compose up -d
