@@ -1,4 +1,4 @@
-defmodule TextbinWeb.PasteJSON do
+defmodule TextbinWeb.ApiV1.PasteJSON do
   alias Textbin.Pastes.Paste
 
   def index(%{pastes: pastes}) do

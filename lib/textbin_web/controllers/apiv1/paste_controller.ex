@@ -1,4 +1,4 @@
-defmodule TextbinWeb.PasteController do
+defmodule TextbinWeb.ApiV1.PasteController do
   use TextbinWeb, :controller
 
   alias Textbin.Pastes
