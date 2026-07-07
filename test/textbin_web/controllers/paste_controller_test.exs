@@ -3,13 +3,13 @@ defmodule TextbinWeb.PasteControllerTest do
 
   alias Textbin.Pastes
 
-  @create_attrs %{content: "some content"}
-  @update_attrs %{content: "updated content"}
-  @invalid_attrs %{content: nil}
+  @create_attrs %{data: "some data"}
+  @update_attrs %{data: "updated data"}
+  @invalid_attrs %{data: nil}
 
   describe "index" do
     test "lists all pastes", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(@create_attrs)
+      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
 
       conn = get(conn, ~p"/api/v1/pastes")
 
@@ -28,7 +28,7 @@ defmodule TextbinWeb.PasteControllerTest do
 
       assert %{
                "id" => ^id,
-               "content" => "some content",
+               "data" => "some data",
                "inserted_at" => inserted_at,
                "updated_at" => updated_at
              } = json_response(conn, 200)["data"]
@@ -37,16 +37,46 @@ defmodule TextbinWeb.PasteControllerTest do
       assert_millisecond_timestamp(updated_at)
     end
 
+    test "renders paste from flat JSON data", %{conn: conn} do
+      conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
+
+      assert %{
+               "data" => "some data"
+             } = json_response(conn, 201)["data"]
+    end
+
+    test "renders paste from JSON string body", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/v1/pastes", Jason.encode!("json string data"))
+
+      assert %{
+               "data" => "json string data"
+             } = json_response(conn, 201)["data"]
+    end
+
+    test "renders paste from raw request body", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/pastes", "streamed data")
+
+      assert %{
+               "data" => "streamed data"
+             } = json_response(conn, 201)["data"]
+    end
+
     test "renders errors when data is invalid", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", paste: @invalid_attrs)
 
-      assert %{"content" => [_]} = json_response(conn, 422)["errors"]
+      assert %{"data" => [_]} = json_response(conn, 422)["errors"]
     end
   end
 
   describe "update paste" do
     test "renders paste when data is valid", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(@create_attrs)
+      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
 
       conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: @update_attrs)
 
@@ -56,22 +86,22 @@ defmodule TextbinWeb.PasteControllerTest do
 
       assert %{
                "id" => ^id,
-               "content" => "updated content"
+               "data" => "updated data"
              } = json_response(conn, 200)["data"]
     end
 
     test "renders errors when data is invalid", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(@create_attrs)
+      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
 
       conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: @invalid_attrs)
 
-      assert %{"content" => [_]} = json_response(conn, 422)["errors"]
+      assert %{"data" => [_]} = json_response(conn, 422)["errors"]
     end
   end
 
   describe "delete paste" do
     test "deletes chosen paste", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(@create_attrs)
+      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
 
       conn = delete(conn, ~p"/api/v1/pastes/#{paste.id}")
 

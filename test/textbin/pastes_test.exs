@@ -5,13 +5,13 @@ defmodule Textbin.PastesTest do
   alias Textbin.Pastes.Paste
 
   describe "pastes" do
-    @valid_attrs %{content: "some content"}
-    @update_attrs %{content: "updated content"}
-    @invalid_attrs %{content: nil}
+    @valid_attrs %{data: "some data"}
+    @update_attrs %{data: "updated data"}
+    @invalid_attrs %{data: nil}
 
     test "list_pastes/0 returns all pastes" do
       {:ok, older_paste} = Pastes.create_paste(@valid_attrs)
-      {:ok, newer_paste} = Pastes.create_paste(%{content: "newer content"})
+      {:ok, newer_paste} = Pastes.create_paste(%{data: "newer data"})
 
       paste_ids = Pastes.list_pastes() |> Enum.map(& &1.id)
 
@@ -27,7 +27,7 @@ defmodule Textbin.PastesTest do
 
     test "create_paste/1 with valid data creates a paste" do
       assert {:ok, %Paste{} = paste} = Pastes.create_paste(@valid_attrs)
-      assert paste.content == "some content"
+      assert paste.data == "some data"
       assert {microsecond, 6} = paste.inserted_at.microsecond
       assert rem(microsecond, 1000) == 0
     end
@@ -40,14 +40,14 @@ defmodule Textbin.PastesTest do
       {:ok, paste} = Pastes.create_paste(@valid_attrs)
 
       assert {:ok, %Paste{} = paste} = Pastes.update_paste(paste, @update_attrs)
-      assert paste.content == "updated content"
+      assert paste.data == "updated data"
     end
 
     test "update_paste/2 with invalid data returns error changeset" do
       {:ok, paste} = Pastes.create_paste(@valid_attrs)
 
       assert {:error, %Ecto.Changeset{}} = Pastes.update_paste(paste, @invalid_attrs)
-      assert Pastes.get_paste!(paste.id).content == paste.content
+      assert Pastes.get_paste!(paste.id).data == paste.data
     end
 
     test "delete_paste/1 deletes the paste" do
