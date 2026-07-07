@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict dpo6hzPGqGOggASvc8S89hQ8vVP8UfU98vptJrmB1DGMGNazrybeh1S9PVHTGhE
+\restrict 4hfoni6GqPGVYd9csotBkMzynZ4AbAYrv2CjMhaHT0hSjR7dZYBj4UTAvOfQzgB
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -29,7 +29,7 @@ SET default_table_access_method = heap;
 
 CREATE TABLE public.pastes (
     id uuid NOT NULL,
-    content text NOT NULL,
+    data text NOT NULL,
     inserted_at timestamp(3) without time zone NOT NULL,
     updated_at timestamp(3) without time zone NOT NULL
 );
@@ -65,6 +65,6 @@ ALTER TABLE ONLY public.schema_migrations
 -- PostgreSQL database dump complete
 --
 
-\unrestrict dpo6hzPGqGOggASvc8S89hQ8vVP8UfU98vptJrmB1DGMGNazrybeh1S9PVHTGhE
+\unrestrict 4hfoni6GqPGVYd9csotBkMzynZ4AbAYrv2CjMhaHT0hSjR7dZYBj4UTAvOfQzgB
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);

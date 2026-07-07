@@ -2,6 +2,14 @@
 dev:
 	mix phx.server
 
+.PHONY: test
+test:
+	mix test
+
+.PHONY: lint
+lint:
+	mix credo
+
 .PHONY: up
 up:
 	docker compose up -d
