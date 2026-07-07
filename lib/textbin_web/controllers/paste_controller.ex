@@ -65,18 +65,19 @@ defmodule TextbinWeb.PasteController do
   end
 
   defp create_paste(conn, paste_params) do
-    with :ok <- validate_paste_size(paste_params) do
-      case Pastes.create_paste(paste_params) do
-        {:ok, paste} ->
-          conn
-          |> put_status(:created)
-          |> put_resp_header("location", ~p"/api/v1/pastes/#{paste.id}")
-          |> render(:show, paste: paste)
+    case validate_paste_size(paste_params) do
+      :ok ->
+        case Pastes.create_paste(paste_params) do
+          {:ok, paste} ->
+            conn
+            |> put_status(:created)
+            |> put_resp_header("location", ~p"/api/v1/pastes/#{paste.id}")
+            |> render(:show, paste: paste)
 
-        {:error, changeset} ->
-          render_changeset_errors(conn, changeset)
-      end
-    else
+          {:error, changeset} ->
+            render_changeset_errors(conn, changeset)
+        end
+
       {:error, :too_large} ->
         render_too_large(conn)
     end
@@ -124,15 +125,16 @@ defmodule TextbinWeb.PasteController do
     paste = Pastes.get_paste!(id)
     paste_params = paste_params(params)
 
-    with :ok <- validate_paste_size(paste_params) do
-      case Pastes.update_paste(paste, paste_params) do
-        {:ok, paste} ->
-          render(conn, :show, paste: paste)
+    case validate_paste_size(paste_params) do
+      :ok ->
+        case Pastes.update_paste(paste, paste_params) do
+          {:ok, paste} ->
+            render(conn, :show, paste: paste)
 
-        {:error, changeset} ->
-          render_changeset_errors(conn, changeset)
-      end
-    else
+          {:error, changeset} ->
+            render_changeset_errors(conn, changeset)
+        end
+
       {:error, :too_large} ->
         render_too_large(conn)
     end
