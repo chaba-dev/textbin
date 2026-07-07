@@ -9,7 +9,8 @@ import Config
 
 config :textbin,
   ecto_repos: [Textbin.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  max_paste_bytes: 1_048_576
 
 # Configures the endpoint
 config :textbin, TextbinWeb.Endpoint,
