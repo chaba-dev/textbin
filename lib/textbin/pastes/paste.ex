@@ -5,20 +5,25 @@ defmodule Textbin.Pastes.Paste do
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
+
+  # Store timestamps at millisecond precision so API output and database values
+  # stay stable across adapters and reloads.
   @timestamps_opts [type: :utc_datetime_usec, autogenerate: {__MODULE__, :utc_now_ms, []}]
   schema "pastes" do
-    field :content, :string
+    field :data, :string
 
     timestamps()
   end
 
   def changeset(paste, attrs) do
     paste
-    |> cast(attrs, [:content])
-    |> validate_required([:content])
+    |> cast(attrs, [:data])
+    |> validate_required([:data])
   end
 
   def utc_now_ms do
+    # Ecto's :utc_datetime_usec type expects six-digit precision metadata even
+    # when the value itself is intentionally millisecond-aligned.
     %{microsecond: {microsecond, 3}} =
       timestamp = DateTime.utc_now() |> DateTime.truncate(:millisecond)
 
