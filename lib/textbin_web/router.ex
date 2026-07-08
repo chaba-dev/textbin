@@ -24,6 +24,7 @@ defmodule TextbinWeb.Router do
     pipe_through :browser
 
     live "/pastes", PasteLive, :index
+    live "/pastes/:id", PasteLive, :show
   end
 
   # v1 API
