@@ -26,16 +26,17 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
 
       assert %{"id" => id} = json_response(conn, 201)["data"]
+      assert_stored_data(id, "some data")
 
       conn = get(conn, ~p"/api/v1/pastes/#{id}")
 
       assert %{
                "id" => ^id,
-               "data" => "some data",
                "inserted_at" => inserted_at,
                "updated_at" => updated_at
-             } = json_response(conn, 200)["data"]
+             } = response_data = json_response(conn, 200)["data"]
 
+      refute Map.has_key?(response_data, "data")
       assert_millisecond_timestamp(inserted_at)
       assert_millisecond_timestamp(updated_at)
     end
@@ -43,9 +44,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders paste from flat JSON data", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 
-      assert %{
-               "data" => "some data"
-             } = json_response(conn, 201)["data"]
+      assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
+      refute Map.has_key?(response_data, "data")
+      assert_stored_data(id, "some data")
     end
 
     test "renders paste from JSON string body", %{conn: conn} do
@@ -54,9 +55,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         |> put_req_header("content-type", "application/json")
         |> post(~p"/api/v1/pastes", Jason.encode!("json string data"))
 
-      assert %{
-               "data" => "json string data"
-             } = json_response(conn, 201)["data"]
+      assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
+      refute Map.has_key?(response_data, "data")
+      assert_stored_data(id, "json string data")
     end
 
     test "renders paste from raw request body", %{conn: conn} do
@@ -65,9 +66,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         |> put_req_header("content-type", "text/plain")
         |> post(~p"/api/v1/pastes", "streamed data")
 
-      assert %{
-               "data" => "streamed data"
-             } = json_response(conn, 201)["data"]
+      assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
+      refute Map.has_key?(response_data, "data")
+      assert_stored_data(id, "streamed data")
     end
 
     test "renders errors when data is invalid", %{conn: conn} do
@@ -123,13 +124,15 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: @update_attrs)
 
       assert %{"id" => id} = json_response(conn, 200)["data"]
+      assert_stored_data(id, "updated data")
 
       conn = get(conn, ~p"/api/v1/pastes/#{id}")
 
       assert %{
-               "id" => ^id,
-               "data" => "updated data"
-             } = json_response(conn, 200)["data"]
+               "id" => ^id
+             } = response_data = json_response(conn, 200)["data"]
+
+      refute Map.has_key?(response_data, "data")
     end
 
     test "renders errors when data is invalid", %{conn: conn} do
@@ -167,6 +170,10 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
   defp assert_millisecond_timestamp(timestamp) do
     assert timestamp =~ ~r/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+  end
+
+  defp assert_stored_data(id, expected_data) do
+    assert Pastes.get_paste!(id).data == expected_data
   end
 
   defp put_max_paste_bytes(max_paste_bytes) do
