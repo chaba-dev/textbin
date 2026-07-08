@@ -23,7 +23,7 @@ defmodule TextbinWeb.Router do
   scope "/", TextbinWeb.UI do
     pipe_through :browser
 
-    get "/pastes", PasteController, :home
+    live "/pastes", PasteLive, :index
   end
 
   # v1 API
