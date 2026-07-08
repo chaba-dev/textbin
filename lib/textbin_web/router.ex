@@ -20,6 +20,12 @@ defmodule TextbinWeb.Router do
     get "/", PageController, :home
   end
 
+  scope "/", TextbinWeb.UI do
+    pipe_through :browser
+
+    get "/pastes", PasteController, :home
+  end
+
   # v1 API
   scope "/api/v1", TextbinWeb.ApiV1 do
     pipe_through :api
