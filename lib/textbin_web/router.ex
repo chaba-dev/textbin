@@ -20,8 +20,15 @@ defmodule TextbinWeb.Router do
     get "/", PageController, :home
   end
 
-  # Other scopes may use custom stacks.
-  scope "/api/v1", TextbinWeb do
+  scope "/", TextbinWeb.UI do
+    pipe_through :browser
+
+    live "/pastes", PasteLive, :index
+    live "/pastes/:id", PasteLive, :show
+  end
+
+  # v1 API
+  scope "/api/v1", TextbinWeb.ApiV1 do
     pipe_through :api
 
     resources "/pastes", PasteController, except: [:new, :edit]

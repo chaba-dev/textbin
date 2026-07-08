@@ -1,5 +1,5 @@
-defmodule TextbinWeb.PasteControllerTest do
-  use TextbinWeb.ConnCase, async: true
+defmodule TextbinWeb.ApiV1.PasteControllerTest do
+  use TextbinWeb.ConnCase, async: false
 
   alias Textbin.Pastes
 
@@ -14,6 +14,8 @@ defmodule TextbinWeb.PasteControllerTest do
 
       conn = get(conn, ~p"/api/v1/pastes")
 
+      assert conn.private.phoenix_controller == TextbinWeb.ApiV1.PasteController
+      assert conn.private.phoenix_view["json"] == TextbinWeb.ApiV1.PasteJSON
       assert %{"data" => [data]} = json_response(conn, 200)
       assert data["id"] == paste.id
     end
