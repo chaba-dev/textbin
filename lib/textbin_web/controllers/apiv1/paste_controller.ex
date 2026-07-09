@@ -20,9 +20,9 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # common JSON client shapes. This keeps CLI usage simple without making API
   # clients wrap data unless they want to.
   def create(conn, params) do
-    case paste_data(conn, params) do
-      {:ok, data, conn} ->
-        create_paste(conn, %{"data" => data})
+    case paste_attrs(conn, params) do
+      {:ok, paste_attrs, conn} ->
+        create_paste(conn, paste_attrs)
 
       {:error, :too_large, conn} ->
         render_too_large(conn)
@@ -35,33 +35,52 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   # Preferred JSON shape for API clients that already send objects.
-  defp paste_data(conn, %{"data" => data}) when is_binary(data) do
-    {:ok, data, conn}
+  defp paste_attrs(conn, %{"data" => data} = params) when is_binary(data) do
+    {:ok, build_paste_attrs(data, params), conn}
   end
 
   # Keep Phoenix generator-style wrapped params working for conventional clients
   # and tests.
-  defp paste_data(conn, %{"paste" => %{"data" => data}}) when is_binary(data) do
-    {:ok, data, conn}
+  defp paste_attrs(conn, %{"paste" => %{"data" => data} = params}) when is_binary(data) do
+    {:ok, build_paste_attrs(data, params), conn}
   end
 
   # Plug puts non-object JSON bodies, such as `"hello"`, under "_json". This is
   # useful for callers that want JSON content negotiation without an object
   # envelope.
-  defp paste_data(conn, %{"_json" => data}) when is_binary(data) do
-    {:ok, data, conn}
+  defp paste_attrs(conn, %{"_json" => data}) when is_binary(data) do
+    {:ok, %{"data" => data}, conn}
   end
 
   # Non-JSON uploads keep the body unread after Plug.Parsers, so streamed
   # CLI/stdin data can be consumed here.
-  defp paste_data(conn, params) when params == %{} do
-    read_request_body(conn)
+  defp paste_attrs(conn, params)
+       when map_size(params) == 0 or is_map_key(params, "syntax_highlight") do
+    case read_request_body(conn) do
+      {:ok, data, conn} ->
+        {:ok, build_paste_attrs(data, params), conn}
+
+      {:error, reason, conn} ->
+        {:error, reason, conn}
+    end
   end
 
   # Let the changeset produce the canonical "data can't be blank" error for
   # unsupported payload shapes instead of inventing a separate controller error.
-  defp paste_data(conn, _params) do
-    {:ok, nil, conn}
+  defp paste_attrs(conn, _params) do
+    {:ok, %{"data" => nil}, conn}
+  end
+
+  defp build_paste_attrs(data, params) do
+    attrs = %{"data" => data}
+
+    case params do
+      %{"syntax_highlight" => syntax_highlight} when is_binary(syntax_highlight) ->
+        Map.put(attrs, "syntax_highlight", syntax_highlight)
+
+      _params ->
+        attrs
+    end
   end
 
   defp create_paste(conn, paste_params) do

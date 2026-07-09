@@ -11,7 +11,7 @@ defmodule Textbin.Pastes.Paste do
   @timestamps_opts [type: :utc_datetime_usec, autogenerate: {__MODULE__, :utc_now_ms, []}]
   schema "pastes" do
     field :data, :string
-    field :syntax_highlight, :string
+    field :syntax_highlight, :string, default: "plain"
 
     timestamps()
   end
@@ -19,7 +19,7 @@ defmodule Textbin.Pastes.Paste do
   def changeset(paste, attrs) do
     paste
     |> cast(attrs, [:data, :syntax_highlight])
-    |> validate_required([:data])
+    |> validate_required([:data, :syntax_highlight])
   end
 
   def utc_now_ms do

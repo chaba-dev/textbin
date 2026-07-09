@@ -27,8 +27,17 @@ defmodule Textbin.PastesTest do
     test "create_paste/1 with valid data creates a paste" do
       assert {:ok, %Paste{} = paste} = Pastes.create_paste(@valid_attrs)
       assert paste.data == "some data"
+      assert paste.syntax_highlight == "plain"
       assert {microsecond, 6} = paste.inserted_at.microsecond
       assert rem(microsecond, 1000) == 0
+    end
+
+    test "create_paste/1 stores the syntax highlight" do
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste(%{data: "IO.puts(:ok)", syntax_highlight: "elixir"})
+
+      assert paste.data == "IO.puts(:ok)"
+      assert paste.syntax_highlight == "elixir"
     end
 
     test "create_paste/1 with invalid data returns error changeset" do
