@@ -4,7 +4,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   alias Textbin.Pastes
 
   @max_paste_bytes 1_048_576
-  @create_attrs %{data: "some data"}
+  @create_attrs %{data: "some data", syntax_highlight: "elixir"}
   @invalid_attrs %{data: nil}
 
   describe "index" do
@@ -17,6 +17,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert conn.private.phoenix_view["json"] == TextbinWeb.ApiV1.PasteJSON
       assert %{"data" => [data]} = json_response(conn, 200)
       assert data["id"] == paste.id
+      assert data["syntax_highlight"] == "plain"
     end
   end
 
@@ -24,13 +25,17 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders paste when data is valid", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
 
-      assert %{"id" => id} = json_response(conn, 201)["data"]
-      assert_stored_data(id, "some data")
+      assert %{"id" => id, "syntax_highlight" => "elixir"} =
+               response_data = json_response(conn, 201)["data"]
+
+      refute Map.has_key?(response_data, "data")
+      assert_stored_paste(id, "some data", "elixir")
 
       conn = get(conn, ~p"/api/v1/pastes/#{id}")
 
       assert %{
                "id" => ^id,
+               "syntax_highlight" => "elixir",
                "inserted_at" => inserted_at,
                "updated_at" => updated_at
              } = response_data = json_response(conn, 200)["data"]
@@ -43,9 +48,11 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders paste from flat JSON data", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 
-      assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
+      assert %{"id" => id, "syntax_highlight" => "elixir"} =
+               response_data = json_response(conn, 201)["data"]
+
       refute Map.has_key?(response_data, "data")
-      assert_stored_data(id, "some data")
+      assert_stored_paste(id, "some data", "elixir")
     end
 
     test "renders paste from JSON string body", %{conn: conn} do
@@ -55,8 +62,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         |> post(~p"/api/v1/pastes", Jason.encode!("json string data"))
 
       assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
+      assert response_data["syntax_highlight"] == "plain"
       refute Map.has_key?(response_data, "data")
-      assert_stored_data(id, "json string data")
+      assert_stored_paste(id, "json string data", "plain")
     end
 
     test "renders paste from raw request body", %{conn: conn} do
@@ -66,8 +74,22 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         |> post(~p"/api/v1/pastes", "streamed data")
 
       assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
+      assert response_data["syntax_highlight"] == "plain"
       refute Map.has_key?(response_data, "data")
-      assert_stored_data(id, "streamed data")
+      assert_stored_paste(id, "streamed data", "plain")
+    end
+
+    test "renders paste from raw request body with syntax highlight", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/pastes?syntax_highlight=elixir", "streamed data")
+
+      assert %{"id" => id, "syntax_highlight" => "elixir"} =
+               response_data = json_response(conn, 201)["data"]
+
+      refute Map.has_key?(response_data, "data")
+      assert_stored_paste(id, "streamed data", "elixir")
     end
 
     test "renders errors when data is invalid", %{conn: conn} do
@@ -123,7 +145,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: %{data: "updated data"})
 
       assert response(conn, 404)
-      assert_stored_data(paste.id, "some data")
+      assert_stored_paste(paste.id, "some data", "plain")
     end
   end
 
@@ -142,8 +164,11 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     assert timestamp =~ ~r/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
   end
 
-  defp assert_stored_data(id, expected_data) do
-    assert Pastes.get_paste!(id).data == expected_data
+  defp assert_stored_paste(id, expected_data, expected_syntax_highlight) do
+    paste = Pastes.get_paste!(id)
+
+    assert paste.data == expected_data
+    assert paste.syntax_highlight == expected_syntax_highlight
   end
 
   defp put_max_paste_bytes(max_paste_bytes) do

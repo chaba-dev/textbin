@@ -103,3 +103,32 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Lumis returns a complete <pre><code> block. Keep its generated token colors
+   while making the block behave like the rest of the paste detail layout. */
+#paste-data .lumis {
+  margin: 0;
+  min-width: 100%;
+  overflow-x: auto;
+  padding: 1rem;
+  white-space: pre-wrap;
+}
+
+#paste-data .l-line {
+  padding-left: 3.5rem;
+  position: relative;
+  white-space: pre-wrap;
+}
+
+#paste-data .l-line::before {
+  border-right: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  color: color-mix(in oklch, currentColor 45%, transparent);
+  content: attr(data-line);
+  font-variant-numeric: tabular-nums;
+  left: 0;
+  padding-right: 0.75rem;
+  position: absolute;
+  text-align: right;
+  user-select: none;
+  width: 2.5rem;
+}
