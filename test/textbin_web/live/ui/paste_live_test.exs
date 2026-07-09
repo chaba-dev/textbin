@@ -33,8 +33,23 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert has_element?(view, "h1", paste.id)
     assert has_element?(view, "span", "json")
+    assert has_element?(view, "#paste-data .lumis code.language-json")
     assert has_element?(view, "#paste-data", "individual paste data")
     assert has_element?(view, "a[href='/pastes']", "Back to pastes")
+  end
+
+  test "escapes paste data before rendering highlighted HTML", %{conn: conn} do
+    {:ok, paste} =
+      Pastes.create_paste(%{
+        data: "<script>alert('nope')</script>",
+        syntax_highlight: "plain"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+
+    assert has_element?(view, "#paste-data .lumis code.language-plaintext")
+    assert has_element?(view, "#paste-data", "<script>alert('nope')</script>")
+    refute has_element?(view, "#paste-data script")
   end
 
   test "deletes a paste from the list", %{conn: conn} do
