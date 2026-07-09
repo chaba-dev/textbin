@@ -38,6 +38,11 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/pastes")
 
+    assert has_element?(
+             view,
+             "#delete-paste-#{paste.id}[data-confirm='Delete this paste?']"
+           )
+
     view
     |> element("#delete-paste-#{paste.id}")
     |> render_click()
@@ -50,6 +55,11 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {:ok, paste} = Pastes.create_paste(%{data: "delete from detail"})
 
     {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+
+    assert has_element?(
+             view,
+             "#delete-paste-#{paste.id}[data-confirm='Delete this paste?']"
+           )
 
     view
     |> element("#delete-paste-#{paste.id}")
