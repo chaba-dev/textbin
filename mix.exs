@@ -72,6 +72,9 @@ defmodule Textbin.MixProject do
        compile: false,
        depth: 1},
 
+      # syntax highlighting
+      {:lumis, "~> 0.3"},
+
       # Dev or Test deps
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:lazy_html, ">= 0.1.0", only: :test},
