@@ -34,6 +34,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "h1", paste.id)
     assert has_element?(view, "span", "json")
     assert has_element?(view, "#paste-data .lumis code.language-json")
+    assert has_element?(view, "#paste-data .l-line[data-line='1']")
     assert has_element?(view, "#paste-data", "individual paste data")
     assert has_element?(view, "a[href='/pastes']", "Back to pastes")
   end

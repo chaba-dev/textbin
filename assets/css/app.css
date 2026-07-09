@@ -115,5 +115,20 @@
 }
 
 #paste-data .l-line {
+  padding-left: 3.5rem;
+  position: relative;
   white-space: pre-wrap;
+}
+
+#paste-data .l-line::before {
+  border-right: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  color: color-mix(in oklch, currentColor 45%, transparent);
+  content: attr(data-line);
+  font-variant-numeric: tabular-nums;
+  left: 0;
+  padding-right: 0.75rem;
+  position: absolute;
+  text-align: right;
+  user-select: none;
+  width: 2.5rem;
 }
