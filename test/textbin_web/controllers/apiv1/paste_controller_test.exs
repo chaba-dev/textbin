@@ -5,7 +5,6 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
   @max_paste_bytes 1_048_576
   @create_attrs %{data: "some data"}
-  @update_attrs %{data: "updated data"}
   @invalid_attrs %{data: nil}
 
   describe "index" do
@@ -118,42 +117,13 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   end
 
   describe "update paste" do
-    test "renders paste when data is valid", %{conn: conn} do
+    test "is not routable", %{conn: conn} do
       {:ok, paste} = Pastes.create_paste(%{data: "some data"})
 
-      conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: @update_attrs)
+      conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: %{data: "updated data"})
 
-      assert %{"id" => id} = json_response(conn, 200)["data"]
-      assert_stored_data(id, "updated data")
-
-      conn = get(conn, ~p"/api/v1/pastes/#{id}")
-
-      assert %{
-               "id" => ^id
-             } = response_data = json_response(conn, 200)["data"]
-
-      refute Map.has_key?(response_data, "data")
-    end
-
-    test "renders errors when data is invalid", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
-
-      conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: @invalid_attrs)
-
-      assert %{"data" => [_]} = json_response(conn, 422)["errors"]
-    end
-
-    test "rejects data over the configured size limit", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
-      too_large_data = String.duplicate("a", @max_paste_bytes + 1)
-
-      conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", %{data: too_large_data})
-
-      assert %{
-               "errors" => %{
-                 "detail" => "Paste data exceeds the maximum size of 1048576 bytes"
-               }
-             } = json_response(conn, 413)
+      assert response(conn, 404)
+      assert_stored_data(paste.id, "some data")
     end
   end
 
