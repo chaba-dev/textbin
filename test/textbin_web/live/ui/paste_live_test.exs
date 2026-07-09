@@ -33,5 +33,31 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "a[href='/pastes']", "Back to pastes")
   end
 
+  test "deletes a paste from the list", %{conn: conn} do
+    {:ok, paste} = Pastes.create_paste(%{data: "delete from list"})
+
+    {:ok, view, _html} = live(conn, ~p"/pastes")
+
+    view
+    |> element("#delete-paste-#{paste.id}")
+    |> render_click()
+
+    refute has_element?(view, "##{stream_id(paste)}")
+    assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(paste.id) end
+  end
+
+  test "deletes a paste from the detail page", %{conn: conn} do
+    {:ok, paste} = Pastes.create_paste(%{data: "delete from detail"})
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+
+    view
+    |> element("#delete-paste-#{paste.id}")
+    |> render_click()
+
+    assert_redirect(view, ~p"/pastes")
+    assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(paste.id) end
+  end
+
   defp stream_id(paste), do: "pastes-#{paste.id}"
 end

@@ -15,9 +15,20 @@
           {Calendar.strftime(@paste.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
         </time>
       </div>
-      <.link navigate={~p"/pastes"} class="btn btn-sm btn-ghost">
-        Back to pastes
-      </.link>
+      <div class="flex items-center gap-2">
+        <.link navigate={~p"/pastes"} class="btn btn-sm btn-ghost">
+          Back to pastes
+        </.link>
+        <button
+          id={"delete-paste-#{@paste.id}"}
+          type="button"
+          phx-click="delete"
+          phx-value-id={@paste.id}
+          class="btn btn-sm btn-error"
+        >
+          <.icon name="hero-trash" class="size-4" /> Delete
+        </button>
+      </div>
     </div>
 
     <pre
