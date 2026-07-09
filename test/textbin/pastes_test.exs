@@ -6,7 +6,6 @@ defmodule Textbin.PastesTest do
 
   describe "pastes" do
     @valid_attrs %{data: "some data"}
-    @update_attrs %{data: "updated data"}
     @invalid_attrs %{data: nil}
 
     test "list_pastes/0 returns all pastes" do
@@ -34,20 +33,6 @@ defmodule Textbin.PastesTest do
 
     test "create_paste/1 with invalid data returns error changeset" do
       assert {:error, %Ecto.Changeset{}} = Pastes.create_paste(@invalid_attrs)
-    end
-
-    test "update_paste/2 with valid data updates the paste" do
-      {:ok, paste} = Pastes.create_paste(@valid_attrs)
-
-      assert {:ok, %Paste{} = paste} = Pastes.update_paste(paste, @update_attrs)
-      assert paste.data == "updated data"
-    end
-
-    test "update_paste/2 with invalid data returns error changeset" do
-      {:ok, paste} = Pastes.create_paste(@valid_attrs)
-
-      assert {:error, %Ecto.Changeset{}} = Pastes.update_paste(paste, @invalid_attrs)
-      assert Pastes.get_paste!(paste.id).data == paste.data
     end
 
     test "delete_paste/1 deletes the paste" do

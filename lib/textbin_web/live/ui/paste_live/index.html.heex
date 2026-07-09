@@ -39,12 +39,25 @@
           >
             {paste.id}
           </.link>
-          <time
-            class="text-xs text-base-content/50"
-            datetime={DateTime.to_iso8601(paste.inserted_at)}
-          >
-            {Calendar.strftime(paste.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
-          </time>
+          <div class="flex items-center gap-3">
+            <time
+              class="text-xs text-base-content/50"
+              datetime={DateTime.to_iso8601(paste.inserted_at)}
+            >
+              {Calendar.strftime(paste.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
+            </time>
+            <button
+              id={"delete-paste-#{paste.id}"}
+              type="button"
+              phx-click="delete"
+              phx-value-id={paste.id}
+              data-confirm="Delete this paste?"
+              class="btn btn-ghost btn-xs text-error hover:bg-error/10"
+              aria-label="Delete paste"
+            >
+              <.icon name="hero-trash" class="size-4" />
+            </button>
+          </div>
         </div>
       </article>
     </div>

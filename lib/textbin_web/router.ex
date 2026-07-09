@@ -31,7 +31,7 @@ defmodule TextbinWeb.Router do
   scope "/api/v1", TextbinWeb.ApiV1 do
     pipe_through :api
 
-    resources "/pastes", PasteController, except: [:new, :edit]
+    resources "/pastes", PasteController, except: [:new, :edit, :update]
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

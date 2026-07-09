@@ -20,12 +20,6 @@ defmodule Textbin.Pastes do
     |> Repo.insert()
   end
 
-  def update_paste(%Paste{} = paste, attrs) do
-    paste
-    |> Paste.changeset(attrs)
-    |> Repo.update()
-  end
-
   def delete_paste(%Paste{} = paste) do
     Repo.delete(paste)
   end

@@ -15,6 +15,23 @@ defmodule TextbinWeb.UI.PasteLive do
     {:noreply, assign(socket, :paste, Pastes.get_paste!(id))}
   end
 
+  def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :index}} = socket) do
+    paste = Pastes.get_paste!(id)
+    {:ok, _paste} = Pastes.delete_paste(paste)
+
+    {:noreply, stream_delete(socket, :pastes, paste)}
+  end
+
+  def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :show}} = socket) do
+    paste = Pastes.get_paste!(id)
+    {:ok, _paste} = Pastes.delete_paste(paste)
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Paste deleted")
+     |> push_navigate(to: ~p"/pastes")}
+  end
+
   def render(%{live_action: :show} = assigns), do: detail(assigns)
   def render(assigns), do: index(assigns)
 end

@@ -14,7 +14,7 @@ env:
   DATABASE_PORT: 5432
   DATABASE_TEST_NAME: textbin_test
 
-  OTP_VERSION: "28.1"
+  OTP_VERSION: "28.5"
   ELIXIR_VERSION: "1.20"
 
 jobs:

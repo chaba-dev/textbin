@@ -121,29 +121,6 @@ defmodule TextbinWeb.ApiV1.PasteController do
     render(conn, :show, paste: paste)
   end
 
-  def update(conn, %{"id" => id} = params) do
-    paste = Pastes.get_paste!(id)
-    paste_params = paste_params(params)
-
-    case validate_paste_size(paste_params) do
-      :ok ->
-        case Pastes.update_paste(paste, paste_params) do
-          {:ok, paste} ->
-            render(conn, :show, paste: paste)
-
-          {:error, changeset} ->
-            render_changeset_errors(conn, changeset)
-        end
-
-      {:error, :too_large} ->
-        render_too_large(conn)
-    end
-  end
-
-  defp paste_params(%{"data" => data}) when is_binary(data), do: %{"data" => data}
-  defp paste_params(%{"paste" => %{"data" => data}}) when is_binary(data), do: %{"data" => data}
-  defp paste_params(_params), do: %{"data" => nil}
-
   def delete(conn, %{"id" => id}) do
     paste = Pastes.get_paste!(id)
     {:ok, _paste} = Pastes.delete_paste(paste)
