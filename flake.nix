@@ -30,19 +30,9 @@
             beam.packages.erlang_28.rebar3
             erlang_28
 
-            # Golang
-            go
-            golangci-lint
-            gotests
-            gomodifytags
-            gore
-            gotools
-            delve
-
             # LSPs
             beamPackages.expert
             erlang-language-platform
-            gopls
 
             # Tools
             watchman
@@ -52,7 +42,6 @@
             shellcheck
             git-cliff
             yaml-language-server
-            goreleaser
             postgresql
           ];
 
