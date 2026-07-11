@@ -4,6 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -11,6 +15,7 @@
       self,
       nixpkgs,
       flake-utils,
+      rust-overlay,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -19,8 +24,17 @@
         pkgs = import nixpkgs {
           inherit system;
           config.allowUnfree = true;
+          overlays = [ rust-overlay.overlays.default ];
         };
 
+        rust-toolchain = pkgs.rust-bin.stable."1.96.0".default.override {
+          extensions = [
+            "rust-src"
+            "rust-analyzer"
+            "clippy"
+            "rustfmt"
+          ];
+        };
       in
       {
         devShells.default = pkgs.mkShell {
@@ -30,18 +44,24 @@
             beam.packages.erlang_28.rebar3
             erlang_28
 
+            # Rust
+            rust-toolchain
+
             # LSPs
             beamPackages.expert
             erlang-language-platform
+            rust-analyzer
+            yaml-language-server
 
             # Tools
             watchman
             docker-compose
             yamllint
+            pkg-config
+            openssl
             shfmt
             shellcheck
             git-cliff
-            yaml-language-server
             postgresql
           ];
 
