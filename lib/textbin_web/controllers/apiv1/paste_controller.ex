@@ -91,7 +91,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
             conn
             |> put_status(:created)
             |> put_resp_header("location", ~p"/api/v1/pastes/#{paste.id}")
-            |> render(:show, paste: paste)
+            |> render(:create, paste: paste)
 
           {:error, changeset} ->
             render_changeset_errors(conn, changeset)
