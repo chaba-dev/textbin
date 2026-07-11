@@ -35,12 +35,12 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert %{
                "id" => ^id,
+               "data" => "some data",
                "syntax_highlight" => "elixir",
                "inserted_at" => inserted_at,
                "updated_at" => updated_at
-             } = response_data = json_response(conn, 200)["data"]
+             } = json_response(conn, 200)["data"]
 
-      refute Map.has_key?(response_data, "data")
       assert_millisecond_timestamp(inserted_at)
       assert_millisecond_timestamp(updated_at)
     end

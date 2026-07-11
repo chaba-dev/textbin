@@ -5,8 +5,12 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
     %{data: for(paste <- pastes, do: data(paste))}
   end
 
-  def show(%{paste: paste}) do
+  def create(%{paste: paste}) do
     %{data: data(paste) |> Map.delete(:data)}
+  end
+
+  def show(%{paste: paste}) do
+    %{data: data(paste)}
   end
 
   defp data(%Paste{} = paste) do
