@@ -1,0 +1,11 @@
+[package]
+name = "textbin"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+
+[[bin]]
+name = "textbin"
+path = "crates/cli/src/main.rs"
