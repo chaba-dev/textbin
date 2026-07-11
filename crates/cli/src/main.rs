@@ -1,3 +1,6 @@
+mod auth;
+mod base;
+
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser, Subcommand};
@@ -19,10 +22,11 @@ struct TextbinCli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Test {
-        #[arg(short, long)]
-        list: bool,
-    },
+    #[command(flatten)]
+    Base(base::Commands),
+
+    #[command(subcommand)]
+    Auth(auth::Commands),
 }
 
 fn main() {
@@ -48,12 +52,17 @@ fn main() {
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
-        Some(Commands::Test { list }) => {
-            if *list {
-                println!("Printing testing lists...");
-            } else {
-                println!("Not printing testing lists...");
-            }
+        Some(Commands::Base(base::Commands::Get)) => {
+            println!("Retrieving a paste...");
+        }
+        Some(Commands::Base(base::Commands::Create { data })) => {
+            println!("Creating a paste with data: {data}");
+        }
+        Some(Commands::Auth(auth::Commands::Login)) => {
+            println!("Logging in...");
+        }
+        Some(Commands::Auth(auth::Commands::Logout)) => {
+            println!("Logging out...");
         }
         None => {}
     }
