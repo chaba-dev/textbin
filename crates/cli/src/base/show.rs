@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
-use lumis::formatters::{TerminalBackground, TerminalBuilder};
+use lumis::formatters::TerminalBuilder;
 use lumis::languages::Language;
 use lumis::themes;
 use serde::Deserialize;
+use std::io::{self, IsTerminal};
 
 const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4000";
 
@@ -28,10 +29,32 @@ pub fn handle(id: &str) -> Result<()> {
         .json()
         .context("failed to decode paste response")?;
 
-    let highlighted = highlight_paste(&response.data)?;
-    println!("{highlighted}");
+    print_paste(&response.data)?;
 
     Ok(())
+}
+
+fn print_paste(paste: &Paste) -> Result<()> {
+    let use_color = io::stdout().is_terminal();
+    let body = if use_color {
+        highlight_paste(paste)?
+    } else {
+        paste.data.clone()
+    };
+
+    print_code_area(&body, &paste.syntax_highlight);
+    Ok(())
+}
+
+fn print_code_area(content: &str, syntax: &str) {
+    println!("```{syntax}");
+    print!("{content}");
+
+    if !content.ends_with('\n') {
+        println!();
+    }
+
+    println!("```");
 }
 
 fn highlight_paste(paste: &Paste) -> Result<String> {
@@ -40,7 +63,6 @@ fn highlight_paste(paste: &Paste) -> Result<String> {
     let formatter = TerminalBuilder::new()
         .language(language)
         .theme(Some(theme))
-        .background(TerminalBackground::Inherit)
         .build()
         .context("failed to build terminal syntax highlighter")?;
 
