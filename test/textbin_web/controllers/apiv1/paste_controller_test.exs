@@ -138,6 +138,30 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
   end
 
+  describe "show paste" do
+    test "returns bad request when id is not a UUID", %{conn: conn} do
+      conn = get(conn, ~p"/api/v1/pastes/not-a-uuid")
+
+      assert %{
+               "errors" => %{
+                 "detail" => "Paste id must be a valid UUID"
+               }
+             } = json_response(conn, 400)
+    end
+
+    test "returns not found when paste does not exist", %{conn: conn} do
+      missing_id = "00000000-0000-0000-0000-000000000000"
+
+      conn = get(conn, ~p"/api/v1/pastes/#{missing_id}")
+
+      assert %{
+               "errors" => %{
+                 "detail" => "Paste not found"
+               }
+             } = json_response(conn, 404)
+    end
+  end
+
   describe "update paste" do
     test "is not routable", %{conn: conn} do
       {:ok, paste} = Pastes.create_paste(%{data: "some data"})
@@ -157,6 +181,20 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert response(conn, 204)
       assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(paste.id) end
+    end
+
+    test "returns no content when id is not a UUID", %{conn: conn} do
+      conn = delete(conn, ~p"/api/v1/pastes/not-a-uuid")
+
+      assert response(conn, 204) == ""
+    end
+
+    test "returns no content when paste does not exist", %{conn: conn} do
+      missing_id = "00000000-0000-0000-0000-000000000000"
+
+      conn = delete(conn, ~p"/api/v1/pastes/#{missing_id}")
+
+      assert response(conn, 204) == ""
     end
   end
 

@@ -136,13 +136,26 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   def show(conn, %{"id" => id}) do
-    paste = Pastes.get_paste!(id)
-    render(conn, :show, paste: paste)
+    case Ecto.UUID.cast(id) do
+      {:ok, paste_id} ->
+        case Pastes.get_paste(paste_id) do
+          nil ->
+            render_paste_not_found(conn)
+
+          paste ->
+            render(conn, :show, paste: paste)
+        end
+
+      :error ->
+        render_invalid_paste_id(conn)
+    end
   end
 
   def delete(conn, %{"id" => id}) do
-    paste = Pastes.get_paste!(id)
-    {:ok, _paste} = Pastes.delete_paste(paste)
+    with {:ok, paste_id} <- Ecto.UUID.cast(id),
+         %{} = paste <- Pastes.get_paste(paste_id) do
+      {:ok, _paste} = Pastes.delete_paste(paste)
+    end
 
     send_resp(conn, :no_content, "")
   end
@@ -165,6 +178,18 @@ defmodule TextbinWeb.ApiV1.PasteController do
         detail: "Paste data exceeds the maximum size of #{max_paste_bytes()} bytes"
       }
     })
+  end
+
+  defp render_invalid_paste_id(conn) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{errors: %{detail: "Paste id must be a valid UUID"}})
+  end
+
+  defp render_paste_not_found(conn) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{errors: %{detail: "Paste not found"}})
   end
 
   defp render_changeset_errors(conn, changeset) do

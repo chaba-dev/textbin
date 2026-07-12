@@ -1,0 +1,15 @@
+[package]
+name = "textbin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+lumis.workspace = true
+textbin-client.workspace = true
+
+[[bin]]
+name = "textbin"
+path = "src/main.rs"

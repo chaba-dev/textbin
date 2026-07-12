@@ -37,3 +37,8 @@ npm-debug.log
 
 /.direnv/
 /.nix/
+
+
+# Added by cargo
+
+/target
