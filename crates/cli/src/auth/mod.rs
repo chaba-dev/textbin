@@ -11,7 +11,7 @@ pub enum Commands {
     Logout,
 }
 
-pub fn handle(command: &Commands) {
+pub fn handle(command: &Commands) -> anyhow::Result<()> {
     match command {
         Commands::Login => login::handle(),
         Commands::Logout => logout::handle(),

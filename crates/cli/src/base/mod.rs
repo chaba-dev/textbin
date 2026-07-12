@@ -17,9 +17,9 @@ pub enum Commands {
     },
 }
 
-pub fn handle(command: &Commands) {
+pub fn handle(command: &Commands) -> anyhow::Result<()> {
     match command {
-        Commands::Show { id } => show::handle(&id),
+        Commands::Show { id } => show::handle(id),
         Commands::Create { data } => create::handle(data),
     }
 }

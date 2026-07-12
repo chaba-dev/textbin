@@ -3,6 +3,7 @@ mod base;
 
 use std::path::PathBuf;
 
+use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -25,13 +26,11 @@ enum Commands {
     Auth(auth::Commands),
 }
 
-fn main() {
+fn main() -> Result<()> {
     if std::env::args_os().len() == 1 {
-        TextbinCli::command()
-            .print_help()
-            .expect("failed to print help");
+        TextbinCli::command().print_help()?;
         println!();
-        return;
+        return Ok(());
     }
 
     let cli = TextbinCli::parse();
@@ -43,8 +42,10 @@ fn main() {
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
-        Some(Commands::Base(command)) => base::handle(command),
-        Some(Commands::Auth(command)) => auth::handle(command),
+        Some(Commands::Base(command)) => base::handle(command)?,
+        Some(Commands::Auth(command)) => auth::handle(command)?,
         None => {}
     }
+
+    Ok(())
 }
