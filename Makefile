@@ -5,6 +5,7 @@ dev:
 .PHONY: test
 test:
 	mix test
+	cargo test
 
 .PHONY: lint
 lint:
