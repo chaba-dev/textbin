@@ -152,8 +152,10 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   def delete(conn, %{"id" => id}) do
-    paste = Pastes.get_paste!(id)
-    {:ok, _paste} = Pastes.delete_paste(paste)
+    with {:ok, paste_id} <- Ecto.UUID.cast(id),
+         %{} = paste <- Pastes.get_paste(paste_id) do
+      {:ok, _paste} = Pastes.delete_paste(paste)
+    end
 
     send_resp(conn, :no_content, "")
   end

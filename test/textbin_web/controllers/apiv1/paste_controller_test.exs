@@ -182,6 +182,20 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert response(conn, 204)
       assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(paste.id) end
     end
+
+    test "returns no content when id is not a UUID", %{conn: conn} do
+      conn = delete(conn, ~p"/api/v1/pastes/not-a-uuid")
+
+      assert response(conn, 204) == ""
+    end
+
+    test "returns no content when paste does not exist", %{conn: conn} do
+      missing_id = "00000000-0000-0000-0000-000000000000"
+
+      conn = delete(conn, ~p"/api/v1/pastes/#{missing_id}")
+
+      assert response(conn, 204) == ""
+    end
   end
 
   defp assert_millisecond_timestamp(timestamp) do
