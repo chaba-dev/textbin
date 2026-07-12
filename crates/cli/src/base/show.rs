@@ -42,19 +42,15 @@ fn print_paste(paste: &Paste) -> Result<()> {
         paste.data.clone()
     };
 
-    print_code_area(&body, &paste.syntax_highlight);
+    print_code_area(&body);
     Ok(())
 }
 
-fn print_code_area(content: &str, syntax: &str) {
-    println!("```{syntax}");
+fn print_code_area(content: &str) {
     print!("{content}");
-
     if !content.ends_with('\n') {
         println!();
     }
-
-    println!("```");
 }
 
 fn highlight_paste(paste: &Paste) -> Result<String> {
