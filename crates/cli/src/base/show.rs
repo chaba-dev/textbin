@@ -1,4 +1,7 @@
 use anyhow::{Context, Result};
+use lumis::formatters::{TerminalBackground, TerminalBuilder};
+use lumis::languages::Language;
+use lumis::themes;
 use serde::Deserialize;
 
 const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4000";
@@ -11,6 +14,7 @@ struct ShowResponse {
 #[derive(Deserialize)]
 struct Paste {
     data: String,
+    syntax_highlight: String,
 }
 
 pub fn handle(id: &str) -> Result<()> {
@@ -24,7 +28,21 @@ pub fn handle(id: &str) -> Result<()> {
         .json()
         .context("failed to decode paste response")?;
 
-    println!("{}", response.data.data);
+    let highlighted = highlight_paste(&response.data)?;
+    println!("{highlighted}");
 
     Ok(())
+}
+
+fn highlight_paste(paste: &Paste) -> Result<String> {
+    let language = Language::guess(Some(&paste.syntax_highlight), &paste.data);
+    let theme = themes::get("onedark").context("failed to load Lumis theme: onedark")?;
+    let formatter = TerminalBuilder::new()
+        .language(language)
+        .theme(Some(theme))
+        .background(TerminalBackground::Inherit)
+        .build()
+        .context("failed to build terminal syntax highlighter")?;
+
+    Ok(lumis::highlight(&paste.data, formatter))
 }
