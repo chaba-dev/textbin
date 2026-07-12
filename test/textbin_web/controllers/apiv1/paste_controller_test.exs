@@ -148,6 +148,18 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                }
              } = json_response(conn, 400)
     end
+
+    test "returns not found when paste does not exist", %{conn: conn} do
+      missing_id = "00000000-0000-0000-0000-000000000000"
+
+      conn = get(conn, ~p"/api/v1/pastes/#{missing_id}")
+
+      assert %{
+               "errors" => %{
+                 "detail" => "Paste not found"
+               }
+             } = json_response(conn, 404)
+    end
   end
 
   describe "update paste" do

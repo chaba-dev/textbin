@@ -12,6 +12,8 @@ defmodule Textbin.Pastes do
     Repo.all(from p in Paste, order_by: [desc: p.inserted_at])
   end
 
+  def get_paste(id), do: Repo.get(Paste, id)
+
   def get_paste!(id), do: Repo.get!(Paste, id)
 
   def create_paste(attrs \\ %{}) do
