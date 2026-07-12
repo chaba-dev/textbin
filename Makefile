@@ -11,7 +11,7 @@ ex-test:
 
 .PHONY: rs-test
 rs-test:
-	cargo test
+	cargo test --workspace
 
 .PHONY: lint
 lint: ex-lint rs-lint
@@ -22,7 +22,11 @@ ex-lint:
 
 .PHONY: rs-lint
 rs-lint:
-	cargo clippy --all-features -- -D warnings
+	cargo clippy --workspace --all-features -- -D warnings
+
+.PHONY: rs-fmt
+rs-fmt:
+	cargo fmt --check
 
 .PHONY: up
 up:

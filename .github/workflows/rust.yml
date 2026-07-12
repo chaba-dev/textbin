@@ -25,7 +25,7 @@ jobs:
         with:
           components: clippy
       - name: Clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features -- -D warnings
 
   fmt:
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -62,4 +62,4 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Test
-        run: cargo test
+        run: cargo test --workspace
