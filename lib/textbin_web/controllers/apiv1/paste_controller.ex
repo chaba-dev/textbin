@@ -136,8 +136,14 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   def show(conn, %{"id" => id}) do
-    paste = Pastes.get_paste!(id)
-    render(conn, :show, paste: paste)
+    case Ecto.UUID.cast(id) do
+      {:ok, paste_id} ->
+        paste = Pastes.get_paste!(paste_id)
+        render(conn, :show, paste: paste)
+
+      :error ->
+        render_invalid_paste_id(conn)
+    end
   end
 
   def delete(conn, %{"id" => id}) do
@@ -165,6 +171,12 @@ defmodule TextbinWeb.ApiV1.PasteController do
         detail: "Paste data exceeds the maximum size of #{max_paste_bytes()} bytes"
       }
     })
+  end
+
+  defp render_invalid_paste_id(conn) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{errors: %{detail: "Paste id must be a valid UUID"}})
   end
 
   defp render_changeset_errors(conn, changeset) do

@@ -138,6 +138,18 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
   end
 
+  describe "show paste" do
+    test "returns bad request when id is not a UUID", %{conn: conn} do
+      conn = get(conn, ~p"/api/v1/pastes/not-a-uuid")
+
+      assert %{
+               "errors" => %{
+                 "detail" => "Paste id must be a valid UUID"
+               }
+             } = json_response(conn, 400)
+    end
+  end
+
   describe "update paste" do
     test "is not routable", %{conn: conn} do
       {:ok, paste} = Pastes.create_paste(%{data: "some data"})
