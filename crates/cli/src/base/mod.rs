@@ -6,18 +6,20 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum Commands {
     /// Retrieve and print a paste
-    Show,
+    Show {
+        /// The identifier/uuid of the paste
+        id: String,
+    },
     /// Create a new paste
     Create {
         /// data to paste.
-        #[arg(value_name = "DATA")]
         data: String,
     },
 }
 
 pub fn handle(command: &Commands) {
     match command {
-        Commands::Show => show::handle(),
+        Commands::Show { id } => show::handle(&id),
         Commands::Create { data } => create::handle(data),
     }
 }
