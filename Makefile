@@ -3,13 +3,26 @@ dev:
 	mix phx.server
 
 .PHONY: test
-test:
+test: ex-test rs-test
+
+.PHONY: ex-test
+ex-test:
 	mix test
+
+.PHONY: rs-test
+rs-test:
 	cargo test
 
 .PHONY: lint
-lint:
+lint: ex-lint rs-lint
+
+.PHONY: ex-lint
+ex-lint:
 	mix credo
+
+.PHONY: rs-lint
+rs-lint:
+	cargo clippy --all-features -- -D warnings
 
 .PHONY: up
 up:

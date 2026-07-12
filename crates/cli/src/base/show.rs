@@ -34,7 +34,7 @@ pub fn handle(args: &ShowArgs) -> Result<()> {
     let url = format!(
         "{}/api/v1/pastes/{}",
         base_url.trim_end_matches('/'),
-        &args.id,
+        args.id,
     );
 
     let response: ShowResponse = reqwest::blocking::get(&url)
