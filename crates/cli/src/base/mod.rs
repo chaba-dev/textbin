@@ -3,13 +3,12 @@ mod show;
 
 use clap::Subcommand;
 
+use crate::base::show::ShowArgs;
+
 #[derive(Subcommand)]
 pub enum Commands {
     /// Retrieve and print a paste
-    Show {
-        /// The identifier/uuid of the paste
-        id: String,
-    },
+    Show(ShowArgs),
     /// Create a new paste
     Create {
         /// data to paste.
@@ -19,7 +18,7 @@ pub enum Commands {
 
 pub fn handle(command: &Commands) -> anyhow::Result<()> {
     match command {
-        Commands::Show { id } => show::handle(id),
+        Commands::Show(args) => show::handle(&args),
         Commands::Create { data } => create::handle(data),
     }
 }

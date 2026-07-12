@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use clap::Args;
 use lumis::formatters::TerminalBuilder;
 use lumis::languages::Language;
 use lumis::themes;
@@ -6,6 +7,16 @@ use serde::Deserialize;
 use std::io::{self, IsTerminal};
 
 const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4000";
+
+#[derive(Args)]
+pub struct ShowArgs {
+    /// The identifier/uuid of the paste
+    id: String,
+
+    /// disable color output
+    #[arg(long, default_value_t = false)]
+    no_color: bool,
+}
 
 #[derive(Deserialize)]
 struct ShowResponse {
@@ -18,9 +29,13 @@ struct Paste {
     syntax_highlight: String,
 }
 
-pub fn handle(id: &str) -> Result<()> {
+pub fn handle(args: &ShowArgs) -> Result<()> {
     let base_url = std::env::var("TEXTBIN_URL").unwrap_or_else(|_| DEFAULT_TEXTBIN_URL.to_string());
-    let url = format!("{}/api/v1/pastes/{id}", base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/v1/pastes/{}",
+        base_url.trim_end_matches('/'),
+        &args.id,
+    );
 
     let response: ShowResponse = reqwest::blocking::get(&url)
         .with_context(|| format!("failed to request paste from {url}"))?
@@ -29,13 +44,9 @@ pub fn handle(id: &str) -> Result<()> {
         .json()
         .context("failed to decode paste response")?;
 
-    print_paste(&response.data)?;
+    let paste = &response.data;
 
-    Ok(())
-}
-
-fn print_paste(paste: &Paste) -> Result<()> {
-    let use_color = io::stdout().is_terminal();
+    let use_color = io::stdout().is_terminal() && !args.no_color;
     let body = if use_color {
         highlight_paste(paste)?
     } else {
@@ -43,6 +54,7 @@ fn print_paste(paste: &Paste) -> Result<()> {
     };
 
     print_code_area(&body);
+
     Ok(())
 }
 
