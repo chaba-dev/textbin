@@ -46,19 +46,31 @@ impl Client {
         Ok(response.data)
     }
 
-    pub fn create_paste(&self, data: String) -> Result<CreatedPaste, Error> {
-        self.create_paste_body(Body::from(data))
+    pub fn create_paste(
+        &self,
+        data: String,
+        syntax_highlight: Option<&str>,
+    ) -> Result<CreatedPaste, Error> {
+        self.create_paste_body(Body::from(data), syntax_highlight)
     }
 
-    pub fn create_paste_stream<R>(&self, reader: R) -> Result<CreatedPaste, Error>
+    pub fn create_paste_stream<R>(
+        &self,
+        reader: R,
+        syntax_highlight: Option<&str>,
+    ) -> Result<CreatedPaste, Error>
     where
         R: Read + Send + 'static,
     {
-        self.create_paste_body(Body::new(reader))
+        self.create_paste_body(Body::new(reader), syntax_highlight)
     }
 
-    fn create_paste_body(&self, body: Body) -> Result<CreatedPaste, Error> {
-        let url = format!("{}/api/v1/pastes", self.base_url);
+    fn create_paste_body(
+        &self,
+        body: Body,
+        syntax_highlight: Option<&str>,
+    ) -> Result<CreatedPaste, Error> {
+        let url = self.create_paste_url(syntax_highlight);
         let response = self
             .http
             .post(&url)
@@ -73,6 +85,20 @@ impl Client {
         let response = decode_response::<CreateResponse>(&url, response)?;
 
         Ok(response.data)
+    }
+
+    fn create_paste_url(&self, syntax_highlight: Option<&str>) -> String {
+        let url = format!("{}/api/v1/pastes", self.base_url);
+
+        match syntax_highlight.filter(|syntax| !syntax.is_empty()) {
+            Some(syntax_highlight) => {
+                let mut url = reqwest::Url::parse(&url).expect("client base_url must be valid URL");
+                url.query_pairs_mut()
+                    .append_pair("syntax_highlight", syntax_highlight);
+                url.into()
+            }
+            None => url,
+        }
     }
 }
 
@@ -201,6 +227,30 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(client.base_url, "http://localhost:4000");
+    }
+
+    #[test]
+    fn create_paste_url_omits_empty_syntax_highlight() {
+        let client = Client::new("http://localhost:4000/");
+
+        assert_eq!(
+            client.create_paste_url(None),
+            "http://localhost:4000/api/v1/pastes"
+        );
+        assert_eq!(
+            client.create_paste_url(Some("")),
+            "http://localhost:4000/api/v1/pastes"
+        );
+    }
+
+    #[test]
+    fn create_paste_url_adds_syntax_highlight_query_param() {
+        let client = Client::new("http://localhost:4000/");
+
+        assert_eq!(
+            client.create_paste_url(Some("rust")),
+            "http://localhost:4000/api/v1/pastes?syntax_highlight=rust"
+        );
     }
 
     #[test]
