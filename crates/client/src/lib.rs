@@ -1,14 +1,18 @@
 use reqwest::StatusCode;
+use reqwest::blocking::Body;
+use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::error;
 use std::fmt;
+use std::io::Read;
 
 const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4000";
 
 #[derive(Debug, Clone)]
 pub struct Client {
     base_url: String,
+    http: reqwest::blocking::Client,
 }
 
 impl Client {
@@ -22,30 +26,79 @@ impl Client {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
+            http: reqwest::blocking::Client::new(),
         }
     }
 
     pub fn get_paste(&self, id: &str) -> Result<Paste, Error> {
         let url = format!("{}/api/v1/pastes/{id}", self.base_url);
-        let response = reqwest::blocking::get(&url).map_err(|source| Error::Request {
-            url: url.clone(),
-            source,
-        })?;
+        let response = self
+            .http
+            .get(&url)
+            .send()
+            .map_err(|source| Error::Request {
+                url: url.clone(),
+                source,
+            })?;
 
-        let status = response.status();
-        let body = response.text().map_err(|source| Error::ReadResponse {
-            url: url.clone(),
-            source,
-        })?;
-
-        if !status.is_success() {
-            return Err(Error::Api(format_api_error(status, &body)));
-        }
-
-        let response = serde_json::from_str::<ShowResponse>(&body)
-            .map_err(|source| Error::Decode { source })?;
+        let response = decode_response::<ShowResponse>(&url, response)?;
 
         Ok(response.data)
+    }
+
+    pub fn create_paste(
+        &self,
+        data: String,
+        syntax_highlight: Option<&str>,
+    ) -> Result<CreatedPaste, Error> {
+        self.create_paste_body(Body::from(data), syntax_highlight)
+    }
+
+    pub fn create_paste_stream<R>(
+        &self,
+        reader: R,
+        syntax_highlight: Option<&str>,
+    ) -> Result<CreatedPaste, Error>
+    where
+        R: Read + Send + 'static,
+    {
+        self.create_paste_body(Body::new(reader), syntax_highlight)
+    }
+
+    fn create_paste_body(
+        &self,
+        body: Body,
+        syntax_highlight: Option<&str>,
+    ) -> Result<CreatedPaste, Error> {
+        let url = self.create_paste_url(syntax_highlight);
+        let response = self
+            .http
+            .post(&url)
+            .header(CONTENT_TYPE, "text/plain")
+            .body(body)
+            .send()
+            .map_err(|source| Error::Request {
+                url: url.clone(),
+                source,
+            })?;
+
+        let response = decode_response::<CreateResponse>(&url, response)?;
+
+        Ok(response.data)
+    }
+
+    fn create_paste_url(&self, syntax_highlight: Option<&str>) -> String {
+        let url = format!("{}/api/v1/pastes", self.base_url);
+
+        match syntax_highlight.filter(|syntax| !syntax.is_empty()) {
+            Some(syntax_highlight) => {
+                let mut url = reqwest::Url::parse(&url).expect("client base_url must be valid URL");
+                url.query_pairs_mut()
+                    .append_pair("syntax_highlight", syntax_highlight);
+                url.into()
+            }
+            None => url,
+        }
     }
 }
 
@@ -54,9 +107,20 @@ struct ShowResponse {
     data: Paste,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateResponse {
+    data: CreatedPaste,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Paste {
     pub data: String,
+    pub syntax_highlight: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreatedPaste {
+    pub id: String,
     pub syntax_highlight: String,
 }
 
@@ -103,6 +167,30 @@ impl error::Error for Error {
     }
 }
 
+fn decode_response<T>(url: &str, response: reqwest::blocking::Response) -> Result<T, Error>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let status = response.status();
+    let body = response.text().map_err(|source| Error::ReadResponse {
+        url: url.to_string(),
+        source,
+    })?;
+
+    if !status.is_success() {
+        return Err(Error::Api(format_api_error(status, &body)));
+    }
+
+    decode_json(&body)
+}
+
+fn decode_json<T>(body: &str) -> Result<T, Error>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    serde_json::from_str(body).map_err(|source| Error::Decode { source })
+}
+
 fn format_api_error(status: StatusCode, body: &str) -> String {
     let detail = serde_json::from_str::<ApiErrorResponse>(body)
         .ok()
@@ -142,6 +230,30 @@ mod tests {
     }
 
     #[test]
+    fn create_paste_url_omits_empty_syntax_highlight() {
+        let client = Client::new("http://localhost:4000/");
+
+        assert_eq!(
+            client.create_paste_url(None),
+            "http://localhost:4000/api/v1/pastes"
+        );
+        assert_eq!(
+            client.create_paste_url(Some("")),
+            "http://localhost:4000/api/v1/pastes"
+        );
+    }
+
+    #[test]
+    fn create_paste_url_adds_syntax_highlight_query_param() {
+        let client = Client::new("http://localhost:4000/");
+
+        assert_eq!(
+            client.create_paste_url(Some("rust")),
+            "http://localhost:4000/api/v1/pastes?syntax_highlight=rust"
+        );
+    }
+
+    #[test]
     fn format_api_error_uses_detail_from_json_response() {
         let message = format_api_error(
             StatusCode::BAD_REQUEST,
@@ -169,5 +281,16 @@ mod tests {
         let message = format_api_error(StatusCode::INTERNAL_SERVER_ERROR, "not json");
 
         assert_eq!(message, "paste request failed: 500 Internal Server Error");
+    }
+
+    #[test]
+    fn decodes_create_response_metadata() {
+        let response = decode_json::<CreateResponse>(
+            r#"{"data":{"id":"00000000-0000-0000-0000-000000000000","syntax_highlight":"plain"}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(response.data.id, "00000000-0000-0000-0000-000000000000");
+        assert_eq!(response.data.syntax_highlight, "plain");
     }
 }
