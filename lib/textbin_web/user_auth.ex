@@ -1,4 +1,8 @@
 defmodule TextbinWeb.UserAuth do
+  @moduledoc """
+  Controller plugs and LiveView hooks for user authentication.
+  """
+
   use TextbinWeb, :verified_routes
 
   import Plug.Conn

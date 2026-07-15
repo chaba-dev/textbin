@@ -1,4 +1,8 @@
 defmodule Textbin.Accounts.UserNotifier do
+  @moduledoc """
+  Delivers account-related emails to users.
+  """
+
   import Swoosh.Email
 
   alias Textbin.Mailer
