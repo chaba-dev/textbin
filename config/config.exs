@@ -14,7 +14,7 @@ config :textbin, :scopes,
     assign_key: :current_scope,
     access_path: [:user, :id],
     schema_key: :user_id,
-    schema_type: :id,
+    schema_type: :binary_id,
     schema_table: :users,
     test_data_fixture: Textbin.AccountsFixtures,
     test_setup_helper: :register_and_log_in_user
