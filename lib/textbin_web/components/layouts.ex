@@ -35,33 +35,6 @@ defmodule TextbinWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </header>
-
     <main class="px-4 py-20 sm:px-6 lg:px-8">
       <div class="mx-auto max-w-7xl space-y-4">
         {render_slot(@inner_block)}
@@ -69,6 +42,49 @@ defmodule TextbinWeb.Layouts do
     </main>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  attr :current_scope, :map,
+    default: nil,
+    doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
+
+  def app_header(assigns) do
+    ~H"""
+    <header id="app-header" class="navbar gap-4 px-4 sm:px-6 lg:px-8">
+      <div class="flex-1">
+        <a href="/" class="flex-1 flex w-fit items-center">
+          <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
+        </a>
+      </div>
+      <div class="flex-none">
+        <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">
+          <li>
+            <.theme_toggle />
+          </li>
+          <li>
+            <%= if @current_scope do %>
+              <.link href={~p"/users/settings"} class="btn btn-ghost max-w-48 truncate">
+                {@current_scope.user.email}
+              </.link>
+            <% else %>
+              <.link href={~p"/users/log-in"} class="btn btn-ghost">Log in</.link>
+            <% end %>
+          </li>
+          <%= if @current_scope do %>
+            <li>
+              <.link href={~p"/users/log-out"} method="delete" class="btn btn-primary">
+                Log out
+              </.link>
+            </li>
+          <% else %>
+            <li>
+              <.link href={~p"/users/register"} class="btn btn-primary">Register</.link>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    </header>
     """
   end
 
