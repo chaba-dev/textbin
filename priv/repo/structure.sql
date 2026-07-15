@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict wf0KbUcICeDSdjvQmJmnbWbSx0pMBWacNrzETsGGy2Vlvbo2ylZgjYYZclrasSo
+\restrict mvzD7zyEM4V3pRDIBIZJpJ1MFDmbQNc8rDia5klqG4hlXyGa5myiwdzBfdLPw43
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -18,6 +18,20 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: citext; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION citext; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION citext IS 'data type for case-insensitive character strings';
+
 
 SET default_tablespace = '';
 
@@ -47,6 +61,36 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.users (
+    id uuid NOT NULL,
+    email public.citext NOT NULL,
+    hashed_password character varying(255),
+    confirmed_at timestamp(0) without time zone,
+    inserted_at timestamp(0) without time zone NOT NULL,
+    updated_at timestamp(0) without time zone NOT NULL
+);
+
+
+--
+-- Name: users_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.users_tokens (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    token bytea NOT NULL,
+    context character varying(255) NOT NULL,
+    sent_to character varying(255),
+    authenticated_at timestamp(0) without time zone,
+    expires_at timestamp(0) without time zone,
+    inserted_at timestamp(0) without time zone NOT NULL
+);
+
+
+--
 -- Name: pastes pastes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -63,10 +107,56 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: users_tokens users_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users_tokens
+    ADD CONSTRAINT users_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: users_email_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX users_email_index ON public.users USING btree (email);
+
+
+--
+-- Name: users_tokens_context_token_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX users_tokens_context_token_index ON public.users_tokens USING btree (context, token);
+
+
+--
+-- Name: users_tokens_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX users_tokens_user_id_index ON public.users_tokens USING btree (user_id);
+
+
+--
+-- Name: users_tokens users_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users_tokens
+    ADD CONSTRAINT users_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict wf0KbUcICeDSdjvQmJmnbWbSx0pMBWacNrzETsGGy2Vlvbo2ylZgjYYZclrasSo
+\unrestrict mvzD7zyEM4V3pRDIBIZJpJ1MFDmbQNc8rDia5klqG4hlXyGa5myiwdzBfdLPw43
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
+INSERT INTO public."schema_migrations" (version) VALUES (20260715060411);
