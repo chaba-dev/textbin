@@ -61,12 +61,6 @@ defmodule TextbinWeb.Layouts do
       <div class="flex-none">
         <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">
           <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
             <.theme_toggle />
           </li>
           <li>
