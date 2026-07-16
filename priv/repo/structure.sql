@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict VK7kOo47Mkb1ZSP1AgAvyxyRDkyaTb8QvRPKeK24wREx7frXMd80ucSI8g3Guwb
+\restrict lZ3xvpzrbmSytMx0XUjGOp0MV1hdK1u4NuLde8Apa5bioMuS7FZpxMKDalgGLb2
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -46,7 +46,8 @@ CREATE TABLE public.pastes (
     data text NOT NULL,
     inserted_at timestamp(3) without time zone NOT NULL,
     updated_at timestamp(3) without time zone NOT NULL,
-    syntax_highlight text DEFAULT 'plain'::text NOT NULL
+    syntax_highlight text DEFAULT 'plain'::text NOT NULL,
+    user_id uuid NOT NULL
 );
 
 
@@ -125,6 +126,13 @@ ALTER TABLE ONLY public.users_tokens
 
 
 --
+-- Name: pastes_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_user_id_index ON public.pastes USING btree (user_id);
+
+
+--
 -- Name: users_email_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -146,6 +154,14 @@ CREATE INDEX users_tokens_user_id_index ON public.users_tokens USING btree (user
 
 
 --
+-- Name: pastes pastes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pastes
+    ADD CONSTRAINT pastes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: users_tokens users_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -157,9 +173,10 @@ ALTER TABLE ONLY public.users_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VK7kOo47Mkb1ZSP1AgAvyxyRDkyaTb8QvRPKeK24wREx7frXMd80ucSI8g3Guwb
+\unrestrict lZ3xvpzrbmSytMx0XUjGOp0MV1hdK1u4NuLde8Apa5bioMuS7FZpxMKDalgGLb2
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
 INSERT INTO public."schema_migrations" (version) VALUES (20260715060411);
 INSERT INTO public."schema_migrations" (version) VALUES (20260715070000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260716080000);
