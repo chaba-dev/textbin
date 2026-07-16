@@ -370,6 +370,51 @@ defmodule Textbin.AccountsTest do
     end
   end
 
+  describe "API tokens" do
+    test "creates and lists API tokens" do
+      user = user_fixture()
+
+      assert {:ok, {token, user_token}} =
+               Accounts.create_user_api_token(user, %{"name" => "CLI"})
+
+      assert token =~ "txb_"
+      assert user_token.name == "CLI"
+      assert user_token.context == "api"
+      refute user_token.token == token
+
+      assert [listed_token] = Accounts.list_user_api_tokens(user)
+      assert listed_token.id == user_token.id
+      assert listed_token.name == "CLI"
+    end
+
+    test "authenticates by API token and updates last_used_at" do
+      user = user_fixture()
+      {:ok, {token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
+
+      assert %{id: user_id} = Accounts.get_user_by_api_token(token)
+      assert user_id == user.id
+
+      assert %{last_used_at: %DateTime{}} = Repo.get!(UserToken, user_token.id)
+    end
+
+    test "does not authenticate invalid API tokens" do
+      refute Accounts.get_user_by_api_token("txb_invalid")
+      refute Accounts.get_user_by_api_token("invalid")
+    end
+
+    test "deletes API tokens for the given user only" do
+      user = user_fixture()
+      other_user = user_fixture()
+      {:ok, {_token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
+
+      assert Accounts.delete_user_api_token(other_user, user_token.id) == {:error, :not_found}
+      assert Repo.get!(UserToken, user_token.id)
+
+      assert Accounts.delete_user_api_token(user, user_token.id) == :ok
+      refute Repo.get(UserToken, user_token.id)
+    end
+  end
+
   describe "deliver_login_instructions/2" do
     setup do
       %{user: unconfirmed_user_fixture()}
