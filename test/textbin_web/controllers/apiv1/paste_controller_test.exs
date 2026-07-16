@@ -11,9 +11,22 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   @create_attrs %{data: "some data", syntax_highlight: "elixir"}
   @invalid_attrs %{data: nil}
 
+  setup %{conn: conn} do
+    user = user_fixture()
+    scope = user_scope_fixture(user)
+    {:ok, {token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
+
+    %{
+      conn: put_req_header(conn, "authorization", "Bearer #{token}"),
+      scope: scope,
+      user_token: user_token
+    }
+  end
+
   describe "index" do
-    test "lists all pastes", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
+    test "lists scoped pastes", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "some data"})
+      {:ok, _other_paste} = Pastes.create_paste(user_scope_fixture(), %{data: "other data"})
 
       conn = get(conn, ~p"/api/v1/pastes")
 
@@ -23,17 +36,23 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert data["id"] == paste.id
       assert data["syntax_highlight"] == "plain"
     end
+
+    test "requires an API token", %{conn: _conn} do
+      conn = get(build_conn(), ~p"/api/v1/pastes")
+
+      assert %{"errors" => %{"detail" => "API token required"}} = json_response(conn, 401)
+    end
   end
 
   describe "create paste" do
-    test "renders paste when data is valid", %{conn: conn} do
+    test "renders paste when data is valid", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
 
       assert %{"id" => id, "syntax_highlight" => "elixir"} =
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
-      assert_stored_paste(id, "some data", "elixir")
+      assert_stored_paste(scope, id, "some data", "elixir")
 
       conn = get(conn, ~p"/api/v1/pastes/#{id}")
 
@@ -49,17 +68,17 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert_millisecond_timestamp(updated_at)
     end
 
-    test "renders paste from flat JSON data", %{conn: conn} do
+    test "renders paste from flat JSON data", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 
       assert %{"id" => id, "syntax_highlight" => "elixir"} =
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
-      assert_stored_paste(id, "some data", "elixir")
+      assert_stored_paste(scope, id, "some data", "elixir")
     end
 
-    test "renders paste from JSON string body", %{conn: conn} do
+    test "renders paste from JSON string body", %{conn: conn, scope: scope} do
       conn =
         conn
         |> put_req_header("content-type", "application/json")
@@ -68,10 +87,10 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
       assert response_data["syntax_highlight"] == "plain"
       refute Map.has_key?(response_data, "data")
-      assert_stored_paste(id, "json string data", "plain")
+      assert_stored_paste(scope, id, "json string data", "plain")
     end
 
-    test "renders paste from raw request body", %{conn: conn} do
+    test "renders paste from raw request body", %{conn: conn, scope: scope} do
       conn =
         conn
         |> put_req_header("content-type", "text/plain")
@@ -80,10 +99,10 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
       assert response_data["syntax_highlight"] == "plain"
       refute Map.has_key?(response_data, "data")
-      assert_stored_paste(id, "streamed data", "plain")
+      assert_stored_paste(scope, id, "streamed data", "plain")
     end
 
-    test "renders paste from raw request body with syntax highlight", %{conn: conn} do
+    test "renders paste from raw request body with syntax highlight", %{conn: conn, scope: scope} do
       conn =
         conn
         |> put_req_header("content-type", "text/plain")
@@ -93,35 +112,29 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
-      assert_stored_paste(id, "streamed data", "elixir")
+      assert_stored_paste(scope, id, "streamed data", "elixir")
     end
 
-    test "accepts a valid API bearer token", %{conn: conn} do
-      user = user_fixture()
-      {:ok, {token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
-
-      conn =
-        conn
-        |> put_req_header("authorization", "Bearer #{token}")
-        |> post(~p"/api/v1/pastes", paste: @create_attrs)
+    test "accepts a valid API bearer token", %{conn: conn, scope: scope, user_token: user_token} do
+      conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
 
       assert %{"id" => id} = json_response(conn, 201)["data"]
-      assert_stored_paste(id, "some data", "elixir")
+      assert_stored_paste(scope, id, "some data", "elixir")
       assert %{last_used_at: %DateTime{}} = Textbin.Repo.get!(UserToken, user_token.id)
     end
 
-    test "rejects an invalid API bearer token", %{conn: conn} do
+    test "rejects an invalid API bearer token" do
       conn =
-        conn
+        build_conn()
         |> put_req_header("authorization", "Bearer txb_invalid")
         |> post(~p"/api/v1/pastes", paste: @create_attrs)
 
       assert %{"errors" => %{"detail" => "Invalid API token"}} = json_response(conn, 401)
     end
 
-    test "rejects a malformed authorization header", %{conn: conn} do
+    test "rejects a malformed authorization header" do
       conn =
-        conn
+        build_conn()
         |> put_req_header("authorization", "Token invalid")
         |> post(~p"/api/v1/pastes", paste: @create_attrs)
 
@@ -200,24 +213,34 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   end
 
   describe "update paste" do
-    test "is not routable", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
+    test "is not routable", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "some data"})
 
       conn = patch(conn, ~p"/api/v1/pastes/#{paste.id}", paste: %{data: "updated data"})
 
       assert response(conn, 404)
-      assert_stored_paste(paste.id, "some data", "plain")
+      assert_stored_paste(scope, paste.id, "some data", "plain")
     end
   end
 
   describe "delete paste" do
-    test "deletes chosen paste", %{conn: conn} do
-      {:ok, paste} = Pastes.create_paste(%{data: "some data"})
+    test "deletes chosen paste", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "some data"})
 
       conn = delete(conn, ~p"/api/v1/pastes/#{paste.id}")
 
       assert response(conn, 204)
-      assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(paste.id) end
+      assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
+    end
+
+    test "does not delete another user's paste", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      {:ok, paste} = Pastes.create_paste(other_scope, %{data: "other user data"})
+
+      conn = delete(conn, ~p"/api/v1/pastes/#{paste.id}")
+
+      assert response(conn, 204)
+      assert Pastes.get_paste!(other_scope, paste.id)
     end
 
     test "returns no content when id is not a UUID", %{conn: conn} do
@@ -239,8 +262,8 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     assert timestamp =~ ~r/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
   end
 
-  defp assert_stored_paste(id, expected_data, expected_syntax_highlight) do
-    paste = Pastes.get_paste!(id)
+  defp assert_stored_paste(scope, id, expected_data, expected_syntax_highlight) do
+    paste = Pastes.get_paste!(scope, id)
 
     assert paste.data == expected_data
     assert paste.syntax_highlight == expected_syntax_highlight
