@@ -2,12 +2,27 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   use TextbinWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
+  import Textbin.AccountsFixtures
 
   alias Textbin.Pastes
 
-  test "lists pastes", %{conn: conn} do
+  setup %{conn: conn} do
+    user = user_fixture()
+    %{conn: log_in_user(conn, user), scope: user_scope_fixture(user)}
+  end
+
+  test "redirects unauthenticated users to login" do
+    assert {:error, {:redirect, %{to: path, flash: flash}}} = live(build_conn(), ~p"/pastes")
+    assert path == ~p"/users/log-in"
+    assert %{"error" => "You must log in to access this page."} = flash
+  end
+
+  test "lists scoped pastes", %{conn: conn, scope: scope} do
     {:ok, paste} =
-      Pastes.create_paste(%{data: "live paste data", syntax_highlight: "elixir"})
+      Pastes.create_paste(scope, %{data: "live paste data", syntax_highlight: "elixir"})
+
+    {:ok, other_paste} =
+      Pastes.create_paste(user_scope_fixture(), %{data: "other user data"})
 
     {:ok, view, _html} = live(conn, ~p"/pastes")
 
@@ -16,6 +31,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "##{stream_id(paste)}", "elixir")
     assert has_element?(view, "##{stream_id(paste)} a[href='/pastes/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
+    refute has_element?(view, "##{stream_id(other_paste)}")
   end
 
   test "renders an empty state", %{conn: conn} do
@@ -25,9 +41,9 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#pastes-list", "No pastes yet.")
   end
 
-  test "shows an individual paste", %{conn: conn} do
+  test "shows an individual paste", %{conn: conn, scope: scope} do
     {:ok, paste} =
-      Pastes.create_paste(%{data: "individual paste data", syntax_highlight: "json"})
+      Pastes.create_paste(scope, %{data: "individual paste data", syntax_highlight: "json"})
 
     {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
 
@@ -39,9 +55,9 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "a[href='/pastes']", "Back to pastes")
   end
 
-  test "escapes paste data before rendering highlighted HTML", %{conn: conn} do
+  test "escapes paste data before rendering highlighted HTML", %{conn: conn, scope: scope} do
     {:ok, paste} =
-      Pastes.create_paste(%{
+      Pastes.create_paste(scope, %{
         data: "<script>alert('nope')</script>",
         syntax_highlight: "plain"
       })
@@ -53,8 +69,8 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     refute has_element?(view, "#paste-data script")
   end
 
-  test "deletes a paste from the list", %{conn: conn} do
-    {:ok, paste} = Pastes.create_paste(%{data: "delete from list"})
+  test "deletes a paste from the list", %{conn: conn, scope: scope} do
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "delete from list"})
 
     {:ok, view, _html} = live(conn, ~p"/pastes")
 
@@ -68,11 +84,11 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> render_click()
 
     refute has_element?(view, "##{stream_id(paste)}")
-    assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(paste.id) end
+    assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
   end
 
-  test "deletes a paste from the detail page", %{conn: conn} do
-    {:ok, paste} = Pastes.create_paste(%{data: "delete from detail"})
+  test "deletes a paste from the detail page", %{conn: conn, scope: scope} do
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "delete from detail"})
 
     {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
 
@@ -86,7 +102,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> render_click()
 
     assert_redirect(view, ~p"/pastes")
-    assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(paste.id) end
+    assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
   end
 
   defp stream_id(paste), do: "pastes-#{paste.id}"

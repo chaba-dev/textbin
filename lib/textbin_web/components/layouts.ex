@@ -52,32 +52,57 @@ defmodule TextbinWeb.Layouts do
   def app_header(assigns) do
     ~H"""
     <header id="app-header" class="navbar gap-4 px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center">
+      <div class="flex flex-1 items-center gap-8">
+        <a href="/" class="flex w-fit items-center">
           <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
         </a>
+        <%= if @current_scope do %>
+          <.link
+            href={~p"/pastes"}
+            class="text-sm font-medium text-base-content/70 hover:text-base-content"
+          >
+            Pastes
+          </.link>
+        <% end %>
       </div>
       <div class="flex-none">
         <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">
-          <li>
-            <.theme_toggle />
-          </li>
+          <%= unless @current_scope do %>
+            <li>
+              <.theme_toggle />
+            </li>
+          <% end %>
           <li>
             <%= if @current_scope do %>
-              <.link href={~p"/users/settings"} class="btn btn-ghost max-w-48 truncate">
-                {@current_scope.user.email}
-              </.link>
+              <details class="relative">
+                <summary class="btn btn-ghost max-w-56 cursor-pointer list-none truncate">
+                  {@current_scope.user.email}
+                </summary>
+                <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+                  <div class="truncate px-3 py-2 text-xs text-base-content/60">
+                    {@current_scope.user.email}
+                  </div>
+                  <div class="flex items-center justify-between gap-3 px-3 py-2">
+                    <span class="text-xs font-medium text-base-content/60">Theme</span>
+                    <.theme_toggle />
+                  </div>
+                  <.link href={~p"/users/settings"} class="btn btn-ghost btn-sm w-full justify-start">
+                    Settings
+                  </.link>
+                  <.link
+                    href={~p"/users/log-out"}
+                    method="delete"
+                    class="btn btn-ghost btn-sm w-full justify-start text-error hover:bg-error/10"
+                  >
+                    Log out
+                  </.link>
+                </div>
+              </details>
             <% else %>
               <.link href={~p"/users/log-in"} class="btn btn-ghost">Log in</.link>
             <% end %>
           </li>
-          <%= if @current_scope do %>
-            <li>
-              <.link href={~p"/users/log-out"} method="delete" class="btn btn-primary">
-                Log out
-              </.link>
-            </li>
-          <% else %>
+          <%= unless @current_scope do %>
             <li>
               <.link href={~p"/users/register"} class="btn btn-primary">Register</.link>
             </li>

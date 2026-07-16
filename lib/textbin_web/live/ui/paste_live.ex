@@ -9,11 +9,12 @@ defmodule TextbinWeb.UI.PasteLive do
   def mount(_params, _session, socket), do: {:ok, socket}
 
   def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
-    {:noreply, stream(socket, :pastes, Pastes.list_pastes(), reset: true)}
+    {:noreply,
+     stream(socket, :pastes, Pastes.list_pastes(socket.assigns.current_scope), reset: true)}
   end
 
   def handle_params(%{"id" => id}, _uri, %{assigns: %{live_action: :show}} = socket) do
-    paste = Pastes.get_paste!(id)
+    paste = Pastes.get_paste!(socket.assigns.current_scope, id)
 
     {:noreply,
      socket
@@ -22,15 +23,15 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :index}} = socket) do
-    paste = Pastes.get_paste!(id)
-    {:ok, _paste} = Pastes.delete_paste(paste)
+    paste = Pastes.get_paste!(socket.assigns.current_scope, id)
+    {:ok, _paste} = Pastes.delete_paste(socket.assigns.current_scope, paste)
 
     {:noreply, stream_delete(socket, :pastes, paste)}
   end
 
   def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :show}} = socket) do
-    paste = Pastes.get_paste!(id)
-    {:ok, _paste} = Pastes.delete_paste(paste)
+    paste = Pastes.get_paste!(socket.assigns.current_scope, id)
+    {:ok, _paste} = Pastes.delete_paste(socket.assigns.current_scope, paste)
 
     {:noreply,
      socket

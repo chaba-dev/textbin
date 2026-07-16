@@ -13,13 +13,15 @@ defmodule Textbin.Pastes.Paste do
     field :data, :string
     field :syntax_highlight, :string, default: "plain"
 
+    belongs_to :user, Textbin.Accounts.User
+
     timestamps()
   end
 
   def changeset(paste, attrs) do
     paste
     |> cast(attrs, [:data, :syntax_highlight])
-    |> validate_required([:data, :syntax_highlight])
+    |> validate_required([:data, :syntax_highlight, :user_id])
   end
 
   def utc_now_ms do
