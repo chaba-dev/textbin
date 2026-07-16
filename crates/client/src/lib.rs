@@ -1,6 +1,6 @@
 use reqwest::StatusCode;
 use reqwest::blocking::Body;
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::error;
@@ -12,6 +12,7 @@ const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4000";
 #[derive(Debug, Clone)]
 pub struct Client {
     base_url: String,
+    api_token: Option<String>,
     http: reqwest::blocking::Client,
 }
 
@@ -19,22 +20,29 @@ impl Client {
     pub fn from_env() -> Self {
         let base_url =
             std::env::var("TEXTBIN_URL").unwrap_or_else(|_| DEFAULT_TEXTBIN_URL.to_string());
+        let api_token = std::env::var("TEXTBIN_TOKEN").ok();
 
-        Self::new(base_url)
+        Self::new(base_url).with_api_token(api_token)
     }
 
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
+            api_token: None,
             http: reqwest::blocking::Client::new(),
         }
     }
 
+    pub fn with_api_token(mut self, api_token: Option<String>) -> Self {
+        self.api_token = api_token.filter(|token| !token.is_empty());
+        self
+    }
+
     pub fn get_paste(&self, id: &str) -> Result<Paste, Error> {
         let url = format!("{}/api/v1/pastes/{id}", self.base_url);
+        let request = self.http.get(&url);
         let response = self
-            .http
-            .get(&url)
+            .authorize(request)
             .send()
             .map_err(|source| Error::Request {
                 url: url.clone(),
@@ -71,11 +79,13 @@ impl Client {
         syntax_highlight: Option<&str>,
     ) -> Result<CreatedPaste, Error> {
         let url = self.create_paste_url(syntax_highlight);
-        let response = self
+        let request = self
             .http
             .post(&url)
             .header(CONTENT_TYPE, "text/plain")
-            .body(body)
+            .body(body);
+        let response = self
+            .authorize(request)
             .send()
             .map_err(|source| Error::Request {
                 url: url.clone(),
@@ -98,6 +108,16 @@ impl Client {
                 url.into()
             }
             None => url,
+        }
+    }
+
+    fn authorize(
+        &self,
+        request: reqwest::blocking::RequestBuilder,
+    ) -> reqwest::blocking::RequestBuilder {
+        match &self.api_token {
+            Some(api_token) => request.header(AUTHORIZATION, format!("Bearer {api_token}")),
+            None => request,
         }
     }
 }
@@ -227,6 +247,13 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(client.base_url, "http://localhost:4000");
+    }
+
+    #[test]
+    fn with_api_token_ignores_empty_tokens() {
+        let client = Client::new("http://localhost:4000/").with_api_token(Some(String::new()));
+
+        assert!(client.api_token.is_none());
     }
 
     #[test]
