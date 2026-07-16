@@ -65,6 +65,80 @@ defmodule TextbinWeb.UserLive.Settings do
           Save Password
         </.button>
       </.form>
+
+      <div class="divider" />
+
+      <section id="api-tokens" class="space-y-6">
+        <.header>
+          API Tokens
+          <:subtitle>Create tokens for CLI and script access.</:subtitle>
+        </.header>
+
+        <%= if @new_api_token do %>
+          <div id="new-api-token" class="alert alert-info items-start">
+            <.icon name="hero-information-circle" class="mt-1 size-5 shrink-0" />
+            <div class="space-y-2">
+              <p class="font-semibold">Copy this token now. It will not be shown again.</p>
+              <input
+                id="new-api-token-value"
+                type="text"
+                class="input input-bordered w-full border-base-300 bg-base-100 font-mono text-sm text-base-content"
+                value={@new_api_token}
+                readonly
+              />
+            </div>
+          </div>
+        <% end %>
+
+        <.form for={@api_token_form} id="api_token_form" phx-submit="create_api_token">
+          <.input
+            field={@api_token_form[:name]}
+            type="text"
+            label="Token name"
+            placeholder="CLI"
+            required
+          />
+          <.button variant="primary" phx-disable-with="Creating...">Create API Token</.button>
+        </.form>
+
+        <div id="api-token-list" class="space-y-3">
+          <div
+            :if={@api_tokens == []}
+            id="api-token-empty"
+            class="rounded-lg border border-dashed border-base-300 p-6 text-sm text-base-content/60"
+          >
+            No API tokens yet.
+          </div>
+
+          <div
+            :for={token <- @api_tokens}
+            id={"api-token-#{token.id}"}
+            class="flex flex-col gap-3 rounded-lg border border-base-300 p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <p class="font-medium">{token.name}</p>
+              <p class="text-sm text-base-content/60">
+                Created {format_api_token_time(token.inserted_at)}
+                <%= if token.last_used_at do %>
+                  · Last used {format_api_token_time(token.last_used_at)}
+                <% else %>
+                  · Never used
+                <% end %>
+              </p>
+            </div>
+            <button
+              id={"delete-api-token-#{token.id}"}
+              type="button"
+              phx-click="delete_api_token"
+              phx-value-id={token.id}
+              data-confirm="Revoke this API token?"
+              class="btn btn-sm btn-error"
+            >
+              Revoke
+            </button>
+          </div>
+        </div>
+      </section>
     </Layouts.app>
     """
   end
@@ -93,6 +167,9 @@ defmodule TextbinWeb.UserLive.Settings do
       |> assign(:current_email, user.email)
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
+      |> assign(:api_token_form, to_form(%{"name" => ""}, as: :api_token))
+      |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
+      |> assign(:new_api_token, nil)
       |> assign(:trigger_submit, false)
 
     {:ok, socket}
@@ -156,5 +233,44 @@ defmodule TextbinWeb.UserLive.Settings do
       changeset ->
         {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
     end
+  end
+
+  def handle_event("create_api_token", %{"api_token" => api_token_params}, socket) do
+    user = socket.assigns.current_scope.user
+    true = Accounts.sudo_mode?(user)
+
+    case Accounts.create_user_api_token(user, api_token_params) do
+      {:ok, {token, _user_token}} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "API token created.")
+         |> assign(:api_token_form, to_form(%{"name" => ""}, as: :api_token))
+         |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
+         |> assign(:new_api_token, token)}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Could not create API token.")}
+    end
+  end
+
+  def handle_event("delete_api_token", %{"id" => token_id}, socket) do
+    user = socket.assigns.current_scope.user
+    true = Accounts.sudo_mode?(user)
+
+    case Accounts.delete_user_api_token(user, token_id) do
+      :ok ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "API token revoked.")
+         |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
+         |> assign(:new_api_token, nil)}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "API token not found.")}
+    end
+  end
+
+  defp format_api_token_time(%DateTime{} = timestamp) do
+    Calendar.strftime(timestamp, "%Y-%m-%d %H:%M:%S UTC")
   end
 end

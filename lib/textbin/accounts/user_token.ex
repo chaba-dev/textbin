@@ -11,14 +11,17 @@ defmodule Textbin.Accounts.UserToken do
   @magic_link_validity_in_minutes 15
   @change_email_validity_in_days 7
   @session_validity_in_days 14
+  @api_token_context "api"
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "users_tokens" do
     field :token, :binary
     field :context, :string
+    field :name, :string
     field :sent_to, :string
     field :authenticated_at, :utc_datetime
+    field :last_used_at, :utc_datetime
     field :expires_at, :utc_datetime
     belongs_to :user, Textbin.Accounts.User
 
@@ -85,8 +88,26 @@ defmodule Textbin.Accounts.UserToken do
     build_hashed_token(user, context, user.email)
   end
 
+  @doc """
+  Builds an API token and its hash for persistent API authentication.
+
+  The raw token is returned once and only its hash is stored.
+  """
+  def build_api_token(user, name) do
+    token = "txb_" <> random_url_token()
+    hashed_token = :crypto.hash(@hash_algorithm, token)
+
+    {token,
+     %UserToken{
+       token: hashed_token,
+       context: @api_token_context,
+       name: name,
+       user_id: user.id
+     }}
+  end
+
   defp build_hashed_token(user, context, sent_to) do
-    token = :crypto.strong_rand_bytes(@rand_size)
+    token = random_bytes()
     hashed_token = :crypto.hash(@hash_algorithm, token)
 
     {Base.url_encode64(token, padding: false),
@@ -153,7 +174,33 @@ defmodule Textbin.Accounts.UserToken do
     end
   end
 
+  @doc """
+  Checks if the API token is valid and returns its lookup query.
+  """
+  def verify_api_token_query("txb_" <> _ = token) do
+    hashed_token = :crypto.hash(@hash_algorithm, token)
+
+    query =
+      from token in by_token_and_context_query(hashed_token, @api_token_context),
+        join: user in assoc(token, :user),
+        select: {user, token}
+
+    {:ok, query}
+  end
+
+  def verify_api_token_query(_token), do: :error
+
+  def api_token_context, do: @api_token_context
+
   defp by_token_and_context_query(token, context) do
     from UserToken, where: [token: ^token, context: ^context]
+  end
+
+  defp random_bytes, do: :crypto.strong_rand_bytes(@rand_size)
+
+  defp random_url_token do
+    @rand_size
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
   end
 end

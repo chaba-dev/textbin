@@ -281,6 +281,86 @@ defmodule Textbin.Accounts do
     :ok
   end
 
+  ## API tokens
+
+  @doc """
+  Lists API tokens for the given user.
+  """
+  def list_user_api_tokens(%User{} = user) do
+    UserToken
+    |> where(
+      [token],
+      token.user_id == ^user.id and token.context == ^UserToken.api_token_context()
+    )
+    |> order_by([token], desc: token.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Creates an API token for the given user.
+
+  The raw token is returned once alongside the stored token record.
+  """
+  def create_user_api_token(%User{} = user, attrs \\ %{}) do
+    name = api_token_name(attrs)
+    {token, user_token} = UserToken.build_api_token(user, name)
+
+    case Repo.insert(user_token) do
+      {:ok, user_token} -> {:ok, {token, user_token}}
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  @doc """
+  Deletes a user's API token.
+  """
+  def delete_user_api_token(%User{} = user, token_id) when is_binary(token_id) do
+    case Ecto.UUID.cast(token_id) do
+      {:ok, token_id} ->
+        {count, _result} =
+          Repo.delete_all(
+            from token in UserToken,
+              where:
+                token.id == ^token_id and token.user_id == ^user.id and
+                  token.context == ^UserToken.api_token_context()
+          )
+
+        if count == 1, do: :ok, else: {:error, :not_found}
+
+      :error ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Gets a user by API token and records the token's last-used timestamp.
+  """
+  def get_user_by_api_token(token) when is_binary(token) do
+    with {:ok, query} <- UserToken.verify_api_token_query(token),
+         {user, user_token} <- Repo.one(query) do
+      now = DateTime.utc_now(:second)
+
+      Repo.update_all(
+        from(token in UserToken, where: token.id == ^user_token.id),
+        set: [last_used_at: now]
+      )
+
+      user
+    else
+      _ -> nil
+    end
+  end
+
+  defp api_token_name(attrs) do
+    attrs
+    |> Map.get("name", "")
+    |> String.trim()
+    |> case do
+      "" -> "API token"
+      name -> String.slice(name, 0, 80)
+    end
+  end
+
   ## Token helper
 
   defp update_user_and_delete_all_tokens(changeset) do

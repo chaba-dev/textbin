@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict sU2UCsz3NDZOdrWyFMsHir3ugkNzdnmaxf7PSUhW7BgZAYsQZl4Yfee67JJSulU
+\restrict VK7kOo47Mkb1ZSP1AgAvyxyRDkyaTb8QvRPKeK24wREx7frXMd80ucSI8g3Guwb
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -86,7 +86,9 @@ CREATE TABLE public.users_tokens (
     sent_to character varying(255),
     authenticated_at timestamp(0) without time zone,
     expires_at timestamp(0) without time zone,
-    inserted_at timestamp(0) without time zone NOT NULL
+    inserted_at timestamp(0) without time zone NOT NULL,
+    name character varying(255),
+    last_used_at timestamp(0) without time zone
 );
 
 
@@ -155,8 +157,9 @@ ALTER TABLE ONLY public.users_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict sU2UCsz3NDZOdrWyFMsHir3ugkNzdnmaxf7PSUhW7BgZAYsQZl4Yfee67JJSulU
+\unrestrict VK7kOo47Mkb1ZSP1AgAvyxyRDkyaTb8QvRPKeK24wREx7frXMd80ucSI8g3Guwb
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
 INSERT INTO public."schema_migrations" (version) VALUES (20260715060411);
+INSERT INTO public."schema_migrations" (version) VALUES (20260715070000);

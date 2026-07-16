@@ -79,6 +79,40 @@ defmodule TextbinWeb.UserAuth do
     end
   end
 
+  @doc """
+  Authenticates API requests by bearer API token when one is present.
+  """
+  def fetch_current_scope_for_api_token(conn, _opts) do
+    case get_bearer_token(conn) do
+      {:ok, token} ->
+        if user = Accounts.get_user_by_api_token(token) do
+          assign(conn, :current_scope, Scope.for_user(user))
+        else
+          conn
+          |> put_status(:unauthorized)
+          |> json(%{errors: %{detail: "Invalid API token"}})
+          |> halt()
+        end
+
+      :missing ->
+        assign(conn, :current_scope, Scope.for_user(nil))
+
+      :invalid ->
+        conn
+        |> put_status(:unauthorized)
+        |> json(%{errors: %{detail: "Invalid authorization header"}})
+        |> halt()
+    end
+  end
+
+  defp get_bearer_token(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token] when token != "" -> {:ok, token}
+      [] -> :missing
+      _headers -> :invalid
+    end
+  end
+
   defp ensure_user_token(conn) do
     if token = get_session(conn, :user_token) do
       {token, conn}

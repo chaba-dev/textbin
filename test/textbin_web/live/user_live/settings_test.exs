@@ -160,6 +160,43 @@ defmodule TextbinWeb.UserLive.SettingsTest do
     end
   end
 
+  describe "API token management" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "creates an API token and shows it once", %{conn: conn} do
+      {:ok, lv, html} = live(conn, ~p"/users/settings")
+
+      assert html =~ "API Tokens"
+      assert has_element?(lv, "#api-token-empty")
+
+      result =
+        lv
+        |> form("#api_token_form", %{"api_token" => %{"name" => "CLI"}})
+        |> render_submit()
+
+      assert result =~ "Copy this token now"
+      assert result =~ "txb_"
+      assert has_element?(lv, "#api-token-list", "CLI")
+    end
+
+    test "revokes an API token", %{conn: conn, user: user} do
+      {:ok, {_raw_token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      assert has_element?(lv, "#api-token-#{user_token.id}", "CLI")
+
+      lv
+      |> element("#delete-api-token-#{user_token.id}")
+      |> render_click()
+
+      refute has_element?(lv, "#api-token-#{user_token.id}")
+      assert has_element?(lv, "#api-token-empty")
+    end
+  end
+
   describe "confirm email" do
     setup %{conn: conn} do
       user = user_fixture()

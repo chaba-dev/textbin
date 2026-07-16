@@ -1,7 +1,11 @@
 defmodule TextbinWeb.ApiV1.PasteControllerTest do
   use TextbinWeb.ConnCase, async: false
 
+  alias Textbin.Accounts
+  alias Textbin.Accounts.UserToken
   alias Textbin.Pastes
+
+  import Textbin.AccountsFixtures
 
   @max_paste_bytes 1_048_576
   @create_attrs %{data: "some data", syntax_highlight: "elixir"}
@@ -90,6 +94,39 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       refute Map.has_key?(response_data, "data")
       assert_stored_paste(id, "streamed data", "elixir")
+    end
+
+    test "accepts a valid API bearer token", %{conn: conn} do
+      user = user_fixture()
+      {:ok, {token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer #{token}")
+        |> post(~p"/api/v1/pastes", paste: @create_attrs)
+
+      assert %{"id" => id} = json_response(conn, 201)["data"]
+      assert_stored_paste(id, "some data", "elixir")
+      assert %{last_used_at: %DateTime{}} = Textbin.Repo.get!(UserToken, user_token.id)
+    end
+
+    test "rejects an invalid API bearer token", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer txb_invalid")
+        |> post(~p"/api/v1/pastes", paste: @create_attrs)
+
+      assert %{"errors" => %{"detail" => "Invalid API token"}} = json_response(conn, 401)
+    end
+
+    test "rejects a malformed authorization header", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("authorization", "Token invalid")
+        |> post(~p"/api/v1/pastes", paste: @create_attrs)
+
+      assert %{"errors" => %{"detail" => "Invalid authorization header"}} =
+               json_response(conn, 401)
     end
 
     test "renders errors when data is invalid", %{conn: conn} do

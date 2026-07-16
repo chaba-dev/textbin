@@ -15,6 +15,7 @@ defmodule TextbinWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :fetch_current_scope_for_api_token
   end
 
   scope "/", TextbinWeb do
