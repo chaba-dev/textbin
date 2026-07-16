@@ -52,10 +52,18 @@ defmodule TextbinWeb.Layouts do
   def app_header(assigns) do
     ~H"""
     <header id="app-header" class="navbar gap-4 px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center">
+      <div class="flex flex-1 items-center gap-8">
+        <a href="/" class="flex w-fit items-center">
           <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
         </a>
+        <%= if @current_scope do %>
+          <.link
+            href={~p"/pastes"}
+            class="text-sm font-medium text-base-content/70 hover:text-base-content"
+          >
+            Pastes
+          </.link>
+        <% end %>
       </div>
       <div class="flex-none">
         <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">

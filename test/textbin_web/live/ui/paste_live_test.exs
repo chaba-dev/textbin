@@ -2,8 +2,19 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   use TextbinWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
+  import Textbin.AccountsFixtures
 
   alias Textbin.Pastes
+
+  setup %{conn: conn} do
+    %{conn: log_in_user(conn, user_fixture())}
+  end
+
+  test "redirects unauthenticated users to login" do
+    assert {:error, {:redirect, %{to: path, flash: flash}}} = live(build_conn(), ~p"/pastes")
+    assert path == ~p"/users/log-in"
+    assert %{"error" => "You must log in to access this page."} = flash
+  end
 
   test "lists pastes", %{conn: conn} do
     {:ok, paste} =
