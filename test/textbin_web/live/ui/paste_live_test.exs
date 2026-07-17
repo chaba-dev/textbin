@@ -39,7 +39,53 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {:ok, view, _html} = live(conn, ~p"/pastes")
 
     assert has_element?(view, "#pastes-list")
-    assert has_element?(view, "#pastes-list", "No pastes yet.")
+    assert has_element?(view, "#pastes-empty.min-h-56.text-base", "No pastes yet.")
+  end
+
+  test "creates a paste from the UI", %{conn: conn, scope: scope} do
+    {:ok, view, _html} = live(conn, ~p"/pastes")
+
+    assert has_element?(view, "#paste-form")
+
+    view
+    |> form("#paste-form", %{
+      "paste" => %{
+        "data" => "created from the browser",
+        "syntax_highlight" => "markdown",
+        "expires_in" => "never"
+      }
+    })
+    |> render_submit()
+
+    assert [paste] = Pastes.list_pastes(scope)
+    assert paste.data == "created from the browser"
+    assert paste.syntax_highlight == "markdown"
+    assert is_nil(paste.expires_at)
+    assert has_element?(view, "##{stream_id(paste)}", "markdown")
+  end
+
+  test "creates a paste with the user's default expiration", %{scope: scope} do
+    {:ok, user} =
+      Textbin.Accounts.update_user_paste_defaults(scope.user, %{default_paste_ttl: "1h"})
+
+    scope = %{scope | user: user}
+    conn = log_in_user(build_conn(), user)
+
+    {:ok, view, _html} = live(conn, ~p"/pastes")
+
+    view
+    |> form("#paste-form", %{
+      "paste" => %{
+        "data" => "uses account default",
+        "syntax_highlight" => "plain",
+        "expires_in" => ""
+      }
+    })
+    |> render_submit()
+
+    assert [paste] = Pastes.list_pastes(scope)
+    assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 3590..3600
+    assert has_element?(view, "#paste-expires-at-#{paste.id}", "Expires")
   end
 
   test "shows an individual paste", %{conn: conn, scope: scope} do

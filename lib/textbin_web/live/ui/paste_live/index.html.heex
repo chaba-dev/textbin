@@ -13,10 +13,50 @@
       </div>
     </div>
 
+    <section
+      id="new-paste"
+      class="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm"
+    >
+      <.form
+        for={@paste_form}
+        id="paste-form"
+        phx-change="validate"
+        phx-submit="save"
+        class="space-y-4"
+      >
+        <.input
+          field={@paste_form[:data]}
+          type="textarea"
+          label="Paste content"
+          rows="10"
+          placeholder="Paste text here..."
+          required
+        />
+
+        <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+          <.input
+            field={@paste_form[:syntax_highlight]}
+            type="text"
+            label="Syntax"
+            placeholder="plain"
+          />
+          <.input
+            field={@paste_form[:expires_in]}
+            type="select"
+            label="Expiration"
+            options={paste_ttl_options()}
+          />
+          <.button variant="primary" phx-disable-with="Creating...">
+            Create Paste
+          </.button>
+        </div>
+      </.form>
+    </section>
+
     <div id="pastes-list" phx-update="stream" class="space-y-3">
       <div
         id="pastes-empty"
-        class="hidden rounded-lg border border-dashed border-base-300 p-8 text-center text-sm text-base-content/60 only:block"
+        class="hidden min-h-56 rounded-lg border border-dashed border-base-300 p-10 text-center text-base text-base-content/60 only:flex only:items-center only:justify-center"
       >
         No pastes yet.
       </div>
