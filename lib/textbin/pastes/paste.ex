@@ -21,6 +21,7 @@ defmodule Textbin.Pastes.Paste do
     field :data, :string
     field :syntax_highlight, :string, default: "plain"
     field :expires_at, :utc_datetime_usec
+    field :expires_in, :string, virtual: true
 
     belongs_to :user, Textbin.Accounts.User
 
@@ -29,7 +30,7 @@ defmodule Textbin.Pastes.Paste do
 
   def changeset(paste, attrs) do
     paste
-    |> cast(attrs, [:data, :syntax_highlight])
+    |> cast(attrs, [:data, :syntax_highlight, :expires_in])
     |> put_expires_at(attrs)
     |> validate_required([:data, :syntax_highlight, :user_id])
     |> validate_expiration()
@@ -83,8 +84,7 @@ defmodule Textbin.Pastes.Paste do
   defp ttl_seconds(_value), do: :error
 
   defp ttl_provided?(attrs) when is_map(attrs) do
-    Map.has_key?(attrs, "expires_in") or Map.has_key?(attrs, :expires_in) or
-      Map.has_key?(attrs, "ttl") or Map.has_key?(attrs, :ttl)
+    ttl_value(attrs) not in [nil, ""]
   end
 
   defp ttl_provided?(_attrs), do: false

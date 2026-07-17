@@ -72,9 +72,13 @@ defmodule Textbin.Pastes do
   end
 
   defp ttl_provided?(attrs) when is_map(attrs) do
-    Map.has_key?(attrs, "expires_in") or Map.has_key?(attrs, :expires_in) or
-      Map.has_key?(attrs, "ttl") or Map.has_key?(attrs, :ttl)
+    ttl_value(attrs) not in [nil, ""]
   end
 
   defp ttl_provided?(_attrs), do: false
+
+  defp ttl_value(attrs) do
+    Map.get(attrs, "expires_in") || Map.get(attrs, :expires_in) || Map.get(attrs, "ttl") ||
+      Map.get(attrs, :ttl)
+  end
 end
