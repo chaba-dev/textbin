@@ -3,12 +3,15 @@ defmodule Textbin.Accounts.User do
   import Ecto.Changeset
 
   @primary_key {:id, :binary_id, autogenerate: true}
+  @paste_ttl_values ["never", "10m", "1h", "1d", "7d", "30d"]
+
   schema "users" do
     field :email, :string
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
+    field :default_paste_ttl, :string, default: "never"
 
     timestamps(type: :utc_datetime)
   end
@@ -103,6 +106,16 @@ defmodule Textbin.Accounts.User do
     else
       changeset
     end
+  end
+
+  @doc """
+  A user changeset for changing paste defaults.
+  """
+  def paste_defaults_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:default_paste_ttl])
+    |> validate_required([:default_paste_ttl])
+    |> validate_inclusion(:default_paste_ttl, @paste_ttl_values)
   end
 
   @doc """

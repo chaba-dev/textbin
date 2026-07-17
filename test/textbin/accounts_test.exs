@@ -252,6 +252,32 @@ defmodule Textbin.AccountsTest do
     end
   end
 
+  describe "paste defaults" do
+    test "change_user_paste_defaults/2 returns a user changeset" do
+      assert %Ecto.Changeset{} = changeset = Accounts.change_user_paste_defaults(%User{})
+      assert changeset.required == [:default_paste_ttl]
+    end
+
+    test "update_user_paste_defaults/2 updates the default paste ttl" do
+      user = user_fixture()
+
+      assert {:ok, %User{} = user} =
+               Accounts.update_user_paste_defaults(user, %{default_paste_ttl: "1h"})
+
+      assert user.default_paste_ttl == "1h"
+      assert Repo.get!(User, user.id).default_paste_ttl == "1h"
+    end
+
+    test "update_user_paste_defaults/2 rejects invalid ttl values" do
+      user = user_fixture()
+
+      assert {:error, changeset} =
+               Accounts.update_user_paste_defaults(user, %{default_paste_ttl: "forever"})
+
+      assert %{default_paste_ttl: ["is invalid"]} = errors_on(changeset)
+    end
+  end
+
   describe "generate_user_session_token/1" do
     setup do
       %{user: user_fixture()}
