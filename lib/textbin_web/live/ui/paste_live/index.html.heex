@@ -33,14 +33,27 @@
           >
             {paste.id}
           </.link>
-          <div class="flex items-center gap-3">
+          <div class="flex flex-wrap items-center gap-3">
             <span class="badge badge-sm badge-outline">{paste.syntax_highlight}</span>
             <time
               class="text-xs text-base-content/50"
               datetime={DateTime.to_iso8601(paste.inserted_at)}
             >
-              {Calendar.strftime(paste.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
+              Created {Calendar.strftime(paste.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
             </time>
+            <%= if paste.expires_at do %>
+              <time
+                id={"paste-expires-at-#{paste.id}"}
+                class="text-xs text-base-content/50"
+                datetime={DateTime.to_iso8601(paste.expires_at)}
+              >
+                Expires {Calendar.strftime(paste.expires_at, "%Y-%m-%d %H:%M:%S UTC")}
+              </time>
+            <% else %>
+              <span id={"paste-expires-at-#{paste.id}"} class="text-xs text-base-content/50">
+                Never expires
+              </span>
+            <% end %>
             <button
               id={"delete-paste-#{paste.id}"}
               type="button"

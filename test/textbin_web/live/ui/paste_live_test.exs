@@ -29,6 +29,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#pastes-list")
     assert has_element?(view, "##{stream_id(paste)}", paste.id)
     assert has_element?(view, "##{stream_id(paste)}", "elixir")
+    assert has_element?(view, "#paste-expires-at-#{paste.id}", "Never expires")
     assert has_element?(view, "##{stream_id(paste)} a[href='/pastes/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
     refute has_element?(view, "##{stream_id(other_paste)}")
@@ -49,6 +50,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert has_element?(view, "h1", paste.id)
     assert has_element?(view, "span", "json")
+    assert has_element?(view, "#paste-expires-at", "Never expires")
     assert has_element?(view, "#paste-data .lumis code.language-json")
     assert has_element?(view, "#paste-data .l-line[data-line='1']")
     assert has_element?(view, "#paste-data", "individual paste data")

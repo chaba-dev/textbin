@@ -12,7 +12,7 @@ defmodule TextbinWeb.UserLive.Settings do
       <div class="text-center">
         <.header>
           Account Settings
-          <:subtitle>Manage your account email address and password settings</:subtitle>
+          <:subtitle>Manage your account email address, password, and paste defaults</:subtitle>
         </.header>
       </div>
 
@@ -65,6 +65,29 @@ defmodule TextbinWeb.UserLive.Settings do
           Save Password
         </.button>
       </.form>
+
+      <div class="divider" />
+
+      <section id="paste-defaults" class="space-y-4">
+        <.header>
+          Paste Defaults
+          <:subtitle>Choose the default expiration for new pastes.</:subtitle>
+        </.header>
+
+        <.form
+          for={@paste_defaults_form}
+          id="paste_defaults_form"
+          phx-submit="update_paste_defaults"
+        >
+          <.input
+            field={@paste_defaults_form[:default_paste_ttl]}
+            type="select"
+            label="Default paste expiration"
+            options={paste_ttl_options()}
+          />
+          <.button variant="primary" phx-disable-with="Saving...">Save Paste Defaults</.button>
+        </.form>
+      </section>
 
       <div class="divider" />
 
@@ -161,12 +184,14 @@ defmodule TextbinWeb.UserLive.Settings do
     user = socket.assigns.current_scope.user
     email_changeset = Accounts.change_user_email(user, %{}, validate_unique: false)
     password_changeset = Accounts.change_user_password(user, %{}, hash_password: false)
+    paste_defaults_changeset = Accounts.change_user_paste_defaults(user)
 
     socket =
       socket
       |> assign(:current_email, user.email)
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
+      |> assign(:paste_defaults_form, to_form(paste_defaults_changeset))
       |> assign(:api_token_form, to_form(%{"name" => ""}, as: :api_token))
       |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
       |> assign(:new_api_token, nil)
@@ -235,6 +260,25 @@ defmodule TextbinWeb.UserLive.Settings do
     end
   end
 
+  def handle_event("update_paste_defaults", %{"user" => user_params}, socket) do
+    user = socket.assigns.current_scope.user
+    true = Accounts.sudo_mode?(user)
+
+    case Accounts.update_user_paste_defaults(user, user_params) do
+      {:ok, user} ->
+        current_scope = %{socket.assigns.current_scope | user: user}
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Paste defaults updated.")
+         |> assign(:current_scope, current_scope)
+         |> assign(:paste_defaults_form, to_form(Accounts.change_user_paste_defaults(user)))}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, paste_defaults_form: to_form(changeset, action: :insert))}
+    end
+  end
+
   def handle_event("create_api_token", %{"api_token" => api_token_params}, socket) do
     user = socket.assigns.current_scope.user
     true = Accounts.sudo_mode?(user)
@@ -272,5 +316,16 @@ defmodule TextbinWeb.UserLive.Settings do
 
   defp format_api_token_time(%DateTime{} = timestamp) do
     Calendar.strftime(timestamp, "%Y-%m-%d %H:%M:%S UTC")
+  end
+
+  defp paste_ttl_options do
+    [
+      {"Never", "never"},
+      {"10 minutes", "10m"},
+      {"1 hour", "1h"},
+      {"1 day", "1d"},
+      {"7 days", "7d"},
+      {"30 days", "30d"}
+    ]
   end
 end

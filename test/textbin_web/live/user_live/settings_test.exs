@@ -14,6 +14,7 @@ defmodule TextbinWeb.UserLive.SettingsTest do
 
       assert html =~ "Change Email"
       assert html =~ "Save Password"
+      assert html =~ "Paste Defaults"
     end
 
     test "redirects if user is not logged in", %{conn: conn} do
@@ -157,6 +158,27 @@ defmodule TextbinWeb.UserLive.SettingsTest do
       assert result =~ "Save Password"
       assert result =~ "should be at least 12 character(s)"
       assert result =~ "does not match password"
+    end
+  end
+
+  describe "paste defaults form" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "updates default paste expiration", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> form("#paste_defaults_form", %{
+          "user" => %{"default_paste_ttl" => "1h"}
+        })
+        |> render_submit()
+
+      assert result =~ "Paste defaults updated."
+      assert Accounts.get_user!(user.id).default_paste_ttl == "1h"
     end
   end
 
