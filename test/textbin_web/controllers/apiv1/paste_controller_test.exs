@@ -48,10 +48,11 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders paste when data is valid", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
 
-      assert %{"id" => id, "syntax_highlight" => "elixir"} =
+      assert %{"id" => id, "syntax_highlight" => "elixir", "expires_at" => expires_at} =
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
+      assert is_nil(expires_at)
       assert_stored_paste(scope, id, "some data", "elixir")
 
       conn = get(conn, ~p"/api/v1/pastes/#{id}")
@@ -60,10 +61,13 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                "id" => ^id,
                "data" => "some data",
                "syntax_highlight" => "elixir",
+               "expires_at" => show_expires_at,
                "inserted_at" => inserted_at,
                "updated_at" => updated_at
              } = json_response(conn, 200)["data"]
 
+      assert show_expires_at == expires_at
+      assert is_nil(show_expires_at)
       assert_millisecond_timestamp(inserted_at)
       assert_millisecond_timestamp(updated_at)
     end
@@ -71,10 +75,11 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders paste from flat JSON data", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 
-      assert %{"id" => id, "syntax_highlight" => "elixir"} =
+      assert %{"id" => id, "syntax_highlight" => "elixir", "expires_at" => expires_at} =
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
+      assert is_nil(expires_at)
       assert_stored_paste(scope, id, "some data", "elixir")
     end
 
@@ -86,6 +91,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
       assert response_data["syntax_highlight"] == "plain"
+      assert is_nil(response_data["expires_at"])
       refute Map.has_key?(response_data, "data")
       assert_stored_paste(scope, id, "json string data", "plain")
     end
@@ -98,6 +104,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
       assert response_data["syntax_highlight"] == "plain"
+      assert is_nil(response_data["expires_at"])
       refute Map.has_key?(response_data, "data")
       assert_stored_paste(scope, id, "streamed data", "plain")
     end
@@ -108,11 +115,41 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         |> put_req_header("content-type", "text/plain")
         |> post(~p"/api/v1/pastes?syntax_highlight=elixir", "streamed data")
 
-      assert %{"id" => id, "syntax_highlight" => "elixir"} =
+      assert %{"id" => id, "syntax_highlight" => "elixir", "expires_at" => expires_at} =
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
+      assert is_nil(expires_at)
       assert_stored_paste(scope, id, "streamed data", "elixir")
+    end
+
+    test "uses the user's default expiration", %{conn: conn, scope: scope} do
+      {:ok, _user} =
+        Accounts.update_user_paste_defaults(scope.user, %{default_paste_ttl: "30d"})
+
+      conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
+
+      assert %{"id" => id, "expires_at" => expires_at} = json_response(conn, 201)["data"]
+      assert_millisecond_timestamp(expires_at)
+
+      paste = Pastes.get_paste!(scope, id)
+      assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 2_591_990..2_592_000
+    end
+
+    test "renders paste from raw request body with expiration", %{conn: conn, scope: scope} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/pastes?expires_in=1h", "streamed data")
+
+      assert %{"id" => id, "expires_at" => expires_at} =
+               response_data = json_response(conn, 201)["data"]
+
+      refute Map.has_key?(response_data, "data")
+      assert_millisecond_timestamp(expires_at)
+
+      paste = Pastes.get_paste!(scope, id)
+      assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 3590..3600
     end
 
     test "accepts a valid API bearer token", %{conn: conn, scope: scope, user_token: user_token} do
@@ -146,6 +183,13 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       conn = post(conn, ~p"/api/v1/pastes", paste: @invalid_attrs)
 
       assert %{"data" => [_]} = json_response(conn, 422)["errors"]
+    end
+
+    test "renders errors when expiration is invalid", %{conn: conn} do
+      conn = post(conn, ~p"/api/v1/pastes", paste: Map.put(@create_attrs, :expires_in, "forever"))
+
+      assert %{"expires_at" => ["must use one of: never, 10m, 1h, 1d, 7d, 30d"]} =
+               json_response(conn, 422)["errors"]
     end
 
     test "rejects JSON data over the configured size limit", %{conn: conn} do
