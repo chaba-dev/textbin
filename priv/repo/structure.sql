@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lZ3xvpzrbmSytMx0XUjGOp0MV1hdK1u4NuLde8Apa5bioMuS7FZpxMKDalgGLb2
+\restrict EhWlWa76DuWowCcrjcdkQKij0sbW0ciFWvwvgqFzuQNl93o4rmVygxSLTY0oWuM
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -47,7 +47,8 @@ CREATE TABLE public.pastes (
     inserted_at timestamp(3) without time zone NOT NULL,
     updated_at timestamp(3) without time zone NOT NULL,
     syntax_highlight text DEFAULT 'plain'::text NOT NULL,
-    user_id uuid NOT NULL
+    user_id uuid NOT NULL,
+    expires_at timestamp(3) without time zone DEFAULT NULL::timestamp without time zone
 );
 
 
@@ -71,7 +72,8 @@ CREATE TABLE public.users (
     hashed_password character varying(255),
     confirmed_at timestamp(0) without time zone,
     inserted_at timestamp(0) without time zone NOT NULL,
-    updated_at timestamp(0) without time zone NOT NULL
+    updated_at timestamp(0) without time zone NOT NULL,
+    default_paste_ttl character varying(255) DEFAULT 'never'::character varying NOT NULL
 );
 
 
@@ -126,6 +128,13 @@ ALTER TABLE ONLY public.users_tokens
 
 
 --
+-- Name: pastes_expires_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_expires_at_index ON public.pastes USING btree (expires_at);
+
+
+--
 -- Name: pastes_user_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -173,10 +182,13 @@ ALTER TABLE ONLY public.users_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lZ3xvpzrbmSytMx0XUjGOp0MV1hdK1u4NuLde8Apa5bioMuS7FZpxMKDalgGLb2
+\unrestrict EhWlWa76DuWowCcrjcdkQKij0sbW0ciFWvwvgqFzuQNl93o4rmVygxSLTY0oWuM
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
 INSERT INTO public."schema_migrations" (version) VALUES (20260715060411);
 INSERT INTO public."schema_migrations" (version) VALUES (20260715070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260716080000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260716090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260716093000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260716100000);
