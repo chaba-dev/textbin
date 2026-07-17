@@ -18,6 +18,7 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
       id: paste.id,
       data: paste.data,
       syntax_highlight: paste.syntax_highlight,
+      expires_at: timestamp(paste.expires_at),
       inserted_at: timestamp(paste.inserted_at),
       updated_at: timestamp(paste.updated_at)
     }

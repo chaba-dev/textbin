@@ -148,6 +148,22 @@ defmodule Textbin.Accounts do
   end
 
   @doc """
+  Returns an `%Ecto.Changeset{}` for changing user paste defaults.
+  """
+  def change_user_paste_defaults(user, attrs \\ %{}) do
+    User.paste_defaults_changeset(user, attrs)
+  end
+
+  @doc """
+  Updates user paste defaults.
+  """
+  def update_user_paste_defaults(user, attrs) do
+    user
+    |> User.paste_defaults_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Updates the user password.
 
   Returns a tuple with the updated user, as well as a list of expired tokens.

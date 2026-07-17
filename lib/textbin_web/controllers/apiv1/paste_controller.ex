@@ -51,14 +51,15 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # Plug puts non-object JSON bodies, such as `"hello"`, under "_json". This is
   # useful for callers that want JSON content negotiation without an object
   # envelope.
-  defp paste_attrs(conn, %{"_json" => data}) when is_binary(data) do
-    {:ok, %{"data" => data}, conn}
+  defp paste_attrs(conn, %{"_json" => data} = params) when is_binary(data) do
+    {:ok, build_paste_attrs(data, params), conn}
   end
 
   # Non-JSON uploads keep the body unread after Plug.Parsers, so streamed
   # CLI/stdin data can be consumed here.
   defp paste_attrs(conn, params)
-       when map_size(params) == 0 or is_map_key(params, "syntax_highlight") do
+       when map_size(params) == 0 or is_map_key(params, "syntax_highlight") or
+              is_map_key(params, "expires_in") or is_map_key(params, "ttl") do
     case read_request_body(conn) do
       {:ok, data, conn} ->
         {:ok, build_paste_attrs(data, params), conn}
@@ -75,14 +76,16 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   defp build_paste_attrs(data, params) do
-    attrs = %{"data" => data}
+    %{"data" => data}
+    |> put_string_param(params, "syntax_highlight")
+    |> put_string_param(params, "expires_in")
+    |> put_string_param(params, "ttl")
+  end
 
+  defp put_string_param(attrs, params, key) do
     case params do
-      %{"syntax_highlight" => syntax_highlight} when is_binary(syntax_highlight) ->
-        Map.put(attrs, "syntax_highlight", syntax_highlight)
-
-      _params ->
-        attrs
+      %{^key => value} when is_binary(value) -> Map.put(attrs, key, value)
+      _params -> attrs
     end
   end
 

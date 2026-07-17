@@ -14,11 +14,16 @@ pub struct CreateArgs {
     /// If provided, `syntax` will be used as reference to syntax highlight the data. e.g. go, rust, json
     #[arg(long, visible_alias = "ext")]
     syntax: Option<String>,
+
+    /// Paste lifetime. Accepted values: 10m, 1h, 1d, 7d, 30d.
+    #[arg(long)]
+    expires: Option<String>,
 }
 
 pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
     let client = Client::from_env();
     let syntax = args.syntax.as_deref();
+    let expires = args.expires.as_deref();
 
     let paste = match &args.data {
         Some(data) => match create_data_from_arg(data)? {
@@ -27,9 +32,9 @@ pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
                 let file = fs::File::open(path)?;
                 let reader = BufReader::new(file);
 
-                client.create_paste_stream(reader, syntax)?
+                client.create_paste_stream(reader, syntax, expires)?
             }
-            Data::Literal(data) => client.create_paste(data, syntax)?,
+            Data::Literal(data) => client.create_paste(data, syntax, expires)?,
         },
         None => {
             // If stdin is still the interactive terminal, reading from it would
@@ -40,7 +45,7 @@ pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
                 anyhow::bail!("provide paste data as an argument or pipe it on stdin");
             }
 
-            client.create_paste_stream(io::stdin(), syntax)?
+            client.create_paste_stream(io::stdin(), syntax, expires)?
         }
     };
 

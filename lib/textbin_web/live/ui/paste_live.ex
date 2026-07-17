@@ -10,7 +10,9 @@ defmodule TextbinWeb.UI.PasteLive do
 
   def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
     {:noreply,
-     stream(socket, :pastes, Pastes.list_pastes(socket.assigns.current_scope), reset: true)}
+     socket
+     |> assign_paste_form()
+     |> stream(:pastes, Pastes.list_pastes(socket.assigns.current_scope), reset: true)}
   end
 
   def handle_params(%{"id" => id}, _uri, %{assigns: %{live_action: :show}} = socket) do
@@ -39,8 +41,41 @@ defmodule TextbinWeb.UI.PasteLive do
      |> push_navigate(to: ~p"/pastes")}
   end
 
+  def handle_event("validate", %{"paste" => paste_params}, socket) do
+    form =
+      socket.assigns.current_scope
+      |> Pastes.change_paste(%Paste{}, paste_params)
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, :paste_form, form)}
+  end
+
+  def handle_event("save", %{"paste" => paste_params}, socket) do
+    case Pastes.create_paste(socket.assigns.current_scope, paste_params) do
+      {:ok, paste} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Paste created")
+         |> assign_paste_form()
+         |> stream_insert(:pastes, paste, at: 0)}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :paste_form, to_form(changeset, action: :insert))}
+    end
+  end
+
   def render(%{live_action: :show} = assigns), do: detail(assigns)
   def render(assigns), do: index(assigns)
+
+  defp assign_paste_form(socket) do
+    form =
+      socket.assigns.current_scope
+      |> Pastes.change_paste(%Paste{})
+      |> to_form()
+
+    assign(socket, :paste_form, form)
+  end
 
   defp highlighted_paste_data(%Paste{} = paste) do
     paste.data
@@ -57,4 +92,16 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   defp highlight_language(_paste), do: "plain"
+
+  defp paste_ttl_options do
+    [
+      {"Use account default", ""},
+      {"Never", "never"},
+      {"10 minutes", "10m"},
+      {"1 hour", "1h"},
+      {"1 day", "1d"},
+      {"7 days", "7d"},
+      {"30 days", "30d"}
+    ]
+  end
 end
