@@ -58,27 +58,30 @@ impl Client {
         &self,
         data: String,
         syntax_highlight: Option<&str>,
+        expires_in: Option<&str>,
     ) -> Result<CreatedPaste, Error> {
-        self.create_paste_body(Body::from(data), syntax_highlight)
+        self.create_paste_body(Body::from(data), syntax_highlight, expires_in)
     }
 
     pub fn create_paste_stream<R>(
         &self,
         reader: R,
         syntax_highlight: Option<&str>,
+        expires_in: Option<&str>,
     ) -> Result<CreatedPaste, Error>
     where
         R: Read + Send + 'static,
     {
-        self.create_paste_body(Body::new(reader), syntax_highlight)
+        self.create_paste_body(Body::new(reader), syntax_highlight, expires_in)
     }
 
     fn create_paste_body(
         &self,
         body: Body,
         syntax_highlight: Option<&str>,
+        expires_in: Option<&str>,
     ) -> Result<CreatedPaste, Error> {
-        let url = self.create_paste_url(syntax_highlight);
+        let url = self.create_paste_url(syntax_highlight, expires_in);
         let request = self
             .http
             .post(&url)
@@ -97,17 +100,30 @@ impl Client {
         Ok(response.data)
     }
 
-    fn create_paste_url(&self, syntax_highlight: Option<&str>) -> String {
+    fn create_paste_url(&self, syntax_highlight: Option<&str>, expires_in: Option<&str>) -> String {
         let url = format!("{}/api/v1/pastes", self.base_url);
+        let syntax_highlight = syntax_highlight.filter(|syntax| !syntax.is_empty());
+        let expires_in = expires_in.filter(|ttl| !ttl.is_empty());
 
-        match syntax_highlight.filter(|syntax| !syntax.is_empty()) {
-            Some(syntax_highlight) => {
+        match (syntax_highlight, expires_in) {
+            (None, None) => url,
+            (syntax_highlight, expires_in) => {
                 let mut url = reqwest::Url::parse(&url).expect("client base_url must be valid URL");
-                url.query_pairs_mut()
-                    .append_pair("syntax_highlight", syntax_highlight);
+
+                {
+                    let mut query = url.query_pairs_mut();
+
+                    if let Some(syntax_highlight) = syntax_highlight {
+                        query.append_pair("syntax_highlight", syntax_highlight);
+                    }
+
+                    if let Some(expires_in) = expires_in {
+                        query.append_pair("expires_in", expires_in);
+                    }
+                }
+
                 url.into()
             }
-            None => url,
         }
     }
 
@@ -142,6 +158,7 @@ pub struct Paste {
 pub struct CreatedPaste {
     pub id: String,
     pub syntax_highlight: String,
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -261,11 +278,11 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(None),
+            client.create_paste_url(None, None),
             "http://localhost:4000/api/v1/pastes"
         );
         assert_eq!(
-            client.create_paste_url(Some("")),
+            client.create_paste_url(Some(""), Some("")),
             "http://localhost:4000/api/v1/pastes"
         );
     }
@@ -275,8 +292,18 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(Some("rust")),
+            client.create_paste_url(Some("rust"), None),
             "http://localhost:4000/api/v1/pastes?syntax_highlight=rust"
+        );
+    }
+
+    #[test]
+    fn create_paste_url_adds_expires_in_query_param() {
+        let client = Client::new("http://localhost:4000/");
+
+        assert_eq!(
+            client.create_paste_url(Some("rust"), Some("1h")),
+            "http://localhost:4000/api/v1/pastes?syntax_highlight=rust&expires_in=1h"
         );
     }
 
@@ -319,5 +346,6 @@ mod tests {
 
         assert_eq!(response.data.id, "00000000-0000-0000-0000-000000000000");
         assert_eq!(response.data.syntax_highlight, "plain");
+        assert_eq!(response.data.expires_at, None);
     }
 }
