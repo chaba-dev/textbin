@@ -12,7 +12,7 @@ defmodule TextbinWeb.UserLive.Login do
           <.header>
             <p>Log in</p>
             <:subtitle>
-              <%= if @current_scope do %>
+              <%= if registered_scope?(@current_scope) do %>
                 You need to reauthenticate to perform sensitive actions on your account.
               <% else %>
                 Don't have an account? <.link
@@ -43,7 +43,7 @@ defmodule TextbinWeb.UserLive.Login do
           phx-submit="submit_magic"
         >
           <.input
-            readonly={!!@current_scope}
+            readonly={registered_scope?(@current_scope)}
             field={f[:email]}
             type="email"
             label="Email"
@@ -68,7 +68,7 @@ defmodule TextbinWeb.UserLive.Login do
           phx-trigger-action={@trigger_submit}
         >
           <.input
-            readonly={!!@current_scope}
+            readonly={registered_scope?(@current_scope)}
             field={f[:email]}
             type="email"
             label="Email"
@@ -99,7 +99,7 @@ defmodule TextbinWeb.UserLive.Login do
   def mount(_params, _session, socket) do
     email =
       Phoenix.Flash.get(socket.assigns.flash, :email) ||
-        get_in(socket.assigns, [:current_scope, Access.key(:user), Access.key(:email)])
+        current_registered_email(socket.assigns[:current_scope])
 
     form = to_form(%{"email" => email}, as: "user")
 
@@ -131,4 +131,16 @@ defmodule TextbinWeb.UserLive.Login do
   defp local_mail_adapter? do
     Application.get_env(:textbin, Textbin.Mailer)[:adapter] == Swoosh.Adapters.Local
   end
+
+  defp current_registered_email(%{user: %Textbin.Accounts.User{} = user}) do
+    if Textbin.Accounts.User.guest?(user), do: nil, else: user.email
+  end
+
+  defp current_registered_email(_scope), do: nil
+
+  defp registered_scope?(%{user: %Textbin.Accounts.User{} = user}) do
+    !Textbin.Accounts.User.guest?(user)
+  end
+
+  defp registered_scope?(_scope), do: false
 end

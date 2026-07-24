@@ -76,26 +76,41 @@ defmodule TextbinWeb.Layouts do
             <%= if @current_scope do %>
               <details class="relative">
                 <summary class="btn btn-ghost max-w-56 cursor-pointer list-none truncate">
-                  {@current_scope.user.email}
+                  {account_label(@current_scope)}
                 </summary>
                 <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
                   <div class="truncate px-3 py-2 text-xs text-base-content/60">
-                    {@current_scope.user.email}
+                    {account_label(@current_scope)}
                   </div>
                   <div class="flex items-center justify-between gap-3 px-3 py-2">
                     <span class="text-xs font-medium text-base-content/60">Theme</span>
                     <.theme_toggle />
                   </div>
-                  <.link href={~p"/users/settings"} class="btn btn-ghost btn-sm w-full justify-start">
-                    Settings
-                  </.link>
-                  <.link
-                    href={~p"/users/log-out"}
-                    method="delete"
-                    class="btn btn-ghost btn-sm w-full justify-start text-error hover:bg-error/10"
-                  >
-                    Log out
-                  </.link>
+                  <%= if guest_scope?(@current_scope) do %>
+                    <.link href={~p"/users/log-in"} class="btn btn-ghost btn-sm w-full justify-start">
+                      Log in
+                    </.link>
+                    <.link
+                      href={~p"/users/register"}
+                      class="btn btn-ghost btn-sm w-full justify-start"
+                    >
+                      Register
+                    </.link>
+                  <% else %>
+                    <.link
+                      href={~p"/users/settings"}
+                      class="btn btn-ghost btn-sm w-full justify-start"
+                    >
+                      Settings
+                    </.link>
+                    <.link
+                      href={~p"/users/log-out"}
+                      method="delete"
+                      class="btn btn-ghost btn-sm w-full justify-start text-error hover:bg-error/10"
+                    >
+                      Log out
+                    </.link>
+                  <% end %>
                 </div>
               </details>
             <% else %>
@@ -112,6 +127,17 @@ defmodule TextbinWeb.Layouts do
     </header>
     """
   end
+
+  defp account_label(%{user: %Textbin.Accounts.User{} = user}) do
+    if Textbin.Accounts.User.guest?(user), do: "Guest", else: user.email
+  end
+
+  defp account_label(_scope), do: "Guest"
+
+  defp guest_scope?(%{user: %Textbin.Accounts.User{} = user}),
+    do: Textbin.Accounts.User.guest?(user)
+
+  defp guest_scope?(_scope), do: false
 
   @doc """
   Shows the flash group with standard titles and content.
