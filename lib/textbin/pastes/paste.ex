@@ -12,6 +12,8 @@ defmodule Textbin.Pastes.Paste do
   @ttl_presets %{
     "10m" => 10 * 60,
     "1h" => 60 * 60,
+    "6h" => 6 * 60 * 60,
+    "12h" => 12 * 60 * 60,
     "1d" => 24 * 60 * 60,
     "7d" => 7 * 24 * 60 * 60,
     "30d" => 30 * 24 * 60 * 60
@@ -95,7 +97,11 @@ defmodule Textbin.Pastes.Paste do
         if DateTime.after?(expires_at, utc_now_ms()) do
           changeset
         else
-          add_error(changeset, :expires_at, "must use one of: never, 10m, 1h, 1d, 7d, 30d")
+          add_error(
+            changeset,
+            :expires_at,
+            "must use one of: never, 10m, 1h, 6h, 12h, 1d, 7d, 30d"
+          )
         end
 
       _expires_at ->
