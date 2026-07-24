@@ -188,7 +188,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders errors when expiration is invalid", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", paste: Map.put(@create_attrs, :expires_in, "forever"))
 
-      assert %{"expires_at" => ["must use one of: never, 10m, 1h, 1d, 7d, 30d"]} =
+      assert %{"expires_at" => ["must use one of: never, 10m, 1h, 6h, 12h, 1d, 7d, 30d"]} =
                json_response(conn, 422)["errors"]
     end
 
