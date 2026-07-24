@@ -29,6 +29,7 @@ defmodule TextbinWeb.UserAuth do
   # token. This can be set to a value greater than `@max_cookie_age_in_days` to disable
   # the reissuing of tokens completely.
   @session_reissue_age_in_days 7
+  @guest_user_session_key :guest_user_id
 
   @doc """
   Logs the user in.
@@ -75,9 +76,44 @@ defmodule TextbinWeb.UserAuth do
       |> assign(:current_scope, Scope.for_user(user))
       |> maybe_reissue_user_session_token(user, token_inserted_at)
     else
-      nil -> assign(conn, :current_scope, Scope.for_user(nil))
+      nil -> fetch_guest_scope_for_user(conn)
     end
   end
+
+  defp fetch_guest_scope_for_user(conn) do
+    cond do
+      !guest_pastes_enabled?() ->
+        assign(conn, :current_scope, Scope.for_user(nil))
+
+      guest_user = Accounts.get_guest_user(get_session(conn, @guest_user_session_key)) ->
+        assign(conn, :current_scope, Scope.for_user(guest_user))
+
+      paste_path?(conn) ->
+        create_guest_scope(conn)
+
+      true ->
+        assign(conn, :current_scope, Scope.for_user(nil))
+    end
+  end
+
+  defp create_guest_scope(conn) do
+    case Accounts.create_guest_user() do
+      {:ok, user} ->
+        conn
+        |> put_session(@guest_user_session_key, user.id)
+        |> assign(:current_scope, Scope.for_user(user))
+
+      {:error, _changeset} ->
+        assign(conn, :current_scope, Scope.for_user(nil))
+    end
+  end
+
+  defp guest_pastes_enabled? do
+    Application.get_env(:textbin, :allow_guest_pastes, false)
+  end
+
+  defp paste_path?(%{path_info: ["pastes" | _rest]}), do: true
+  defp paste_path?(_conn), do: false
 
   @doc """
   Authenticates API requests by bearer API token when one is present.
@@ -288,15 +324,28 @@ defmodule TextbinWeb.UserAuth do
       {user, _} =
         if user_token = session["user_token"] do
           Accounts.get_user_by_session_token(user_token)
+        else
+          guest_user_from_session(session)
         end || {nil, nil}
 
       Scope.for_user(user)
     end)
   end
 
+  defp guest_user_from_session(session) do
+    if guest_pastes_enabled?() do
+      {Accounts.get_guest_user(session[to_string(@guest_user_session_key)]), nil}
+    else
+      {nil, nil}
+    end
+  end
+
   @doc "Returns the path to redirect to after log in."
   # the user was already logged in, redirect to settings
-  def signed_in_path(%Plug.Conn{assigns: %{current_scope: %Scope{user: %Accounts.User{}}}}) do
+  def signed_in_path(%Plug.Conn{
+        assigns: %{current_scope: %Scope{user: %Accounts.User{kind: kind}}}
+      })
+      when kind != "guest" do
     ~p"/users/settings"
   end
 
