@@ -5,7 +5,7 @@ config :textbin, Textbin.Repo,
   username: System.get_env("DATABASE_USER") || "postgres",
   password: System.get_env("DATABASE_PASSWORD") || "postgres",
   hostname: System.get_env("DATABASE_HOST") || "localhost",
-  port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
+  port: String.to_integer(System.get_env("DATABASE_PORT") || "5433"),
   database: System.get_env("DATABASE_NAME") || "textbin_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
@@ -32,7 +32,7 @@ dev_http_ip =
 config :textbin, TextbinWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: dev_http_ip, port: String.to_integer(System.get_env("PORT") || "4000")],
+  http: [ip: dev_http_ip, port: String.to_integer(System.get_env("PORT") || "4400")],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
