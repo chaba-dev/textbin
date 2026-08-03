@@ -43,6 +43,7 @@ defmodule Textbin.PastesTest do
       assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, @valid_attrs)
       assert paste.data == "some data"
       assert paste.syntax_highlight == "plain"
+      assert paste.visibility == "private"
       assert paste.user_id == scope.user.id
       assert {microsecond, 6} = paste.inserted_at.microsecond
       assert rem(microsecond, 1000) == 0
@@ -55,6 +56,28 @@ defmodule Textbin.PastesTest do
 
       assert paste.data == "IO.puts(:ok)"
       assert paste.syntax_highlight == "elixir"
+    end
+
+    test "create_paste/2 stores every registered-user visibility", %{scope: scope} do
+      for visibility <- ["private", "unlisted", "public"] do
+        assert {:ok, %Paste{} = paste} =
+                 Pastes.create_paste(scope, %{data: visibility, visibility: visibility})
+
+        assert paste.visibility == visibility
+      end
+    end
+
+    test "create_paste/2 forces guest pastes to unlisted" do
+      {:ok, guest_user} = Textbin.Accounts.create_guest_user()
+      guest_scope = Textbin.Accounts.Scope.for_user(guest_user)
+
+      for requested_visibility <- [nil, "private", "unlisted", "public"] do
+        attrs =
+          %{data: "guest visibility"}
+          |> Map.put(:visibility, requested_visibility)
+
+        assert {:ok, %Paste{visibility: "unlisted"}} = Pastes.create_paste(guest_scope, attrs)
+      end
     end
 
     test "create_paste/2 stores a selected expiration", %{scope: scope} do
@@ -109,6 +132,13 @@ defmodule Textbin.PastesTest do
 
       assert %{expires_at: ["must use one of: never, 10m, 1h, 6h, 12h, 1d, 7d, 30d"]} =
                errors_on(changeset)
+    end
+
+    test "create_paste/2 with an invalid visibility returns error changeset", %{scope: scope} do
+      assert {:error, changeset} =
+               Pastes.create_paste(scope, %{data: "bad visibility", visibility: "secret"})
+
+      assert %{visibility: ["is invalid"]} = errors_on(changeset)
     end
 
     test "expired pastes are excluded from scoped reads", %{scope: scope} do
