@@ -218,8 +218,48 @@ defmodule Textbin.PastesTest do
       assert Pastes.get_paste!(other_scope, paste.id)
     end
 
+    test "delete_expired_pastes/1 deletes the oldest expired rows in bounded batches", %{
+      scope: scope
+    } do
+      now = Paste.utc_now_ms()
+
+      oldest_expired =
+        insert_paste!(scope, "oldest expired", DateTime.add(now, -2, :second))
+
+      newly_expired = insert_paste!(scope, "newly expired", now)
+      active = insert_paste!(scope, "active", DateTime.add(now, 1, :hour))
+      never_expires = insert_paste!(scope, "never", nil)
+
+      assert Pastes.delete_expired_pastes(now: now, limit: 1) == 1
+      refute Repo.get(Paste, oldest_expired.id)
+      assert Repo.get(Paste, newly_expired.id)
+
+      assert Pastes.delete_expired_pastes(now: now, limit: 1) == 1
+      refute Repo.get(Paste, newly_expired.id)
+      assert Repo.get(Paste, active.id)
+      assert Repo.get(Paste, never_expires.id)
+
+      assert Pastes.delete_expired_pastes(now: now, limit: 1) == 0
+    end
+
+    test "delete_expired_pastes/1 rejects invalid batch limits" do
+      assert_raise ArgumentError, ":limit must be a positive integer", fn ->
+        Pastes.delete_expired_pastes(limit: 0)
+      end
+    end
+
     test "change_paste/3 returns a paste changeset", %{scope: scope} do
       assert %Ecto.Changeset{} = Pastes.change_paste(scope, %Paste{})
+    end
+
+    defp insert_paste!(scope, data, expires_at) do
+      Repo.insert!(%Paste{
+        data: data,
+        syntax_highlight: "plain",
+        visibility: "private",
+        user_id: scope.user.id,
+        expires_at: expires_at
+      })
     end
   end
 end

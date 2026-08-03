@@ -71,6 +71,37 @@ defmodule Textbin.Pastes do
 
   def delete_paste(%Scope{}, %Paste{}), do: {:error, :not_found}
 
+  @doc """
+  Hard-deletes one bounded batch of expired pastes and returns the number deleted.
+
+  Rows with an expiration equal to `:now` are considered expired. The oldest
+  expirations are selected first so a backlog is drained predictably.
+  """
+  @spec delete_expired_pastes(keyword()) :: non_neg_integer()
+  def delete_expired_pastes(opts \\ []) do
+    now = Keyword.get_lazy(opts, :now, &Paste.utc_now_ms/0)
+    limit = Keyword.get(opts, :limit, 500)
+
+    if !is_integer(limit) or limit <= 0 do
+      raise ArgumentError, ":limit must be a positive integer"
+    end
+
+    expired_ids =
+      from p in Paste,
+        where: not is_nil(p.expires_at) and p.expires_at <= ^now,
+        order_by: [asc: p.expires_at, asc: p.id],
+        limit: ^limit,
+        select: p.id
+
+    {deleted_count, nil} =
+      Repo.delete_all(
+        from p in Paste,
+          where: p.id in subquery(expired_ids)
+      )
+
+    deleted_count
+  end
+
   def change_paste(%Scope{user: %User{} = user}, %Paste{} = paste, attrs \\ %{}) do
     paste = %{paste | user_id: paste.user_id || user.id}
 
