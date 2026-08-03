@@ -28,13 +28,12 @@ import topbar from "../vendor/topbar"
 const CopyToClipboard = {
   mounted() {
     this.copy = async () => {
-      const target = document.querySelector(this.el.dataset.copyTarget)
       const label = this.el.querySelector("[data-copy-label]")
 
-      if (!target || !label) return
+      if (!label) return
 
       try {
-        await navigator.clipboard.writeText(target.textContent)
+        await navigator.clipboard.writeText(this.el.dataset.copyContent)
         label.textContent = "Copied"
         this.el.dataset.copyState = "copied"
 

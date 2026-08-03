@@ -69,4 +69,34 @@ defmodule TextbinWeb.UI.SharedPasteLiveTest do
     assert has_element?(view, "#shared-paste-data", "<script>alert('nope')</script>")
     refute has_element?(view, "#shared-paste-data script")
   end
+
+  test "copy button exposes the exact stored paste data", %{scope: scope} do
+    for data <- ["abc", "abc\n"] do
+      {:ok, paste} =
+        Pastes.create_paste(scope, %{
+          data: data,
+          syntax_highlight: "plain",
+          visibility: "public"
+        })
+
+      {:ok, view, _html} = live(build_conn(), ~p"/p/#{paste.id}")
+
+      copy_button =
+        view
+        |> element("#copy-paste-content")
+        |> render()
+        |> LazyHTML.from_fragment()
+
+      assert LazyHTML.attribute(copy_button, "data-copy-content") == [data]
+    end
+  end
+
+  test "copy button ignores LiveView patches while its hook owns the DOM", %{scope: scope} do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{data: "copy me", visibility: "public"})
+
+    {:ok, view, _html} = live(build_conn(), ~p"/p/#{paste.id}")
+
+    assert has_element?(view, "#copy-paste-content[phx-update='ignore']")
+  end
 end

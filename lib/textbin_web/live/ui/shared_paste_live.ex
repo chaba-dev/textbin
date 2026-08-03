@@ -67,7 +67,8 @@ defmodule TextbinWeb.UI.SharedPasteLive do
               id="copy-paste-content"
               type="button"
               phx-hook="CopyToClipboard"
-              data-copy-target="#shared-paste-data code"
+              phx-update="ignore"
+              data-copy-content={@paste.data}
               class="btn btn-sm btn-primary"
               title="Copy paste content"
             >
