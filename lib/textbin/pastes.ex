@@ -42,16 +42,18 @@ defmodule Textbin.Pastes do
   end
 
   def get_shared_paste(current_scope, id) when is_binary(id) do
-    with {:ok, paste_id} <- Ecto.UUID.cast(id) do
-      now = Paste.utc_now_ms()
+    case Ecto.UUID.cast(id) do
+      {:ok, paste_id} ->
+        now = Paste.utc_now_ms()
 
-      Paste
-      |> where([paste], paste.id == ^paste_id)
-      |> where([paste], is_nil(paste.expires_at) or paste.expires_at > ^now)
-      |> allow_shared_access(current_scope)
-      |> Repo.one()
-    else
-      :error -> nil
+        Paste
+        |> where([paste], paste.id == ^paste_id)
+        |> where([paste], is_nil(paste.expires_at) or paste.expires_at > ^now)
+        |> allow_shared_access(current_scope)
+        |> Repo.one()
+
+      :error ->
+        nil
     end
   end
 
