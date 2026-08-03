@@ -41,6 +41,22 @@ defmodule Textbin.Pastes do
     )
   end
 
+  def get_shared_paste(current_scope, id) when is_binary(id) do
+    with {:ok, paste_id} <- Ecto.UUID.cast(id) do
+      now = Paste.utc_now_ms()
+
+      Paste
+      |> where([paste], paste.id == ^paste_id)
+      |> where([paste], is_nil(paste.expires_at) or paste.expires_at > ^now)
+      |> allow_shared_access(current_scope)
+      |> Repo.one()
+    else
+      :error -> nil
+    end
+  end
+
+  def get_shared_paste(_current_scope, _id), do: nil
+
   def create_paste(%Scope{user: %User{} = user}, attrs \\ %{}) do
     %Paste{user_id: user.id}
     |> Paste.changeset(attrs_with_defaults(attrs, user))
@@ -103,5 +119,17 @@ defmodule Textbin.Pastes do
   defp ttl_value(attrs) do
     Map.get(attrs, "expires_in") || Map.get(attrs, :expires_in) || Map.get(attrs, "ttl") ||
       Map.get(attrs, :ttl)
+  end
+
+  defp allow_shared_access(query, %Scope{user: %User{id: user_id}}) do
+    where(
+      query,
+      [paste],
+      paste.user_id == ^user_id or paste.visibility in ["unlisted", "public"]
+    )
+  end
+
+  defp allow_shared_access(query, nil) do
+    where(query, [paste], paste.visibility in ["unlisted", "public"])
   end
 end
