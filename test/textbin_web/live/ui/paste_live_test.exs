@@ -64,6 +64,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-visibility-#{paste.id}", "Private")
     assert has_element?(view, "#paste-expires-at-#{paste.id}", "Never expires")
     assert has_element?(view, "##{stream_id(paste)} a[href='/pastes/#{paste.id}']")
+    assert has_element?(view, "#open-shared-paste-#{paste.id}[href='/p/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
     refute has_element?(view, "##{stream_id(other_paste)}")
   end
@@ -141,6 +142,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-data .l-line[data-line='1']")
     assert has_element?(view, "#paste-data", "individual paste data")
     assert has_element?(view, "a[href='/pastes']", "Back to pastes")
+    assert has_element?(view, "a[href='/p/#{paste.id}']", "Open viewer")
   end
 
   test "escapes paste data before rendering highlighted HTML", %{conn: conn, scope: scope} do

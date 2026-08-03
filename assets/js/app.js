@@ -25,11 +25,45 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/textbin"
 import topbar from "../vendor/topbar"
 
+const CopyToClipboard = {
+  mounted() {
+    this.copy = async () => {
+      const target = document.querySelector(this.el.dataset.copyTarget)
+      const label = this.el.querySelector("[data-copy-label]")
+
+      if (!target || !label) return
+
+      try {
+        await navigator.clipboard.writeText(target.textContent)
+        label.textContent = "Copied"
+        this.el.dataset.copyState = "copied"
+
+        window.setTimeout(() => {
+          label.textContent = "Copy"
+          delete this.el.dataset.copyState
+        }, 1600)
+      } catch (_error) {
+        label.textContent = "Copy failed"
+
+        window.setTimeout(() => {
+          label.textContent = "Copy"
+        }, 1600)
+      }
+    }
+
+    this.el.addEventListener("click", this.copy)
+  },
+
+  destroyed() {
+    this.el.removeEventListener("click", this.copy)
+  },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, CopyToClipboard},
 })
 
 // Show progress bar on live navigation and form submits
@@ -80,4 +114,3 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
-
