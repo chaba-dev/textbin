@@ -183,7 +183,7 @@ defmodule TextbinWeb.UserAuthTest do
       refute conn.assigns.current_scope
     end
 
-    test "creates a guest user for paste paths when guest pastes are enabled", %{conn: conn} do
+    test "creates a guest user for the paste index when guest pastes are enabled", %{conn: conn} do
       put_guest_pastes_enabled(true)
 
       conn =
@@ -193,6 +193,20 @@ defmodule TextbinWeb.UserAuthTest do
       assert guest_user = conn.assigns.current_scope.user
       assert guest_user.kind == "guest"
       assert get_session(conn, :guest_user_id) == guest_user.id
+    end
+
+    test "does not create a guest user for paste detail or raw paths", %{conn: conn} do
+      put_guest_pastes_enabled(true)
+      paste_id = Ecto.UUID.generate()
+
+      for path_info <- [["pastes", paste_id], ["pastes", paste_id, "raw"]] do
+        conn =
+          %{conn | path_info: path_info}
+          |> UserAuth.fetch_current_scope_for_user([])
+
+        refute conn.assigns.current_scope
+        refute get_session(conn, :guest_user_id)
+      end
     end
 
     test "does not create a guest user outside paste paths", %{conn: conn} do

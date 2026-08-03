@@ -22,6 +22,7 @@ defmodule TextbinWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/pastes/:id/raw", PasteController, :raw
   end
 
   # v1 API

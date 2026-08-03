@@ -39,6 +39,52 @@ defmodule Textbin.PastesTest do
       assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
     end
 
+    test "get_shared_paste/2 allows anonymous access to unlisted and public pastes", %{
+      scope: scope
+    } do
+      for visibility <- ["unlisted", "public"] do
+        {:ok, paste} =
+          Pastes.create_paste(scope, %{data: visibility, visibility: visibility})
+
+        assert Pastes.get_shared_paste(nil, paste.id).id == paste.id
+      end
+    end
+
+    test "get_shared_paste/2 allows an owner to access a private paste", %{scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "private", visibility: "private"})
+
+      assert Pastes.get_shared_paste(scope, paste.id).id == paste.id
+    end
+
+    test "get_shared_paste/2 hides private pastes from other viewers", %{
+      scope: scope,
+      other_scope: other_scope
+    } do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "private", visibility: "private"})
+
+      refute Pastes.get_shared_paste(nil, paste.id)
+      refute Pastes.get_shared_paste(other_scope, paste.id)
+    end
+
+    test "get_shared_paste/2 hides expired shared pastes", %{scope: scope} do
+      expired_paste =
+        Repo.insert!(%Paste{
+          data: "expired shared data",
+          syntax_highlight: "plain",
+          visibility: "public",
+          user_id: scope.user.id,
+          expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
+        })
+
+      refute Pastes.get_shared_paste(nil, expired_paste.id)
+      refute Pastes.get_shared_paste(scope, expired_paste.id)
+    end
+
+    test "get_shared_paste/2 returns nil for an invalid id", %{scope: scope} do
+      refute Pastes.get_shared_paste(nil, "not-a-uuid")
+      refute Pastes.get_shared_paste(scope, "not-a-uuid")
+    end
+
     test "create_paste/2 with valid data creates a paste", %{scope: scope} do
       assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, @valid_attrs)
       assert paste.data == "some data"
