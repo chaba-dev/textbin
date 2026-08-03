@@ -92,12 +92,23 @@ defmodule Textbin.Accounts do
   def create_guest_user(attrs \\ %{}) do
     attrs =
       attrs
+      |> normalize_guest_attrs()
       |> Map.put_new("email", guest_email())
       |> Map.put_new("default_paste_ttl", guest_paste_ttl())
 
     %User{}
     |> User.guest_changeset(attrs)
     |> Repo.insert()
+  end
+
+  defp normalize_guest_attrs(attrs) do
+    Enum.reduce(attrs, %{}, fn
+      {key, value}, normalized when is_atom(key) ->
+        Map.put_new(normalized, Atom.to_string(key), value)
+
+      {key, value}, normalized ->
+        Map.put(normalized, key, value)
+    end)
   end
 
   defp guest_email do

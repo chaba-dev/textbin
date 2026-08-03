@@ -288,6 +288,13 @@ defmodule Textbin.AccountsTest do
       assert User.guest?(user)
     end
 
+    test "create_guest_user/1 preserves atom-key overrides" do
+      assert {:ok, %User{} = user} =
+               Accounts.create_guest_user(%{default_paste_ttl: "12h"})
+
+      assert user.default_paste_ttl == "12h"
+    end
+
     test "get_guest_user/1 returns only guest users" do
       user = user_fixture()
       {:ok, guest_user} = Accounts.create_guest_user()

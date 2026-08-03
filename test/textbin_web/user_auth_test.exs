@@ -280,6 +280,23 @@ defmodule TextbinWeb.UserAuthTest do
       assert updated_socket.assigns.current_scope.user.id == guest_user.id
       assert updated_socket.assigns.current_scope.user.kind == "guest"
     end
+
+    test "falls back to a guest_user_id when the user_token is invalid", %{conn: conn} do
+      put_guest_pastes_enabled(true)
+      {:ok, guest_user} = Accounts.create_guest_user()
+
+      session =
+        conn
+        |> put_session(:user_token, "invalid_token")
+        |> put_session(:guest_user_id, guest_user.id)
+        |> get_session()
+
+      {:cont, updated_socket} =
+        UserAuth.on_mount(:mount_current_scope, %{}, session, %LiveView.Socket{})
+
+      assert updated_socket.assigns.current_scope.user.id == guest_user.id
+      assert updated_socket.assigns.current_scope.user.kind == "guest"
+    end
   end
 
   describe "on_mount :require_authenticated" do
@@ -316,6 +333,23 @@ defmodule TextbinWeb.UserAuthTest do
 
       {:halt, updated_socket} = UserAuth.on_mount(:require_authenticated, %{}, session, socket)
       assert updated_socket.assigns.current_scope == nil
+    end
+
+    test "redirects a guest user to the login page", %{conn: conn} do
+      put_guest_pastes_enabled(true)
+      {:ok, guest_user} = Accounts.create_guest_user()
+      session = conn |> put_session(:guest_user_id, guest_user.id) |> get_session()
+
+      socket = %LiveView.Socket{
+        endpoint: TextbinWeb.Endpoint,
+        assigns: %{__changed__: %{}, flash: %{}}
+      }
+
+      {:halt, updated_socket} =
+        UserAuth.on_mount(:require_authenticated, %{}, session, socket)
+
+      assert updated_socket.assigns.current_scope.user.id == guest_user.id
+      assert updated_socket.assigns.current_scope.user.kind == "guest"
     end
   end
 
@@ -400,6 +434,19 @@ defmodule TextbinWeb.UserAuthTest do
 
       refute conn.halted
       refute conn.status
+    end
+
+    test "redirects if the current user is a guest", %{conn: conn} do
+      {:ok, guest_user} = Accounts.create_guest_user()
+
+      conn =
+        conn
+        |> fetch_flash()
+        |> assign(:current_scope, Scope.for_user(guest_user))
+        |> UserAuth.require_authenticated_user([])
+
+      assert conn.halted
+      assert redirected_to(conn) == ~p"/users/log-in"
     end
   end
 

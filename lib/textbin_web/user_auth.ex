@@ -292,7 +292,7 @@ defmodule TextbinWeb.UserAuth do
   def on_mount(:require_authenticated, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
-    if socket.assigns.current_scope && socket.assigns.current_scope.user do
+    if authenticated_scope?(socket.assigns.current_scope) do
       {:cont, socket}
     else
       socket =
@@ -321,15 +321,20 @@ defmodule TextbinWeb.UserAuth do
 
   defp mount_current_scope(socket, session) do
     Phoenix.Component.assign_new(socket, :current_scope, fn ->
-      {user, _} =
-        if user_token = session["user_token"] do
-          Accounts.get_user_by_session_token(user_token)
-        else
-          guest_user_from_session(session)
-        end || {nil, nil}
+      {user, _} = user_from_session(session)
 
       Scope.for_user(user)
     end)
+  end
+
+  defp user_from_session(session) do
+    with user_token when is_binary(user_token) <- session["user_token"],
+         {_user, _inserted_at} = user_session <-
+           Accounts.get_user_by_session_token(user_token) do
+      user_session
+    else
+      _ -> guest_user_from_session(session)
+    end
   end
 
   defp guest_user_from_session(session) do
@@ -355,7 +360,7 @@ defmodule TextbinWeb.UserAuth do
   Plug for routes that require the user to be authenticated.
   """
   def require_authenticated_user(conn, _opts) do
-    if conn.assigns.current_scope && conn.assigns.current_scope.user do
+    if authenticated_scope?(conn.assigns.current_scope) do
       conn
     else
       conn
@@ -365,6 +370,12 @@ defmodule TextbinWeb.UserAuth do
       |> halt()
     end
   end
+
+  defp authenticated_scope?(%Scope{user: %Accounts.User{} = user}) do
+    not Accounts.User.guest?(user)
+  end
+
+  defp authenticated_scope?(_scope), do: false
 
   defp maybe_store_return_to(%{method: "GET"} = conn) do
     put_session(conn, :user_return_to, current_path(conn))
