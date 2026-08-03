@@ -35,6 +35,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert %{"data" => [data]} = json_response(conn, 200)
       assert data["id"] == paste.id
       assert data["syntax_highlight"] == "plain"
+      assert data["visibility"] == "private"
     end
 
     test "requires an API token", %{conn: _conn} do
@@ -48,7 +49,12 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders paste when data is valid", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
 
-      assert %{"id" => id, "syntax_highlight" => "elixir", "expires_at" => expires_at} =
+      assert %{
+               "id" => id,
+               "syntax_highlight" => "elixir",
+               "visibility" => "private",
+               "expires_at" => expires_at
+             } =
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
@@ -61,6 +67,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                "id" => ^id,
                "data" => "some data",
                "syntax_highlight" => "elixir",
+               "visibility" => "private",
                "expires_at" => show_expires_at,
                "inserted_at" => inserted_at,
                "updated_at" => updated_at
@@ -121,6 +128,25 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       refute Map.has_key?(response_data, "data")
       assert is_nil(expires_at)
       assert_stored_paste(scope, id, "streamed data", "elixir")
+    end
+
+    test "stores and returns every registered-user visibility", %{conn: conn, scope: scope} do
+      for visibility <- ["private", "unlisted", "public"] do
+        conn = post(conn, ~p"/api/v1/pastes", %{data: visibility, visibility: visibility})
+
+        assert %{"id" => id, "visibility" => ^visibility} = json_response(conn, 201)["data"]
+        assert Pastes.get_paste!(scope, id).visibility == visibility
+      end
+    end
+
+    test "accepts visibility for raw request bodies", %{conn: conn, scope: scope} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/pastes?visibility=public", "public streamed data")
+
+      assert %{"id" => id, "visibility" => "public"} = json_response(conn, 201)["data"]
+      assert Pastes.get_paste!(scope, id).visibility == "public"
     end
 
     test "uses the user's default expiration", %{conn: conn, scope: scope} do
@@ -190,6 +216,12 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert %{"expires_at" => ["must use one of: never, 10m, 1h, 6h, 12h, 1d, 7d, 30d"]} =
                json_response(conn, 422)["errors"]
+    end
+
+    test "renders errors when visibility is invalid", %{conn: conn} do
+      conn = post(conn, ~p"/api/v1/pastes", Map.put(@create_attrs, :visibility, "secret"))
+
+      assert %{"visibility" => ["is invalid"]} = json_response(conn, 422)["errors"]
     end
 
     test "rejects JSON data over the configured size limit", %{conn: conn} do
