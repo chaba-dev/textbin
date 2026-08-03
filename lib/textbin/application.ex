@@ -7,16 +7,13 @@ defmodule Textbin.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      TextbinWeb.Telemetry,
-      Textbin.Repo,
-      {DNSCluster, query: Application.get_env(:textbin, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Textbin.PubSub},
-      # Start a worker by calling: Textbin.Worker.start_link(arg)
-      # {Textbin.Worker, arg},
-      # Start to serve requests, typically the last entry
-      TextbinWeb.Endpoint
-    ]
+    children =
+      [
+        TextbinWeb.Telemetry,
+        Textbin.Repo,
+        {DNSCluster, query: Application.get_env(:textbin, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: Textbin.PubSub}
+      ] ++ expiration_cleanup_children() ++ [TextbinWeb.Endpoint]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -30,5 +27,13 @@ defmodule Textbin.Application do
   def config_change(changed, _new, removed) do
     TextbinWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  defp expiration_cleanup_children do
+    if Application.get_env(:textbin, :expiration_cleanup_enabled, true) do
+      [Textbin.Pastes.ExpirationCleaner]
+    else
+      []
+    end
   end
 end
