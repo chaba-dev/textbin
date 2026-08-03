@@ -7,7 +7,7 @@ use std::error;
 use std::fmt;
 use std::io::Read;
 
-const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4000";
+const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4400";
 
 #[derive(Debug, Clone)]
 pub struct Client {
