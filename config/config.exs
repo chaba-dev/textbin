@@ -25,7 +25,10 @@ config :textbin,
   generators: [timestamp_type: :utc_datetime],
   allow_guest_pastes: false,
   guest_paste_ttl: "6h",
-  max_paste_bytes: 1_048_576
+  max_paste_bytes: 1_048_576,
+  expiration_cleanup_enabled: true,
+  expiration_cleanup_interval_ms: :timer.minutes(15),
+  expiration_cleanup_batch_size: 500
 
 # Configures the endpoint
 config :textbin, TextbinWeb.Endpoint,

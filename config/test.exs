@@ -29,6 +29,9 @@ config :textbin, TextbinWeb.Endpoint,
 # In test we don't send emails
 config :textbin, Textbin.Mailer, adapter: Swoosh.Adapters.Test
 
+# Cleanup is exercised explicitly so the global worker does not race SQL sandbox tests.
+config :textbin, expiration_cleanup_enabled: false
+
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false
 

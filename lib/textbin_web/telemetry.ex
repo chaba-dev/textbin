@@ -75,6 +75,17 @@ defmodule TextbinWeb.Telemetry do
           "The time the connection spent waiting before being checked out for the query"
       ),
 
+      # Paste expiration cleanup
+      sum("textbin.pastes.expiration_cleanup.deleted_count",
+        tags: [:result],
+        description: "The number of expired pastes permanently deleted"
+      ),
+      summary("textbin.pastes.expiration_cleanup.duration",
+        tags: [:result],
+        unit: {:native, :millisecond},
+        description: "The time spent deleting one batch of expired pastes"
+      ),
+
       # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),
