@@ -84,7 +84,7 @@ impl Client {
         expires_in: Option<&str>,
         visibility: Option<&str>,
     ) -> Result<CreatedPaste, Error> {
-        let url = self.create_paste_url(syntax_highlight, expires_in, visibility);
+        let url = self.create_paste_url(syntax_highlight, expires_in, visibility)?;
         let request = self
             .http
             .post(&url)
@@ -108,30 +108,35 @@ impl Client {
         syntax_highlight: Option<&str>,
         expires_in: Option<&str>,
         visibility: Option<&str>,
-    ) -> String {
-        let mut url = reqwest::Url::parse(&format!("{}/api/v1/pastes", self.base_url))
-            .expect("client base_url must be valid URL");
+    ) -> Result<String, Error> {
+        let url = format!("{}/api/v1/pastes", self.base_url);
         let syntax_highlight = syntax_highlight.filter(|syntax| !syntax.is_empty());
         let expires_in = expires_in.filter(|ttl| !ttl.is_empty());
         let visibility = visibility.filter(|visibility| !visibility.is_empty());
+        let mut query = Vec::new();
 
-        if syntax_highlight.is_some() || expires_in.is_some() || visibility.is_some() {
-            let mut query = url.query_pairs_mut();
-
-            if let Some(syntax_highlight) = syntax_highlight {
-                query.append_pair("syntax_highlight", syntax_highlight);
-            }
-
-            if let Some(expires_in) = expires_in {
-                query.append_pair("expires_in", expires_in);
-            }
-
-            if let Some(visibility) = visibility {
-                query.append_pair("visibility", visibility);
-            }
+        if let Some(syntax_highlight) = syntax_highlight {
+            query.push(("syntax_highlight", syntax_highlight));
         }
 
-        url.into()
+        if let Some(expires_in) = expires_in {
+            query.push(("expires_in", expires_in));
+        }
+
+        if let Some(visibility) = visibility {
+            query.push(("visibility", visibility));
+        }
+
+        let mut request = self.http.post(&url);
+
+        if !query.is_empty() {
+            request = request.query(&query);
+        }
+
+        request
+            .build()
+            .map(|request| request.url().to_string())
+            .map_err(|source| Error::Request { url, source })
     }
 
     fn authorize(
@@ -287,11 +292,13 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(None, None, None),
+            client.create_paste_url(None, None, None).unwrap(),
             "http://localhost:4000/api/v1/pastes"
         );
         assert_eq!(
-            client.create_paste_url(Some(""), Some(""), Some("")),
+            client
+                .create_paste_url(Some(""), Some(""), Some(""))
+                .unwrap(),
             "http://localhost:4000/api/v1/pastes"
         );
     }
@@ -301,7 +308,7 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(Some("rust"), None, None),
+            client.create_paste_url(Some("rust"), None, None).unwrap(),
             "http://localhost:4000/api/v1/pastes?syntax_highlight=rust"
         );
     }
@@ -311,7 +318,9 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(Some("rust"), Some("1h"), None),
+            client
+                .create_paste_url(Some("rust"), Some("1h"), None)
+                .unwrap(),
             "http://localhost:4000/api/v1/pastes?syntax_highlight=rust&expires_in=1h"
         );
     }
@@ -321,9 +330,17 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(None, None, Some("public")),
+            client.create_paste_url(None, None, Some("public")).unwrap(),
             "http://localhost:4000/api/v1/pastes?visibility=public"
         );
+    }
+
+    #[test]
+    fn create_paste_with_invalid_base_url_returns_request_error() {
+        let result =
+            Client::new("not a valid URL").create_paste("paste body".to_string(), None, None, None);
+
+        assert!(matches!(result, Err(Error::Request { .. })));
     }
 
     #[test]
