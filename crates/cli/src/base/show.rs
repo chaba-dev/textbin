@@ -3,22 +3,48 @@ use clap::Args;
 use lumis::formatters::TerminalBuilder;
 use lumis::languages::Language;
 use lumis::themes;
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
 use textbin_client::{Client, Paste};
 
 #[derive(Args)]
 pub struct ShowArgs {
-    /// The identifier/uuid of the paste
+    /// The identifier/UUID of the paste
     id: String,
 
-    /// disable color output
+    /// Disable color output
     #[arg(long, default_value_t = false)]
     no_color: bool,
+
+    /// Write the paste exactly as stored, without highlighting or an added newline
+    #[arg(long, default_value_t = false, conflicts_with = "no_color")]
+    raw: bool,
+
+    /// Open the paste in the default browser instead of printing it
+    #[arg(long, default_value_t = false, conflicts_with = "no_color")]
+    open: bool,
 }
 
 pub fn handle(args: &ShowArgs) -> Result<()> {
     let client = Client::from_env();
+
+    if args.open {
+        let url = if args.raw {
+            client.raw_paste_url(&args.id)
+        } else {
+            client.paste_url(&args.id)
+        };
+
+        webbrowser::open(&url).with_context(|| format!("failed to open {url}"))?;
+        println!("{url}");
+        return Ok(());
+    }
+
     let paste = client.get_paste(&args.id)?;
+
+    if args.raw {
+        write_raw(io::stdout().lock(), &paste.data)?;
+        return Ok(());
+    }
 
     let use_color = io::stdout().is_terminal() && !args.no_color;
     let body = render_paste(&paste, use_color)?;
@@ -26,6 +52,10 @@ pub fn handle(args: &ShowArgs) -> Result<()> {
     print_code_area(&body);
 
     Ok(())
+}
+
+fn write_raw(mut writer: impl Write, data: &str) -> io::Result<()> {
+    writer.write_all(data.as_bytes())
 }
 
 fn print_code_area(content: &str) {
@@ -80,6 +110,24 @@ mod tests {
     #[test]
     fn format_code_area_preserves_existing_trailing_newline() {
         assert_eq!(format_code_area("hello\n"), "hello\n");
+    }
+
+    #[test]
+    fn write_raw_preserves_content_without_adding_a_newline() {
+        let mut output = Vec::new();
+
+        write_raw(&mut output, "paste without newline").unwrap();
+
+        assert_eq!(output, b"paste without newline");
+    }
+
+    #[test]
+    fn write_raw_preserves_trailing_newlines() {
+        let mut output = Vec::new();
+
+        write_raw(&mut output, "paste\n\n").unwrap();
+
+        assert_eq!(output, b"paste\n\n");
     }
 
     #[test]

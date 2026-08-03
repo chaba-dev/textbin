@@ -49,3 +49,34 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn show_accepts_raw_and_open_together() {
+        let result = TextbinCli::try_parse_from([
+            "textbin",
+            "show",
+            "00000000-0000-0000-0000-000000000000",
+            "--raw",
+            "--open",
+        ]);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn show_rejects_no_color_with_browser_output() {
+        let result = TextbinCli::try_parse_from([
+            "textbin",
+            "show",
+            "00000000-0000-0000-0000-000000000000",
+            "--no-color",
+            "--open",
+        ]);
+
+        assert!(result.is_err());
+    }
+}
