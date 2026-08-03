@@ -12,7 +12,7 @@ config :textbin, Textbin.Repo,
   username: System.get_env("DATABASE_USER") || "postgres",
   password: System.get_env("DATABASE_PASSWORD") || "postgres",
   hostname: System.get_env("DATABASE_HOST") || "localhost",
-  port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
+  port: String.to_integer(System.get_env("DATABASE_PORT") || "5433"),
   database:
     System.get_env("DATABASE_TEST_NAME") ||
       "textbin_test#{System.get_env("MIX_TEST_PARTITION")}",

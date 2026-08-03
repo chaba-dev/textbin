@@ -3,10 +3,12 @@ defmodule Textbin.Accounts.User do
   import Ecto.Changeset
 
   @primary_key {:id, :binary_id, autogenerate: true}
-  @paste_ttl_values ["never", "10m", "1h", "1d", "7d", "30d"]
+  @paste_ttl_values ["never", "10m", "1h", "6h", "12h", "1d", "7d", "30d"]
+  @user_kinds ["registered", "guest"]
 
   schema "users" do
     field :email, :string
+    field :kind, :string, default: "registered"
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime
@@ -30,6 +32,7 @@ defmodule Textbin.Accounts.User do
   def email_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:email])
+    |> put_change(:kind, "registered")
     |> validate_email(opts)
   end
 
@@ -117,6 +120,26 @@ defmodule Textbin.Accounts.User do
     |> validate_required([:default_paste_ttl])
     |> validate_inclusion(:default_paste_ttl, @paste_ttl_values)
   end
+
+  @doc """
+  A user changeset for creating browser-only guest users.
+  """
+  def guest_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email, :default_paste_ttl])
+    |> put_change(:kind, "guest")
+    |> validate_required([:email, :kind, :default_paste_ttl])
+    |> validate_inclusion(:kind, @user_kinds)
+    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
+      message: "must have the @ sign and no spaces"
+    )
+    |> validate_length(:email, max: 160)
+    |> validate_inclusion(:default_paste_ttl, @paste_ttl_values)
+    |> unique_constraint(:email)
+  end
+
+  def guest?(%__MODULE__{kind: "guest"}), do: true
+  def guest?(_user), do: false
 
   @doc """
   Confirms the account by setting `confirmed_at`.

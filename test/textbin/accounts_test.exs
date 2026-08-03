@@ -262,10 +262,10 @@ defmodule Textbin.AccountsTest do
       user = user_fixture()
 
       assert {:ok, %User{} = user} =
-               Accounts.update_user_paste_defaults(user, %{default_paste_ttl: "1h"})
+               Accounts.update_user_paste_defaults(user, %{default_paste_ttl: "12h"})
 
-      assert user.default_paste_ttl == "1h"
-      assert Repo.get!(User, user.id).default_paste_ttl == "1h"
+      assert user.default_paste_ttl == "12h"
+      assert Repo.get!(User, user.id).default_paste_ttl == "12h"
     end
 
     test "update_user_paste_defaults/2 rejects invalid ttl values" do
@@ -275,6 +275,33 @@ defmodule Textbin.AccountsTest do
                Accounts.update_user_paste_defaults(user, %{default_paste_ttl: "forever"})
 
       assert %{default_paste_ttl: ["is invalid"]} = errors_on(changeset)
+    end
+  end
+
+  describe "guest users" do
+    test "create_guest_user/1 creates a guest user with a generated email" do
+      assert {:ok, %User{} = user} = Accounts.create_guest_user()
+
+      assert user.kind == "guest"
+      assert user.default_paste_ttl == "6h"
+      assert user.email =~ ~r/^guest-.+@guest\.textbin\.local$/
+      assert User.guest?(user)
+    end
+
+    test "create_guest_user/1 preserves atom-key overrides" do
+      assert {:ok, %User{} = user} =
+               Accounts.create_guest_user(%{default_paste_ttl: "12h"})
+
+      assert user.default_paste_ttl == "12h"
+    end
+
+    test "get_guest_user/1 returns only guest users" do
+      user = user_fixture()
+      {:ok, guest_user} = Accounts.create_guest_user()
+
+      assert Accounts.get_guest_user(guest_user.id).id == guest_user.id
+      refute Accounts.get_guest_user(user.id)
+      refute Accounts.get_guest_user("not-a-uuid")
     end
   end
 

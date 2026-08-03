@@ -45,7 +45,7 @@ defmodule TextbinWeb.UserLive.Confirmation do
           phx-trigger-action={@trigger_submit}
         >
           <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
-          <%= if @current_scope do %>
+          <%= if registered_scope?(@current_scope) do %>
             <.button phx-disable-with="Logging in..." class="btn btn-primary w-full">
               Log in
             </.button>
@@ -91,4 +91,10 @@ defmodule TextbinWeb.UserLive.Confirmation do
   def handle_event("submit", %{"user" => params}, socket) do
     {:noreply, assign(socket, form: to_form(params, as: "user"), trigger_submit: true)}
   end
+
+  defp registered_scope?(%{user: %Textbin.Accounts.User{} = user}) do
+    !Textbin.Accounts.User.guest?(user)
+  end
+
+  defp registered_scope?(_scope), do: false
 end

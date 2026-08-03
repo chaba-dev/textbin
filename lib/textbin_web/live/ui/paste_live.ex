@@ -8,6 +8,13 @@ defmodule TextbinWeb.UI.PasteLive do
 
   def mount(_params, _session, socket), do: {:ok, socket}
 
+  def handle_params(_params, _uri, %{assigns: %{current_scope: nil}} = socket) do
+    {:noreply,
+     socket
+     |> put_flash(:error, "You must log in to access this page.")
+     |> redirect(to: ~p"/users/log-in")}
+  end
+
   def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
     {:noreply,
      socket
@@ -99,6 +106,8 @@ defmodule TextbinWeb.UI.PasteLive do
       {"Never", "never"},
       {"10 minutes", "10m"},
       {"1 hour", "1h"},
+      {"6 hours", "6h"},
+      {"12 hours", "12h"},
       {"1 day", "1d"},
       {"7 days", "7d"},
       {"30 days", "30d"}

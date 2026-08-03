@@ -23,6 +23,8 @@ config :textbin, :scopes,
 config :textbin,
   ecto_repos: [Textbin.Repo],
   generators: [timestamp_type: :utc_datetime],
+  allow_guest_pastes: false,
+  guest_paste_ttl: "6h",
   max_paste_bytes: 1_048_576
 
 # Configures the endpoint

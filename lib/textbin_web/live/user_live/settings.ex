@@ -323,6 +323,8 @@ defmodule TextbinWeb.UserLive.Settings do
       {"Never", "never"},
       {"10 minutes", "10m"},
       {"1 hour", "1h"},
+      {"6 hours", "6h"},
+      {"12 hours", "12h"},
       {"1 day", "1d"},
       {"7 days", "7d"},
       {"30 days", "30d"}

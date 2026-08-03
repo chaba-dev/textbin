@@ -64,6 +64,18 @@ defmodule Textbin.PastesTest do
       assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 3590..3600
     end
 
+    test "create_paste/2 supports 6h and 12h expirations", %{scope: scope} do
+      assert {:ok, %Paste{} = six_hour_paste} =
+               Pastes.create_paste(scope, %{data: "six hours", expires_in: "6h"})
+
+      assert DateTime.diff(six_hour_paste.expires_at, DateTime.utc_now(), :second) in 21_590..21_600
+
+      assert {:ok, %Paste{} = twelve_hour_paste} =
+               Pastes.create_paste(scope, %{data: "twelve hours", expires_in: "12h"})
+
+      assert DateTime.diff(twelve_hour_paste.expires_at, DateTime.utc_now(), :second) in 43_190..43_200
+    end
+
     test "create_paste/2 uses the user's default expiration", %{scope: scope} do
       {:ok, user} =
         Textbin.Accounts.update_user_paste_defaults(scope.user, %{default_paste_ttl: "1d"})
@@ -95,7 +107,7 @@ defmodule Textbin.PastesTest do
       assert {:error, changeset} =
                Pastes.create_paste(scope, %{data: "bad ttl", expires_in: "forever"})
 
-      assert %{expires_at: ["must use one of: never, 10m, 1h, 1d, 7d, 30d"]} =
+      assert %{expires_at: ["must use one of: never, 10m, 1h, 6h, 12h, 1d, 7d, 30d"]} =
                errors_on(changeset)
     end
 

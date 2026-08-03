@@ -1,5 +1,5 @@
 defmodule TextbinWeb.UserAuthTest do
-  use TextbinWeb.ConnCase, async: true
+  use TextbinWeb.ConnCase, async: false
 
   alias Phoenix.LiveView
   alias Textbin.Accounts
@@ -183,6 +183,29 @@ defmodule TextbinWeb.UserAuthTest do
       refute conn.assigns.current_scope
     end
 
+    test "creates a guest user for paste paths when guest pastes are enabled", %{conn: conn} do
+      put_guest_pastes_enabled(true)
+
+      conn =
+        %{conn | path_info: ["pastes"]}
+        |> UserAuth.fetch_current_scope_for_user([])
+
+      assert guest_user = conn.assigns.current_scope.user
+      assert guest_user.kind == "guest"
+      assert get_session(conn, :guest_user_id) == guest_user.id
+    end
+
+    test "does not create a guest user outside paste paths", %{conn: conn} do
+      put_guest_pastes_enabled(true)
+
+      conn =
+        %{conn | path_info: []}
+        |> UserAuth.fetch_current_scope_for_user([])
+
+      refute conn.assigns.current_scope
+      refute get_session(conn, :guest_user_id)
+    end
+
     test "reissues a new token after a few days and refreshes cookie", %{conn: conn, user: user} do
       logged_in_conn =
         conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
@@ -243,6 +266,37 @@ defmodule TextbinWeb.UserAuthTest do
 
       assert updated_socket.assigns.current_scope == nil
     end
+
+    test "assigns current_scope based on a guest_user_id when guest pastes are enabled", %{
+      conn: conn
+    } do
+      put_guest_pastes_enabled(true)
+      {:ok, guest_user} = Accounts.create_guest_user()
+      session = conn |> put_session(:guest_user_id, guest_user.id) |> get_session()
+
+      {:cont, updated_socket} =
+        UserAuth.on_mount(:mount_current_scope, %{}, session, %LiveView.Socket{})
+
+      assert updated_socket.assigns.current_scope.user.id == guest_user.id
+      assert updated_socket.assigns.current_scope.user.kind == "guest"
+    end
+
+    test "falls back to a guest_user_id when the user_token is invalid", %{conn: conn} do
+      put_guest_pastes_enabled(true)
+      {:ok, guest_user} = Accounts.create_guest_user()
+
+      session =
+        conn
+        |> put_session(:user_token, "invalid_token")
+        |> put_session(:guest_user_id, guest_user.id)
+        |> get_session()
+
+      {:cont, updated_socket} =
+        UserAuth.on_mount(:mount_current_scope, %{}, session, %LiveView.Socket{})
+
+      assert updated_socket.assigns.current_scope.user.id == guest_user.id
+      assert updated_socket.assigns.current_scope.user.kind == "guest"
+    end
   end
 
   describe "on_mount :require_authenticated" do
@@ -279,6 +333,23 @@ defmodule TextbinWeb.UserAuthTest do
 
       {:halt, updated_socket} = UserAuth.on_mount(:require_authenticated, %{}, session, socket)
       assert updated_socket.assigns.current_scope == nil
+    end
+
+    test "redirects a guest user to the login page", %{conn: conn} do
+      put_guest_pastes_enabled(true)
+      {:ok, guest_user} = Accounts.create_guest_user()
+      session = conn |> put_session(:guest_user_id, guest_user.id) |> get_session()
+
+      socket = %LiveView.Socket{
+        endpoint: TextbinWeb.Endpoint,
+        assigns: %{__changed__: %{}, flash: %{}}
+      }
+
+      {:halt, updated_socket} =
+        UserAuth.on_mount(:require_authenticated, %{}, session, socket)
+
+      assert updated_socket.assigns.current_scope.user.id == guest_user.id
+      assert updated_socket.assigns.current_scope.user.kind == "guest"
     end
   end
 
@@ -364,6 +435,19 @@ defmodule TextbinWeb.UserAuthTest do
       refute conn.halted
       refute conn.status
     end
+
+    test "redirects if the current user is a guest", %{conn: conn} do
+      {:ok, guest_user} = Accounts.create_guest_user()
+
+      conn =
+        conn
+        |> fetch_flash()
+        |> assign(:current_scope, Scope.for_user(guest_user))
+        |> UserAuth.require_authenticated_user([])
+
+      assert conn.halted
+      assert redirected_to(conn) == ~p"/users/log-in"
+    end
   end
 
   describe "disconnect_sessions/1" do
@@ -386,5 +470,14 @@ defmodule TextbinWeb.UserAuthTest do
         topic: "users_sessions:dG9rZW4y"
       }
     end
+  end
+
+  defp put_guest_pastes_enabled(enabled?) do
+    previous = Application.get_env(:textbin, :allow_guest_pastes)
+    Application.put_env(:textbin, :allow_guest_pastes, enabled?)
+
+    on_exit(fn ->
+      Application.put_env(:textbin, :allow_guest_pastes, previous)
+    end)
   end
 end

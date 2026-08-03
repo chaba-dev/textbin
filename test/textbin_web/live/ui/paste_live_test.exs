@@ -1,10 +1,12 @@
 defmodule TextbinWeb.UI.PasteLiveTest do
-  use TextbinWeb.ConnCase, async: true
+  use TextbinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
   import Textbin.AccountsFixtures
 
+  alias Textbin.Pastes.Paste
   alias Textbin.Pastes
+  alias Textbin.Repo
 
   setup %{conn: conn} do
     user = user_fixture()
@@ -15,6 +17,34 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert {:error, {:redirect, %{to: path, flash: flash}}} = live(build_conn(), ~p"/pastes")
     assert path == ~p"/users/log-in"
     assert %{"error" => "You must log in to access this page."} = flash
+  end
+
+  test "allows guest paste creation when enabled" do
+    put_guest_pastes_enabled(true)
+
+    {:ok, view, _html} = live(build_conn(), ~p"/pastes")
+
+    assert has_element?(view, "#paste-form")
+
+    view
+    |> form("#paste-form", %{
+      "paste" => %{
+        "data" => "guest paste",
+        "syntax_highlight" => "plain",
+        "expires_in" => ""
+      }
+    })
+    |> render_submit()
+
+    paste =
+      Paste
+      |> Repo.one!()
+      |> Repo.preload(:user)
+
+    assert paste.data == "guest paste"
+    assert paste.user.kind == "guest"
+    assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 21_590..21_600
+    assert has_element?(view, "##{stream_id(paste)}", "plain")
   end
 
   test "lists scoped pastes", %{conn: conn, scope: scope} do
@@ -154,4 +184,13 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   end
 
   defp stream_id(paste), do: "pastes-#{paste.id}"
+
+  defp put_guest_pastes_enabled(enabled?) do
+    previous = Application.get_env(:textbin, :allow_guest_pastes)
+    Application.put_env(:textbin, :allow_guest_pastes, enabled?)
+
+    on_exit(fn ->
+      Application.put_env(:textbin, :allow_guest_pastes, previous)
+    end)
+  end
 end
