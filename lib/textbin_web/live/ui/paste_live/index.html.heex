@@ -104,15 +104,6 @@
                 Never expires
               </span>
             <% end %>
-            <.link
-              id={"open-shared-paste-#{paste.id}"}
-              navigate={~p"/p/#{paste.id}"}
-              class="btn btn-ghost btn-xs"
-              title="Open paste viewer"
-              aria-label="Open paste viewer"
-            >
-              <.icon name="hero-arrow-top-right-on-square" class="size-4" />
-            </.link>
             <button
               id={"delete-paste-#{paste.id}"}
               type="button"

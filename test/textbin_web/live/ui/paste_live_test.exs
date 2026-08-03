@@ -10,7 +10,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
   setup %{conn: conn} do
     user = user_fixture()
-    %{conn: log_in_user(conn, user), scope: user_scope_fixture(user)}
+    %{conn: log_in_user(conn, user), scope: user_scope_fixture(user), user: user}
   end
 
   test "redirects unauthenticated users to login" do
@@ -64,7 +64,6 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-visibility-#{paste.id}", "Private")
     assert has_element?(view, "#paste-expires-at-#{paste.id}", "Never expires")
     assert has_element?(view, "##{stream_id(paste)} a[href='/pastes/#{paste.id}']")
-    assert has_element?(view, "#open-shared-paste-#{paste.id}[href='/p/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
     refute has_element?(view, "##{stream_id(other_paste)}")
   end
@@ -142,7 +141,62 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-data .l-line[data-line='1']")
     assert has_element?(view, "#paste-data", "individual paste data")
     assert has_element?(view, "a[href='/pastes']", "Back to pastes")
-    assert has_element?(view, "a[href='/p/#{paste.id}']", "Open viewer")
+    assert has_element?(view, "#copy-paste-content[phx-hook='CopyToClipboard']")
+    assert has_element?(view, "#raw-paste-link[href='/pastes/#{paste.id}/raw']")
+    assert has_element?(view, "#delete-paste-#{paste.id}")
+  end
+
+  test "anonymous viewers can open unlisted and public pastes", %{scope: scope} do
+    for visibility <- ["unlisted", "public"] do
+      {:ok, paste} =
+        Pastes.create_paste(scope, %{
+          data: "#{visibility} paste",
+          syntax_highlight: "elixir",
+          visibility: visibility
+        })
+
+      {:ok, view, _html} = live(build_conn(), ~p"/pastes/#{paste.id}")
+
+      assert has_element?(view, "#paste-visibility", String.capitalize(visibility))
+      assert has_element?(view, "#paste-data .l-line[data-line='1']")
+      assert has_element?(view, "#paste-data", "#{visibility} paste")
+      assert has_element?(view, "#copy-paste-content[phx-hook='CopyToClipboard']")
+      assert has_element?(view, "#raw-paste-link[href='/pastes/#{paste.id}/raw']")
+      refute has_element?(view, "a[href='/pastes']", "Back to pastes")
+      refute has_element?(view, "#delete-paste-#{paste.id}")
+    end
+  end
+
+  test "private pastes are hidden from anonymous and other signed-in viewers", %{scope: scope} do
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "private paste", visibility: "private"})
+
+    assert_raise Ecto.NoResultsError, fn ->
+      live(build_conn(), ~p"/pastes/#{paste.id}")
+    end
+
+    other_user = user_fixture()
+
+    assert_raise Ecto.NoResultsError, fn ->
+      live(log_in_user(build_conn(), other_user), ~p"/pastes/#{paste.id}")
+    end
+  end
+
+  test "copy button exposes the exact stored paste data", %{scope: scope} do
+    for data <- ["abc", "abc\n"] do
+      {:ok, paste} =
+        Pastes.create_paste(scope, %{data: data, syntax_highlight: "plain", visibility: "public"})
+
+      {:ok, view, _html} = live(build_conn(), ~p"/pastes/#{paste.id}")
+
+      copy_button =
+        view
+        |> element("#copy-paste-content")
+        |> render()
+        |> LazyHTML.from_fragment()
+
+      assert LazyHTML.attribute(copy_button, "data-copy-content") == [data]
+      assert has_element?(view, "#copy-paste-content[phx-update='ignore']")
+    end
   end
 
   test "escapes paste data before rendering highlighted HTML", %{conn: conn, scope: scope} do

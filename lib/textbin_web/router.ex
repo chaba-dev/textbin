@@ -22,7 +22,7 @@ defmodule TextbinWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
-    get "/p/:id/raw", PasteController, :raw
+    get "/pastes/:id/raw", PasteController, :raw
   end
 
   # v1 API
@@ -68,7 +68,6 @@ defmodule TextbinWeb.Router do
 
     live_session :current_user,
       on_mount: [{TextbinWeb.UserAuth, :mount_current_scope}] do
-      live "/p/:id", UI.SharedPasteLive, :show
       live "/pastes", UI.PasteLive, :index
       live "/pastes/:id", UI.PasteLive, :show
       live "/users/register", UserLive.Registration, :new

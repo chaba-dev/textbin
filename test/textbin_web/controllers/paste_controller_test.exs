@@ -17,7 +17,7 @@ defmodule TextbinWeb.PasteControllerTest do
       content = "#{visibility}\ncontent\n"
       {:ok, paste} = Pastes.create_paste(scope, %{data: content, visibility: visibility})
 
-      conn = get(build_conn(), ~p"/p/#{paste.id}/raw")
+      conn = get(build_conn(), ~p"/pastes/#{paste.id}/raw")
 
       assert response(conn, 200) == content
       assert get_resp_header(conn, "content-type") == ["text/plain; charset=utf-8"]
@@ -30,7 +30,7 @@ defmodule TextbinWeb.PasteControllerTest do
     conn =
       build_conn()
       |> log_in_user(user)
-      |> get(~p"/p/#{paste.id}/raw")
+      |> get(~p"/pastes/#{paste.id}/raw")
 
     assert response(conn, 200) == "private raw"
   end
@@ -38,14 +38,14 @@ defmodule TextbinWeb.PasteControllerTest do
   test "raw hides private pastes from anonymous and other signed-in viewers", %{scope: scope} do
     {:ok, paste} = Pastes.create_paste(scope, %{data: "private raw", visibility: "private"})
 
-    assert response(get(build_conn(), ~p"/p/#{paste.id}/raw"), 404) == "Not Found"
+    assert response(get(build_conn(), ~p"/pastes/#{paste.id}/raw"), 404) == "Not Found"
 
     other_user = user_fixture()
 
     other_conn =
       build_conn()
       |> log_in_user(other_user)
-      |> get(~p"/p/#{paste.id}/raw")
+      |> get(~p"/pastes/#{paste.id}/raw")
 
     assert response(other_conn, 404) == "Not Found"
   end
@@ -60,10 +60,10 @@ defmodule TextbinWeb.PasteControllerTest do
         expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
       })
 
-    assert response(get(build_conn(), ~p"/p/#{paste.id}/raw"), 404) == "Not Found"
+    assert response(get(build_conn(), ~p"/pastes/#{paste.id}/raw"), 404) == "Not Found"
   end
 
   test "raw returns not found for an invalid paste id" do
-    assert response(get(build_conn(), ~p"/p/not-a-uuid/raw"), 404) == "Not Found"
+    assert response(get(build_conn(), ~p"/pastes/not-a-uuid/raw"), 404) == "Not Found"
   end
 end

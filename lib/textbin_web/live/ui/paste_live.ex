@@ -1,6 +1,7 @@
 defmodule TextbinWeb.UI.PasteLive do
   use TextbinWeb, :live_view
 
+  alias Textbin.Accounts.{Scope, User}
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
 
@@ -8,7 +9,11 @@ defmodule TextbinWeb.UI.PasteLive do
 
   def mount(_params, _session, socket), do: {:ok, socket}
 
-  def handle_params(_params, _uri, %{assigns: %{current_scope: nil}} = socket) do
+  def handle_params(
+        _params,
+        _uri,
+        %{assigns: %{live_action: :index, current_scope: nil}} = socket
+      ) do
     {:noreply,
      socket
      |> put_flash(:error, "You must log in to access this page.")
@@ -23,12 +28,18 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   def handle_params(%{"id" => id}, _uri, %{assigns: %{live_action: :show}} = socket) do
-    paste = Pastes.get_paste!(socket.assigns.current_scope, id)
+    case Pastes.get_shared_paste(socket.assigns.current_scope, id) do
+      %Paste{} = paste ->
+        {:noreply,
+         socket
+         |> assign(:page_title, "Paste #{paste.id}")
+         |> assign(:paste, paste)
+         |> assign(:owner?, owner?(socket.assigns.current_scope, paste))
+         |> assign(:highlighted_paste_data, highlighted_paste_data(paste))}
 
-    {:noreply,
-     socket
-     |> assign(:paste, paste)
-     |> assign(:highlighted_paste_data, highlighted_paste_data(paste))}
+      nil ->
+        raise Ecto.NoResultsError, queryable: Paste
+    end
   end
 
   def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :index}} = socket) do
@@ -99,6 +110,9 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   defp highlight_language(_paste), do: "plain"
+
+  defp owner?(%Scope{user: %User{id: user_id}}, %Paste{user_id: user_id}), do: true
+  defp owner?(_current_scope, _paste), do: false
 
   defp paste_ttl_options do
     [

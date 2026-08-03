@@ -34,14 +34,33 @@
           <% end %>
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        <.link navigate={~p"/p/#{@paste.id}"} class="btn btn-sm btn-ghost">
-          <.icon name="hero-arrow-top-right-on-square" class="size-4" /> Open viewer
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          id="copy-paste-content"
+          type="button"
+          phx-hook="CopyToClipboard"
+          phx-update="ignore"
+          data-copy-content={@paste.data}
+          class="btn btn-sm btn-primary"
+          title="Copy paste content"
+        >
+          <.icon name="hero-clipboard" class="size-4" />
+          <span data-copy-label>Copy</span>
+        </button>
+        <.link
+          id="raw-paste-link"
+          href={~p"/pastes/#{@paste.id}/raw"}
+          target="_blank"
+          class="btn btn-sm btn-ghost"
+          title="View raw paste"
+        >
+          <.icon name="hero-code-bracket" class="size-4" /> Raw
         </.link>
-        <.link navigate={~p"/pastes"} class="btn btn-sm btn-ghost">
+        <.link :if={@owner?} navigate={~p"/pastes"} class="btn btn-sm btn-ghost">
           Back to pastes
         </.link>
         <button
+          :if={@owner?}
           id={"delete-paste-#{@paste.id}"}
           type="button"
           phx-click="delete"

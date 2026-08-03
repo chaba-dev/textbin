@@ -88,7 +88,7 @@ defmodule TextbinWeb.UserAuth do
       guest_user = Accounts.get_guest_user(get_session(conn, @guest_user_session_key)) ->
         assign(conn, :current_scope, Scope.for_user(guest_user))
 
-      paste_path?(conn) ->
+      paste_index_path?(conn) ->
         create_guest_scope(conn)
 
       true ->
@@ -112,8 +112,8 @@ defmodule TextbinWeb.UserAuth do
     Application.get_env(:textbin, :allow_guest_pastes, false)
   end
 
-  defp paste_path?(%{path_info: ["pastes" | _rest]}), do: true
-  defp paste_path?(_conn), do: false
+  defp paste_index_path?(%{path_info: ["pastes"]}), do: true
+  defp paste_index_path?(_conn), do: false
 
   @doc """
   Authenticates API requests by bearer API token when one is present.
