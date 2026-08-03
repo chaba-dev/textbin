@@ -68,6 +68,7 @@ mod tests {
         Paste {
             data: data.to_string(),
             syntax_highlight: syntax_highlight.to_string(),
+            visibility: "private".to_string(),
         }
     }
 
