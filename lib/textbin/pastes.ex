@@ -43,7 +43,7 @@ defmodule Textbin.Pastes do
 
   def create_paste(%Scope{user: %User{} = user}, attrs \\ %{}) do
     %Paste{user_id: user.id}
-    |> Paste.changeset(attrs_with_default_ttl(attrs, user))
+    |> Paste.changeset(attrs_with_defaults(attrs, user))
     |> Repo.insert()
   end
 
@@ -56,7 +56,13 @@ defmodule Textbin.Pastes do
   def change_paste(%Scope{user: %User{} = user}, %Paste{} = paste, attrs \\ %{}) do
     paste = %{paste | user_id: paste.user_id || user.id}
 
-    Paste.changeset(paste, attrs)
+    Paste.changeset(paste, attrs_with_visibility(attrs, user))
+  end
+
+  defp attrs_with_defaults(attrs, user) do
+    attrs
+    |> attrs_with_default_ttl(user)
+    |> attrs_with_visibility(user)
   end
 
   defp attrs_with_default_ttl(attrs, user) do
@@ -69,6 +75,23 @@ defmodule Textbin.Pastes do
 
   defp default_ttl_key(attrs) when is_map(attrs) do
     if Enum.any?(Map.keys(attrs), &is_binary/1), do: "expires_in", else: :expires_in
+  end
+
+  defp attrs_with_visibility(attrs, %User{} = user) when is_map(attrs) do
+    visibility = if User.guest?(user), do: "unlisted", else: visibility_value(attrs)
+
+    Map.put(attrs, attr_key(attrs, "visibility", :visibility), visibility || "private")
+  end
+
+  defp visibility_value(attrs) do
+    case Map.get(attrs, "visibility") || Map.get(attrs, :visibility) do
+      "" -> nil
+      visibility -> visibility
+    end
+  end
+
+  defp attr_key(attrs, string_key, atom_key) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1), do: string_key, else: atom_key
   end
 
   defp ttl_provided?(attrs) when is_map(attrs) do

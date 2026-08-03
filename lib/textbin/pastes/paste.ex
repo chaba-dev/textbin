@@ -9,6 +9,7 @@ defmodule Textbin.Pastes.Paste do
   # Store timestamps at millisecond precision so API output and database values
   # stay stable across adapters and reloads.
   @timestamps_opts [type: :utc_datetime_usec, autogenerate: {__MODULE__, :utc_now_ms, []}]
+  @visibility_values ["private", "unlisted", "public"]
   @ttl_presets %{
     "10m" => 10 * 60,
     "1h" => 60 * 60,
@@ -22,6 +23,7 @@ defmodule Textbin.Pastes.Paste do
   schema "pastes" do
     field :data, :string
     field :syntax_highlight, :string, default: "plain"
+    field :visibility, :string, default: "private"
     field :expires_at, :utc_datetime_usec
     field :expires_in, :string, virtual: true
 
@@ -32,9 +34,10 @@ defmodule Textbin.Pastes.Paste do
 
   def changeset(paste, attrs) do
     paste
-    |> cast(attrs, [:data, :syntax_highlight, :expires_in])
+    |> cast(attrs, [:data, :syntax_highlight, :visibility, :expires_in])
     |> put_expires_at(attrs)
-    |> validate_required([:data, :syntax_highlight, :user_id])
+    |> validate_required([:data, :syntax_highlight, :visibility, :user_id])
+    |> validate_inclusion(:visibility, @visibility_values)
     |> validate_expiration()
   end
 

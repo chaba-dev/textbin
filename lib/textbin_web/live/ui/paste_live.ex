@@ -113,4 +113,14 @@ defmodule TextbinWeb.UI.PasteLive do
       {"30 days", "30d"}
     ]
   end
+
+  defp paste_visibility_options(%Textbin.Accounts.User{} = user) do
+    if Textbin.Accounts.User.guest?(user) do
+      [{"Unlisted", "unlisted"}]
+    else
+      [{"Private", "private"}, {"Unlisted", "unlisted"}, {"Public", "public"}]
+    end
+  end
+
+  defp guest_user?(%Textbin.Accounts.User{} = user), do: Textbin.Accounts.User.guest?(user)
 end

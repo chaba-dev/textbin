@@ -59,6 +59,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # CLI/stdin data can be consumed here.
   defp paste_attrs(conn, params)
        when map_size(params) == 0 or is_map_key(params, "syntax_highlight") or
+              is_map_key(params, "visibility") or
               is_map_key(params, "expires_in") or is_map_key(params, "ttl") do
     case read_request_body(conn) do
       {:ok, data, conn} ->
@@ -78,6 +79,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
   defp build_paste_attrs(data, params) do
     %{"data" => data}
     |> put_string_param(params, "syntax_highlight")
+    |> put_string_param(params, "visibility")
     |> put_string_param(params, "expires_in")
     |> put_string_param(params, "ttl")
   end

@@ -1,4 +1,4 @@
-use clap::Args;
+use clap::{Args, ValueEnum};
 use std::fs;
 use std::io::{self, BufReader, IsTerminal};
 use std::path::PathBuf;
@@ -15,15 +15,37 @@ pub struct CreateArgs {
     #[arg(long, visible_alias = "ext")]
     syntax: Option<String>,
 
-    /// Paste lifetime. Accepted values: 10m, 1h, 1d, 7d, 30d.
+    /// Paste lifetime. Accepted values: never, 10m, 1h, 6h, 12h, 1d, 7d, 30d.
     #[arg(long)]
     expires: Option<String>,
+
+    /// Paste visibility.
+    #[arg(long, value_enum)]
+    visibility: Option<Visibility>,
+}
+
+#[derive(Clone, ValueEnum)]
+enum Visibility {
+    Private,
+    Unlisted,
+    Public,
+}
+
+impl Visibility {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Private => "private",
+            Self::Unlisted => "unlisted",
+            Self::Public => "public",
+        }
+    }
 }
 
 pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
     let client = Client::from_env();
     let syntax = args.syntax.as_deref();
     let expires = args.expires.as_deref();
+    let visibility = args.visibility.as_ref().map(Visibility::as_str);
 
     let paste = match &args.data {
         Some(data) => match create_data_from_arg(data)? {
@@ -32,9 +54,9 @@ pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
                 let file = fs::File::open(path)?;
                 let reader = BufReader::new(file);
 
-                client.create_paste_stream(reader, syntax, expires)?
+                client.create_paste_stream(reader, syntax, expires, visibility)?
             }
-            Data::Literal(data) => client.create_paste(data, syntax, expires)?,
+            Data::Literal(data) => client.create_paste(data, syntax, expires, visibility)?,
         },
         None => {
             // If stdin is still the interactive terminal, reading from it would
@@ -45,7 +67,7 @@ pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
                 anyhow::bail!("provide paste data as an argument or pipe it on stdin");
             }
 
-            client.create_paste_stream(io::stdin(), syntax, expires)?
+            client.create_paste_stream(io::stdin(), syntax, expires, visibility)?
         }
     };
 

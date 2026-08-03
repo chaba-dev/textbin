@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 13LP1eAlDHWhpuM1EsFb4xGUlDpF56Mak6Y418PCfQRjdg7nJhbmur4em1sMhaq
+\restrict sBbLIELADjrDKftWX885xY4dlcPoebAqJBVjWLjpNbGj7vTwgKy2SB6c2Ufw6Ns
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -48,7 +48,9 @@ CREATE TABLE public.pastes (
     updated_at timestamp(3) without time zone NOT NULL,
     syntax_highlight text DEFAULT 'plain'::text NOT NULL,
     user_id uuid NOT NULL,
-    expires_at timestamp(3) without time zone DEFAULT NULL::timestamp without time zone
+    expires_at timestamp(3) without time zone DEFAULT NULL::timestamp without time zone,
+    visibility character varying(255) DEFAULT 'private'::character varying NOT NULL,
+    CONSTRAINT pastes_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['private'::character varying, 'unlisted'::character varying, 'public'::character varying])::text[])))
 );
 
 
@@ -143,6 +145,13 @@ CREATE INDEX pastes_user_id_index ON public.pastes USING btree (user_id);
 
 
 --
+-- Name: pastes_visibility_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_visibility_index ON public.pastes USING btree (visibility);
+
+
+--
 -- Name: users_email_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -190,7 +199,7 @@ ALTER TABLE ONLY public.users_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 13LP1eAlDHWhpuM1EsFb4xGUlDpF56Mak6Y418PCfQRjdg7nJhbmur4em1sMhaq
+\unrestrict sBbLIELADjrDKftWX885xY4dlcPoebAqJBVjWLjpNbGj7vTwgKy2SB6c2Ufw6Ns
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -201,3 +210,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260716090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260716093000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260716100000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260717070000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260718070000);
