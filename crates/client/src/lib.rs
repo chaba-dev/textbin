@@ -312,9 +312,46 @@ fn format_api_errors(response: ApiErrorResponse) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
+
+    fn read_request_headers(reader: &mut impl Read) -> String {
+        let mut request = Vec::new();
+        let mut buffer = [0; 1024];
+
+        loop {
+            let bytes_read = reader.read(&mut buffer).unwrap();
+
+            if bytes_read == 0 {
+                break;
+            }
+
+            request.extend_from_slice(&buffer[..bytes_read]);
+
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
+    struct ChunkedReader(VecDeque<&'static [u8]>);
+
+    impl Read for ChunkedReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let Some(chunk) = self.0.pop_front() else {
+                return Ok(0);
+            };
+
+            assert!(chunk.len() <= buffer.len());
+            buffer[..chunk.len()].copy_from_slice(chunk);
+
+            Ok(chunk.len())
+        }
+    }
 
     #[test]
     fn client_trims_trailing_slash_from_base_url() {
@@ -349,9 +386,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buffer = [0; 4096];
-            let bytes_read = stream.read(&mut buffer).unwrap();
-            let request = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
+            let request = read_request_headers(&mut stream);
 
             stream
                 .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
@@ -376,6 +411,19 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("authorization: bearer txb_test_token")
         );
+    }
+
+    #[test]
+    fn reads_request_headers_delivered_in_multiple_chunks() {
+        let mut reader = ChunkedReader(VecDeque::from([
+            &b"DELETE /api/v1/pastes/example HTTP/1.1\r\nHost: localhost\r\n"[..],
+            &b"Authorization: Bearer txb_test_token\r\n\r\n"[..],
+        ]));
+
+        let request = read_request_headers(&mut reader);
+
+        assert!(request.contains("Authorization: Bearer txb_test_token"));
+        assert!(request.ends_with("\r\n\r\n"));
     }
 
     #[test]
