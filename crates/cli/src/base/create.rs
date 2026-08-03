@@ -71,7 +71,7 @@ pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
         }
     };
 
-    println!("{}", paste.id);
+    println!("{}", client.paste_url(&paste.id));
     Ok(())
 }
 

@@ -9,6 +9,7 @@ anyhow.workspace = true
 clap.workspace = true
 lumis.workspace = true
 textbin-client.workspace = true
+webbrowser.workspace = true
 
 [[bin]]
 name = "textbin"

@@ -39,7 +39,7 @@ impl Client {
     }
 
     pub fn get_paste(&self, id: &str) -> Result<Paste, Error> {
-        let url = format!("{}/api/v1/pastes/{id}", self.base_url);
+        let url = self.api_paste_url(id);
         let request = self.http.get(&url);
         let response = self
             .authorize(request)
@@ -52,6 +52,28 @@ impl Client {
         let response = decode_response::<ShowResponse>(&url, response)?;
 
         Ok(response.data)
+    }
+
+    pub fn delete_paste(&self, id: &str) -> Result<(), Error> {
+        let url = self.api_paste_url(id);
+        let request = self.http.delete(&url);
+        let response = self
+            .authorize(request)
+            .send()
+            .map_err(|source| Error::Request {
+                url: url.clone(),
+                source,
+            })?;
+
+        ensure_success(&url, response)
+    }
+
+    pub fn paste_url(&self, id: &str) -> String {
+        format!("{}/pastes/{id}", self.base_url)
+    }
+
+    pub fn raw_paste_url(&self, id: &str) -> String {
+        format!("{}/pastes/{id}/raw", self.base_url)
     }
 
     pub fn create_paste(
@@ -137,6 +159,10 @@ impl Client {
             .build()
             .map(|request| request.url().to_string())
             .map_err(|source| Error::Request { url, source })
+    }
+
+    fn api_paste_url(&self, id: &str) -> String {
+        format!("{}/api/v1/pastes/{id}", self.base_url)
     }
 
     fn authorize(
@@ -235,6 +261,20 @@ where
     decode_json(&body)
 }
 
+fn ensure_success(url: &str, response: reqwest::blocking::Response) -> Result<(), Error> {
+    let status = response.status();
+    let body = response.text().map_err(|source| Error::ReadResponse {
+        url: url.to_string(),
+        source,
+    })?;
+
+    if status.is_success() {
+        Ok(())
+    } else {
+        Err(Error::Api(format_api_error(status, &body)))
+    }
+}
+
 fn decode_json<T>(body: &str) -> Result<T, Error>
 where
     T: for<'de> Deserialize<'de>,
@@ -272,12 +312,118 @@ fn format_api_errors(response: ApiErrorResponse) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn read_request_headers(reader: &mut impl Read) -> String {
+        let mut request = Vec::new();
+        let mut buffer = [0; 1024];
+
+        loop {
+            let bytes_read = reader.read(&mut buffer).unwrap();
+
+            if bytes_read == 0 {
+                break;
+            }
+
+            request.extend_from_slice(&buffer[..bytes_read]);
+
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
+    struct ChunkedReader(VecDeque<&'static [u8]>);
+
+    impl Read for ChunkedReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let Some(chunk) = self.0.pop_front() else {
+                return Ok(0);
+            };
+
+            assert!(chunk.len() <= buffer.len());
+            buffer[..chunk.len()].copy_from_slice(chunk);
+
+            Ok(chunk.len())
+        }
+    }
 
     #[test]
     fn client_trims_trailing_slash_from_base_url() {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(client.base_url, "http://localhost:4000");
+    }
+
+    #[test]
+    fn builds_canonical_paste_url() {
+        let client = Client::new("https://demo.textbin.com/");
+
+        assert_eq!(
+            client.paste_url("00000000-0000-0000-0000-000000000000"),
+            "https://demo.textbin.com/pastes/00000000-0000-0000-0000-000000000000"
+        );
+    }
+
+    #[test]
+    fn builds_raw_paste_url() {
+        let client = Client::new("https://demo.textbin.com/");
+
+        assert_eq!(
+            client.raw_paste_url("00000000-0000-0000-0000-000000000000"),
+            "https://demo.textbin.com/pastes/00000000-0000-0000-0000-000000000000/raw"
+        );
+    }
+
+    #[test]
+    fn delete_paste_uses_authenticated_api_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_request_headers(&mut stream);
+
+            stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+
+            request
+        });
+        let client = Client::new(format!("http://{address}"))
+            .with_api_token(Some("txb_test_token".to_string()));
+
+        client
+            .delete_paste("00000000-0000-0000-0000-000000000000")
+            .unwrap();
+
+        let request = server.join().unwrap();
+        assert!(
+            request
+                .starts_with("DELETE /api/v1/pastes/00000000-0000-0000-0000-000000000000 HTTP/1.1")
+        );
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer txb_test_token")
+        );
+    }
+
+    #[test]
+    fn reads_request_headers_delivered_in_multiple_chunks() {
+        let mut reader = ChunkedReader(VecDeque::from([
+            &b"DELETE /api/v1/pastes/example HTTP/1.1\r\nHost: localhost\r\n"[..],
+            &b"Authorization: Bearer txb_test_token\r\n\r\n"[..],
+        ]));
+
+        let request = read_request_headers(&mut reader);
+
+        assert!(request.contains("Authorization: Bearer txb_test_token"));
+        assert!(request.ends_with("\r\n\r\n"));
     }
 
     #[test]
