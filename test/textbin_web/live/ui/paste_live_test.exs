@@ -25,6 +25,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {:ok, view, _html} = live(build_conn(), ~p"/pastes")
 
     assert has_element?(view, "#paste-form")
+    assert has_element?(view, "#paste_visibility[disabled] option[value='unlisted']")
 
     view
     |> form("#paste-form", %{
@@ -43,6 +44,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert paste.data == "guest paste"
     assert paste.user.kind == "guest"
+    assert paste.visibility == "unlisted"
     assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 21_590..21_600
     assert has_element?(view, "##{stream_id(paste)}", "plain")
   end
@@ -59,6 +61,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#pastes-list")
     assert has_element?(view, "##{stream_id(paste)}", paste.id)
     assert has_element?(view, "##{stream_id(paste)}", "elixir")
+    assert has_element?(view, "#paste-visibility-#{paste.id}", "Private")
     assert has_element?(view, "#paste-expires-at-#{paste.id}", "Never expires")
     assert has_element?(view, "##{stream_id(paste)} a[href='/pastes/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
@@ -76,12 +79,16 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {:ok, view, _html} = live(conn, ~p"/pastes")
 
     assert has_element?(view, "#paste-form")
+    assert has_element?(view, "#paste_visibility option[value='private']")
+    assert has_element?(view, "#paste_visibility option[value='unlisted']")
+    assert has_element?(view, "#paste_visibility option[value='public']")
 
     view
     |> form("#paste-form", %{
       "paste" => %{
         "data" => "created from the browser",
         "syntax_highlight" => "markdown",
+        "visibility" => "public",
         "expires_in" => "never"
       }
     })
@@ -90,8 +97,10 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert [paste] = Pastes.list_pastes(scope)
     assert paste.data == "created from the browser"
     assert paste.syntax_highlight == "markdown"
+    assert paste.visibility == "public"
     assert is_nil(paste.expires_at)
     assert has_element?(view, "##{stream_id(paste)}", "markdown")
+    assert has_element?(view, "#paste-visibility-#{paste.id}", "Public")
   end
 
   test "creates a paste with the user's default expiration", %{scope: scope} do
@@ -126,6 +135,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert has_element?(view, "h1", paste.id)
     assert has_element?(view, "span", "json")
+    assert has_element?(view, "#paste-visibility", "Private")
     assert has_element?(view, "#paste-expires-at", "Never expires")
     assert has_element?(view, "#paste-data .lumis code.language-json")
     assert has_element?(view, "#paste-data .l-line[data-line='1']")
