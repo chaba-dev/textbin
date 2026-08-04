@@ -123,19 +123,22 @@ impl Settings {
     ) -> Result<()> {
         let client = Client::try_new(url)?;
         let credential = credential_name(profile_name, client.base_url());
+        let mut config = self.load()?;
+        let previous_credential = config
+            .profiles
+            .get(profile_name)
+            .and_then(|profile| profile.credential.clone());
         let entry = keyring_entry(&credential)?;
+        let previous_token = if previous_credential.as_deref() == Some(credential.as_str()) {
+            load_entry_token(&entry)?
+        } else {
+            None
+        };
 
         entry
             .set_password(token)
             .context("could not store the API token in the OS credential store")?;
 
-        let mut config = self.load()?;
-        let previous_credential = config
-            .profiles
-            .get(profile_name)
-            .and_then(|profile| profile.credential.as_ref())
-            .filter(|previous| *previous != &credential)
-            .cloned();
         config.active_profile = Some(profile_name.to_string());
         config.profiles.insert(
             profile_name.to_string(),
@@ -148,12 +151,26 @@ impl Settings {
         );
 
         if let Err(error) = self.save(&config) {
-            let _ = entry.delete_credential();
-            return Err(error);
+            let rollback = match previous_token {
+                Some(previous_token) => entry.set_password(&previous_token),
+                None => match entry.delete_credential() {
+                    Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+                    Err(error) => Err(error),
+                },
+            };
+
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(error.context(format!(
+                    "could not restore the previous API token after the configuration save failed: {rollback_error}"
+                ))),
+            };
         }
 
-        if let Some(previous_credential) = previous_credential {
-            delete_credential(&previous_credential)?;
+        if let Some(previous_credential) = previous_credential
+            && previous_credential != credential
+        {
+            let _ = delete_credential(&previous_credential);
         }
 
         Ok(())
@@ -271,6 +288,10 @@ fn load_profile_token(profile: &Profile) -> Result<Option<String>> {
     };
     let entry = keyring_entry(credential)?;
 
+    load_entry_token(&entry)
+}
+
+fn load_entry_token(entry: &Entry) -> Result<Option<String>> {
     match entry.get_password() {
         Ok(token) => Ok(Some(token)),
         Err(KeyringError::NoEntry) => Ok(None),
@@ -373,6 +394,7 @@ mod tests {
 
     #[test]
     fn replacing_a_profiles_server_deletes_the_superseded_credential() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
         initialize_mock_keyring();
         let path = temp_config_path();
         let settings = Settings::new(Some(path.clone())).unwrap();
@@ -392,6 +414,71 @@ mod tests {
             old_credential.get_password(),
             Err(KeyringError::NoEntry)
         ));
+
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn replacing_a_profiles_server_succeeds_when_old_credential_cleanup_fails() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let identity = test_identity();
+        let old_url = "https://cleanup-error-old.example.com";
+        let new_url = "https://cleanup-error-new.example.com";
+
+        settings
+            .save_login("cleanup_error", old_url, &identity, "old-token")
+            .unwrap();
+        let old_credential = keyring_entry(&credential_name("cleanup_error", old_url)).unwrap();
+        let mock = old_credential
+            .inner
+            .as_any()
+            .downcast_ref::<keyring_core::mock::Cred>()
+            .unwrap();
+        mock.set_error(KeyringError::Invalid(
+            "test cleanup error".to_string(),
+            "credential".to_string(),
+        ));
+
+        settings
+            .save_login("cleanup_error", new_url, &identity, "new-token")
+            .unwrap();
+
+        let profile = settings.profile("cleanup_error").unwrap().unwrap();
+        assert_eq!(profile.url, new_url);
+        assert_eq!(
+            load_profile_token(&profile).unwrap().as_deref(),
+            Some("new-token")
+        );
+        assert_eq!(old_credential.get_password().unwrap(), "old-token");
+
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn failed_config_commit_restores_the_existing_token() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let identity = test_identity();
+        let url = "https://rollback.example.com";
+
+        settings
+            .save_login("rollback", url, &identity, "old-token")
+            .unwrap();
+        fs::create_dir(temporary_path(&path)).unwrap();
+
+        let result = settings.save_login("rollback", url, &identity, "new-token");
+
+        assert!(result.is_err());
+        let profile = settings.profile("rollback").unwrap().unwrap();
+        assert_eq!(
+            load_profile_token(&profile).unwrap().as_deref(),
+            Some("old-token")
+        );
 
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

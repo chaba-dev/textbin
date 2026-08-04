@@ -40,6 +40,7 @@ pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
     {
         let client = Client::try_new(&server_url)?.with_api_token(Some(token));
         let identity = client.identity()?;
+        settings.activate_profile(&profile_name)?;
         print_identity(
             "Authenticated through TEXTBIN_TOKEN",
             &server_url,
@@ -162,6 +163,50 @@ mod tests {
         );
         if let Some(token) = environment_token {
             unsafe { std::env::set_var("TEXTBIN_TOKEN", token) };
+        }
+
+        result.unwrap();
+        server.join().unwrap();
+
+        assert_eq!(settings.active_profile_name().unwrap(), "demo");
+
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn environment_token_profile_becomes_active() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        let environment_token = std::env::var_os("TEXTBIN_TOKEN");
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let (server_url, server) = identity_server();
+
+        settings
+            .save_login("demo", &server_url, &identity(), "stored-demo-token")
+            .unwrap();
+        settings
+            .save_login(
+                "other",
+                "https://other.example.com",
+                &identity(),
+                "other-token",
+            )
+            .unwrap();
+        unsafe { std::env::set_var("TEXTBIN_TOKEN", "environment-token") };
+
+        let result = handle(
+            &LoginArgs {
+                server: None,
+                profile: Some("demo".to_string()),
+                name: "Textbin CLI".to_string(),
+                with_token: false,
+            },
+            &settings,
+        );
+        match environment_token {
+            Some(token) => unsafe { std::env::set_var("TEXTBIN_TOKEN", token) },
+            None => unsafe { std::env::remove_var("TEXTBIN_TOKEN") },
         }
 
         result.unwrap();
