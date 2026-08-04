@@ -18,6 +18,10 @@ defmodule TextbinWeb.Router do
     plug :fetch_current_scope_for_api_token
   end
 
+  pipeline :require_authenticated_api do
+    plug :require_api_token
+  end
+
   scope "/", TextbinWeb do
     pipe_through :browser
 
@@ -29,6 +33,14 @@ defmodule TextbinWeb.Router do
   scope "/api/v1", TextbinWeb.ApiV1 do
     pipe_through :api
 
+    post "/auth/tokens", AuthController, :create
+  end
+
+  scope "/api/v1", TextbinWeb.ApiV1 do
+    pipe_through [:api, :require_authenticated_api]
+
+    get "/me", AuthController, :show
+    delete "/me/token", AuthController, :delete
     resources "/pastes", PasteController, except: [:new, :edit, :update]
   end
 
