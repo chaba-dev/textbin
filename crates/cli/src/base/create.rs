@@ -1,8 +1,8 @@
+use crate::settings::Settings;
 use clap::{Args, ValueEnum};
 use std::fs;
 use std::io::{self, BufReader, IsTerminal};
 use std::path::PathBuf;
-use textbin_client::Client;
 
 #[derive(Args)]
 pub struct CreateArgs {
@@ -41,8 +41,8 @@ impl Visibility {
     }
 }
 
-pub fn handle(args: &CreateArgs) -> anyhow::Result<()> {
-    let client = Client::from_env();
+pub fn handle(args: &CreateArgs, settings: &Settings) -> anyhow::Result<()> {
+    let client = settings.client()?;
     let syntax = args.syntax.as_deref();
     let expires = args.expires.as_deref();
     let visibility = args.visibility.as_ref().map(Visibility::as_str);

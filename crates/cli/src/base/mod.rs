@@ -5,6 +5,7 @@ mod show;
 use clap::Subcommand;
 
 use crate::base::{create::CreateArgs, delete::DeleteArgs, show::ShowArgs};
+use crate::settings::Settings;
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -16,10 +17,10 @@ pub enum Commands {
     Delete(DeleteArgs),
 }
 
-pub fn handle(command: &Commands) -> anyhow::Result<()> {
+pub fn handle(command: &Commands, settings: &Settings) -> anyhow::Result<()> {
     match command {
-        Commands::Show(args) => show::handle(args),
-        Commands::Create(args) => create::handle(args),
-        Commands::Delete(args) => delete::handle(args),
+        Commands::Show(args) => show::handle(args, settings),
+        Commands::Create(args) => create::handle(args, settings),
+        Commands::Delete(args) => delete::handle(args, settings),
     }
 }
