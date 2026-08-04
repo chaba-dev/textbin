@@ -7,8 +7,13 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+directories.workspace = true
+keyring.workspace = true
 lumis.workspace = true
+rpassword.workspace = true
+serde.workspace = true
 textbin-client.workspace = true
+toml.workspace = true
 webbrowser.workspace = true
 
 [[bin]]
