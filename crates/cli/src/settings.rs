@@ -95,6 +95,12 @@ impl Settings {
         Ok(self.load()?.profiles.get(name).cloned())
     }
 
+    pub fn activate_profile(&self, name: &str) -> Result<()> {
+        let mut config = self.load()?;
+        config.active_profile = Some(name.to_string());
+        self.save(&config)
+    }
+
     pub fn stored_client(&self, name: &str) -> Result<Option<Client>> {
         let Some(profile) = self.profile(name)? else {
             return Ok(None);
@@ -124,6 +130,12 @@ impl Settings {
             .context("could not store the API token in the OS credential store")?;
 
         let mut config = self.load()?;
+        let previous_credential = config
+            .profiles
+            .get(profile_name)
+            .and_then(|profile| profile.credential.as_ref())
+            .filter(|previous| *previous != &credential)
+            .cloned();
         config.active_profile = Some(profile_name.to_string());
         config.profiles.insert(
             profile_name.to_string(),
@@ -138,6 +150,10 @@ impl Settings {
         if let Err(error) = self.save(&config) {
             let _ = entry.delete_credential();
             return Err(error);
+        }
+
+        if let Some(previous_credential) = previous_credential {
+            delete_credential(&previous_credential)?;
         }
 
         Ok(())
@@ -224,10 +240,30 @@ fn credential_name(profile_name: &str, url: &str) -> String {
 }
 
 fn keyring_entry(credential: &str) -> Result<Entry> {
+    #[cfg(test)]
+    return Ok(Entry {
+        inner: keyring_core::Entry::new(KEYRING_SERVICE, credential)
+            .context("could not access the mock OS credential store")?,
+    });
+
+    #[cfg(not(test))]
     Entry::new(KEYRING_SERVICE, credential).context(
         "could not access the OS credential store; use TEXTBIN_TOKEN for headless sessions",
     )
 }
+
+#[cfg(test)]
+pub(crate) fn initialize_mock_keyring() {
+    use std::sync::Once;
+
+    static INITIALIZE: Once = Once::new();
+    INITIALIZE.call_once(|| {
+        keyring_core::set_default_store(keyring_core::mock::Store::new().unwrap());
+    });
+}
+
+#[cfg(test)]
+pub(crate) static TEST_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn load_profile_token(profile: &Profile) -> Result<Option<String>> {
     let Some(credential) = profile.credential.as_deref() else {
@@ -333,6 +369,45 @@ mod tests {
         assert!(settings.validate_profile_name("").is_err());
         assert!(settings.validate_profile_name("not valid").is_err());
         assert!(settings.validate_profile_name(&"x".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn replacing_a_profiles_server_deletes_the_superseded_credential() {
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let identity = test_identity();
+        let old_url = "https://old.example.com";
+        let new_url = "https://new.example.com";
+
+        settings
+            .save_login("demo", old_url, &identity, "old-token")
+            .unwrap();
+        settings
+            .save_login("demo", new_url, &identity, "new-token")
+            .unwrap();
+
+        let old_credential = keyring_entry(&credential_name("demo", old_url)).unwrap();
+        assert!(matches!(
+            old_credential.get_password(),
+            Err(KeyringError::NoEntry)
+        ));
+
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    fn test_identity() -> Identity {
+        Identity {
+            user: textbin_client::AuthenticatedUser {
+                id: "user-id".to_string(),
+                email: "user@example.com".to_string(),
+            },
+            token: textbin_client::ApiTokenMetadata {
+                id: "token-id".to_string(),
+                name: "Test token".to_string(),
+                inserted_at: "2026-08-04T00:00:00Z".to_string(),
+            },
+        }
     }
 
     fn temp_config_path() -> PathBuf {

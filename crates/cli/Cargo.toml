@@ -16,6 +16,9 @@ textbin-client.workspace = true
 toml.workspace = true
 webbrowser.workspace = true
 
+[dev-dependencies]
+keyring-core = "1.0.0"
+
 [[bin]]
 name = "textbin"
 path = "src/main.rs"

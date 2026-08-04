@@ -54,6 +54,7 @@ pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
     {
         match client.identity() {
             Ok(identity) => {
+                settings.activate_profile(&profile_name)?;
                 print_identity("Already logged in", client.base_url(), &identity.user.email);
                 return Ok(());
             }
@@ -114,4 +115,104 @@ fn prompt(label: &str) -> Result<String> {
 
 fn print_identity(prefix: &str, server_url: &str, email: &str) {
     println!("{prefix} as {email} on {server_url}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::{TEST_ENVIRONMENT, initialize_mock_keyring};
+    use std::fs;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::path::PathBuf;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use textbin_client::{ApiTokenMetadata, AuthenticatedUser, Identity};
+
+    #[test]
+    fn already_authenticated_profile_becomes_active() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        let environment_token = std::env::var_os("TEXTBIN_TOKEN");
+        unsafe { std::env::remove_var("TEXTBIN_TOKEN") };
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let (server_url, server) = identity_server();
+
+        settings
+            .save_login("demo", &server_url, &identity(), "demo-token")
+            .unwrap();
+        settings
+            .save_login(
+                "other",
+                "https://other.example.com",
+                &identity(),
+                "other-token",
+            )
+            .unwrap();
+
+        let result = handle(
+            &LoginArgs {
+                server: None,
+                profile: Some("demo".to_string()),
+                name: "Textbin CLI".to_string(),
+                with_token: false,
+            },
+            &settings,
+        );
+        if let Some(token) = environment_token {
+            unsafe { std::env::set_var("TEXTBIN_TOKEN", token) };
+        }
+
+        result.unwrap();
+        server.join().unwrap();
+
+        assert_eq!(settings.active_profile_name().unwrap(), "demo");
+
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    fn identity_server() -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 2048];
+            let _ = stream.read(&mut request).unwrap();
+            let body = r#"{"data":{"user":{"id":"user-id","email":"user@example.com"},"token":{"id":"token-id","name":"Test token","inserted_at":"2026-08-04T00:00:00Z"}}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        (url, server)
+    }
+
+    fn identity() -> Identity {
+        Identity {
+            user: AuthenticatedUser {
+                id: "user-id".to_string(),
+                email: "user@example.com".to_string(),
+            },
+            token: ApiTokenMetadata {
+                id: "token-id".to_string(),
+                name: "Test token".to_string(),
+                inserted_at: "2026-08-04T00:00:00Z".to_string(),
+            },
+        }
+    }
+
+    fn temp_config_path() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        std::env::temp_dir()
+            .join(format!("textbin-login-{}-{nonce}", std::process::id()))
+            .join("config.toml")
+    }
 }
