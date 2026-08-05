@@ -45,6 +45,13 @@ defmodule Textbin.Storage do
 
   defp adapter_and_opts do
     config = Application.fetch_env!(:textbin, __MODULE__)
-    {Keyword.fetch!(config, :adapter), Keyword.get(config, :opts, [])}
+
+    opts =
+      case Keyword.get(config, :opts, []) do
+        {:replace, opts} -> opts
+        opts -> opts
+      end
+
+    {Keyword.fetch!(config, :adapter), opts}
   end
 end

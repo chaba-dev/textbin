@@ -32,7 +32,7 @@ config :textbin,
 
 config :textbin, Textbin.Storage,
   adapter: Textbin.Storage.Local,
-  opts: [root: "storage"]
+  opts: {:replace, [root: "storage"]}
 
 # Configures the endpoint
 config :textbin, TextbinWeb.Endpoint,

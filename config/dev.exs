@@ -12,8 +12,16 @@ config :textbin, Textbin.Repo,
   pool_size: 10
 
 config :textbin, Textbin.Storage,
-  adapter: Textbin.Storage.Local,
-  opts: [root: Path.expand("../storage", __DIR__)]
+  adapter: Textbin.Storage.S3,
+  opts:
+    {:replace,
+     [
+       endpoint: "http://localhost:8333",
+       bucket: "textbin",
+       region: "us-east-1",
+       access_key_id: "textbin",
+       secret_access_key: "textbin-development-secret"
+     ]}
 
 dev_http_ip =
   case System.get_env("PHX_BIND_IP") do

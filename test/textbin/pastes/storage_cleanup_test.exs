@@ -1,6 +1,7 @@
 defmodule Textbin.Pastes.StorageCleanupTest do
   use Textbin.DataCase, async: false
 
+  import ExUnit.CaptureLog
   import Textbin.AccountsFixtures
 
   alias Textbin.Pastes
@@ -33,7 +34,8 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     expire!(paste)
     block_storage_deletes!(context.blocked_root)
 
-    assert Pastes.delete_expired_pastes(limit: 1) == 0
+    log = capture_log(fn -> assert Pastes.delete_expired_pastes(limit: 1) == 0 end)
+    assert log =~ "Failed to delete stored paste content: :enotdir"
     assert Repo.get(Paste, paste.id)
 
     use_storage_root(context.root)
@@ -47,7 +49,12 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     {:ok, paste} = Pastes.create_paste(context.scope, %{data: "retry manual deletion"})
     block_storage_deletes!(context.blocked_root)
 
-    assert {:error, :enotdir} = Pastes.delete_paste(context.scope, paste)
+    log =
+      capture_log(fn ->
+        assert {:error, :enotdir} = Pastes.delete_paste(context.scope, paste)
+      end)
+
+    assert log =~ "Failed to delete stored paste content: :enotdir"
     refute Pastes.get_paste(context.scope, paste.id)
     assert Repo.get(Paste, paste.id)
 
