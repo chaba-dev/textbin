@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "textbin-development",
+      "credentials": [
+        {
+          "accessKey": "textbin",
+          "secretKey": "textbin-development-secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

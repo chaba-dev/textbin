@@ -20,6 +20,27 @@ if System.get_env("PHX_SERVER") do
   config :textbin, TextbinWeb.Endpoint, server: true
 end
 
+storage_backend = System.get_env("TEXTBIN_STORAGE_BACKEND") || "local"
+
+case storage_backend do
+  "local" ->
+    :ok
+
+  "s3" ->
+    config :textbin, Textbin.Storage,
+      adapter: Textbin.Storage.S3,
+      opts: [
+        endpoint: System.fetch_env!("S3_ENDPOINT"),
+        bucket: System.fetch_env!("S3_BUCKET"),
+        region: System.get_env("S3_REGION") || "us-east-1",
+        access_key_id: System.fetch_env!("S3_ACCESS_KEY_ID"),
+        secret_access_key: System.fetch_env!("S3_SECRET_ACCESS_KEY")
+      ]
+
+  unsupported ->
+    raise "unsupported TEXTBIN_STORAGE_BACKEND: #{inspect(unsupported)}"
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
@@ -55,9 +76,11 @@ if config_env() == :prod do
 
   config :textbin, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  config :textbin, Textbin.Storage,
-    adapter: Textbin.Storage.Local,
-    opts: [root: System.get_env("TEXTBIN_STORAGE_PATH") || "/var/lib/textbin/pastes"]
+  if storage_backend == "local" do
+    config :textbin, Textbin.Storage,
+      adapter: Textbin.Storage.Local,
+      opts: [root: System.get_env("TEXTBIN_STORAGE_PATH") || "/var/lib/textbin/pastes"]
+  end
 
   config :textbin, TextbinWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
