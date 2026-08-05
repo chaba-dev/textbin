@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::error;
 use std::fmt;
 use std::io::Read;
+use std::net::IpAddr;
 
 const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4400";
 
@@ -17,15 +18,15 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn from_env() -> Self {
+    pub fn from_env() -> Result<Self, Error> {
         let base_url =
             std::env::var("TEXTBIN_URL").unwrap_or_else(|_| DEFAULT_TEXTBIN_URL.to_string());
         let api_token = std::env::var("TEXTBIN_TOKEN").ok();
 
-        Self::new(base_url).with_api_token(api_token)
+        Ok(Self::try_new(base_url)?.with_api_token(api_token))
     }
 
-    pub fn new(base_url: impl Into<String>) -> Self {
+    fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_token: None,
@@ -44,6 +45,7 @@ impl Client {
             || parsed.password().is_some()
             || parsed.query().is_some()
             || parsed.fragment().is_some()
+            || parsed.scheme() == "http" && !loopback_url(&parsed)
         {
             return Err(Error::InvalidServerUrl(base_url));
         }
@@ -241,6 +243,14 @@ impl Client {
             Some(api_token) => request.header(AUTHORIZATION, format!("Bearer {api_token}")),
             None => request,
         }
+    }
+}
+
+fn loopback_url(url: &reqwest::Url) -> bool {
+    match url.host_str() {
+        Some("localhost") => true,
+        Some(host) => host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback()),
+        None => false,
     }
 }
 
@@ -444,6 +454,8 @@ mod tests {
     use std::net::TcpListener;
     use std::thread;
 
+    static TEST_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn read_request_headers(reader: &mut impl Read) -> String {
         let mut request = Vec::new();
         let mut buffer = [0; 1024];
@@ -511,6 +523,27 @@ mod tests {
             Client::try_new("https://demo.textbin.com?redirect=elsewhere"),
             Err(Error::InvalidServerUrl(_))
         ));
+        assert!(matches!(
+            Client::try_new("http://demo.textbin.com"),
+            Err(Error::InvalidServerUrl(_))
+        ));
+        assert!(Client::try_new("http://localhost:4400").is_ok());
+        assert!(Client::try_new("http://127.0.0.1:4400").is_ok());
+    }
+
+    #[test]
+    fn from_env_rejects_remote_plaintext_servers() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        let old_url = std::env::var_os("TEXTBIN_URL");
+        unsafe { std::env::set_var("TEXTBIN_URL", "http://demo.textbin.com") };
+
+        let result = Client::from_env();
+
+        match old_url {
+            Some(url) => unsafe { std::env::set_var("TEXTBIN_URL", url) },
+            None => unsafe { std::env::remove_var("TEXTBIN_URL") },
+        }
+        assert!(matches!(result, Err(Error::InvalidServerUrl(_))));
     }
 
     #[test]

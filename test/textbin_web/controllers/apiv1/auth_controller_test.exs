@@ -112,5 +112,17 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
 
       assert %{"errors" => %{"detail" => "Invalid API token"}} = json_response(conn, 401)
     end
+
+    test "concurrent revocation is idempotent", %{user: user, user_token: user_token} do
+      revoke = fn ->
+        build_conn()
+        |> Plug.Conn.assign(:current_scope, Accounts.Scope.for_user(user))
+        |> Plug.Conn.assign(:current_api_token, user_token)
+        |> TextbinWeb.ApiV1.AuthController.delete(%{})
+      end
+
+      assert response(revoke.(), 204) == ""
+      assert response(revoke.(), 204) == ""
+    end
   end
 end

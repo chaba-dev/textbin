@@ -12,8 +12,10 @@ const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4400";
 const DEFAULT_PROFILE: &str = "default";
 const KEYRING_SERVICE: &str = "com.textbin.cli";
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 struct Config {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    config_id: Option<String>,
     active_profile: Option<String>,
     #[serde(default)]
     profiles: BTreeMap<String, Profile>,
@@ -45,10 +47,15 @@ impl Settings {
     }
 
     pub fn client(&self) -> Result<Client> {
-        let config = self.load()?;
-        let profile = active_profile(&config);
         let environment_url = std::env::var("TEXTBIN_URL").ok();
         let environment_token = environment_token();
+
+        if let (Some(url), Some(token)) = (&environment_url, &environment_token) {
+            return Ok(Client::try_new(url)?.with_api_token(Some(token.clone())));
+        }
+
+        let config = self.load()?;
+        let profile = active_profile(&config);
         let url = environment_url
             .as_deref()
             .or_else(|| profile.map(|profile| profile.url.as_str()))
@@ -64,11 +71,14 @@ impl Settings {
     }
 
     pub fn server_client(&self) -> Result<Client> {
+        if let Ok(url) = std::env::var("TEXTBIN_URL") {
+            return Client::try_new(url).map_err(Into::into);
+        }
+
         let config = self.load()?;
         let profile = active_profile(&config);
-        let url = std::env::var("TEXTBIN_URL")
-            .ok()
-            .or_else(|| profile.map(|profile| profile.url.clone()))
+        let url = profile
+            .map(|profile| profile.url.clone())
             .unwrap_or_else(|| DEFAULT_TEXTBIN_URL.to_string());
 
         Ok(Client::try_new(url)?)
@@ -101,6 +111,76 @@ impl Settings {
         self.save(&config)
     }
 
+    pub fn save_environment_login(
+        &self,
+        profile_name: &str,
+        url: &str,
+        identity: &Identity,
+    ) -> Result<()> {
+        let client = Client::try_new(url)?;
+        let mut config = self.load()?;
+        if config
+            .profiles
+            .get(profile_name)
+            .is_some_and(|profile| profile.url == client.base_url() && profile.credential.is_some())
+        {
+            config.active_profile = Some(profile_name.to_string());
+            return self.save(&config);
+        }
+
+        let previous_credential = config
+            .profiles
+            .get(profile_name)
+            .filter(|profile| profile.url != client.base_url())
+            .and_then(|profile| profile.credential.clone());
+        let credential = config
+            .profiles
+            .get(profile_name)
+            .filter(|profile| profile.url == client.base_url())
+            .and_then(|profile| profile.credential.clone());
+
+        config.active_profile = Some(profile_name.to_string());
+        config.profiles.insert(
+            profile_name.to_string(),
+            Profile {
+                url: client.base_url().to_string(),
+                credential,
+                user_id: Some(identity.user.id.clone()),
+                email: Some(identity.user.email.clone()),
+            },
+        );
+        self.save(&config)?;
+
+        if let Some(previous_credential) = previous_credential {
+            let _ = delete_credential(&previous_credential);
+        }
+
+        Ok(())
+    }
+
+    pub fn migrate_login(&self, profile_name: &str, identity: &Identity) -> Result<()> {
+        let config = self.load()?;
+        let Some(profile) = config.profiles.get(profile_name) else {
+            return Ok(());
+        };
+        let Some(credential) = profile.credential.as_deref() else {
+            return Ok(());
+        };
+        let namespaced = config
+            .config_id
+            .as_deref()
+            .is_some_and(|config_id| credential.starts_with(&format!("{config_id}:")));
+
+        if namespaced {
+            return Ok(());
+        }
+
+        let Some(token) = load_profile_token(profile)? else {
+            return Ok(());
+        };
+        self.save_login(profile_name, &profile.url, identity, &token)
+    }
+
     pub fn stored_client(&self, name: &str) -> Result<Option<Client>> {
         let Some(profile) = self.profile(name)? else {
             return Ok(None);
@@ -122,8 +202,13 @@ impl Settings {
         token: &str,
     ) -> Result<()> {
         let client = Client::try_new(url)?;
-        let credential = credential_name(profile_name, client.base_url());
         let mut config = self.load()?;
+        let previous_config_id = config.config_id.clone();
+        let config_id = config
+            .config_id
+            .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+            .clone();
+        let credential = credential_name(&config_id, profile_name, client.base_url());
         let previous_credential = config
             .profiles
             .get(profile_name)
@@ -169,6 +254,9 @@ impl Settings {
 
         if let Some(previous_credential) = previous_credential
             && previous_credential != credential
+            && previous_config_id
+                .as_deref()
+                .is_some_and(|config_id| previous_credential.starts_with(&format!("{config_id}:")))
         {
             let _ = delete_credential(&previous_credential);
         }
@@ -178,19 +266,30 @@ impl Settings {
 
     pub fn forget_login(&self, profile_name: &str) -> Result<bool> {
         let mut config = self.load()?;
+        let previous_config = config.clone();
         let Some(profile) = config.profiles.get_mut(profile_name) else {
             return Ok(false);
         };
 
         let had_credential = profile.credential.is_some();
 
-        if let Some(credential) = profile.credential.take() {
-            delete_credential(&credential)?;
-        }
+        let credential = profile.credential.take();
 
         let had_login =
             had_credential || profile.user_id.take().is_some() || profile.email.take().is_some();
         self.save(&config)?;
+
+        if let Some(credential) = credential
+            && let Err(error) = delete_credential(&credential)
+        {
+            return match self.save(&previous_config) {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(error.context(format!(
+                    "could not restore the login after credential deletion failed: {rollback_error}"
+                ))),
+            };
+        }
+
         Ok(had_login)
     }
 
@@ -252,8 +351,8 @@ fn active_profile(config: &Config) -> Option<&Profile> {
         .and_then(|name| config.profiles.get(name))
 }
 
-fn credential_name(profile_name: &str, url: &str) -> String {
-    format!("{profile_name}:{url}")
+fn credential_name(config_id: &str, profile_name: &str, url: &str) -> String {
+    format!("{config_id}:{profile_name}:{url}")
 }
 
 fn keyring_entry(credential: &str) -> Result<Entry> {
@@ -356,6 +455,7 @@ mod tests {
         let path = temp_config_path();
         let settings = Settings::new(Some(path.clone())).unwrap();
         let config = Config {
+            config_id: Some("config-id".to_string()),
             active_profile: Some("demo".to_string()),
             profiles: BTreeMap::from([(
                 "demo".to_string(),
@@ -405,11 +505,17 @@ mod tests {
         settings
             .save_login("demo", old_url, &identity, "old-token")
             .unwrap();
+        let old_credential_name = settings
+            .profile("demo")
+            .unwrap()
+            .unwrap()
+            .credential
+            .unwrap();
         settings
             .save_login("demo", new_url, &identity, "new-token")
             .unwrap();
 
-        let old_credential = keyring_entry(&credential_name("demo", old_url)).unwrap();
+        let old_credential = keyring_entry(&old_credential_name).unwrap();
         assert!(matches!(
             old_credential.get_password(),
             Err(KeyringError::NoEntry)
@@ -431,7 +537,13 @@ mod tests {
         settings
             .save_login("cleanup_error", old_url, &identity, "old-token")
             .unwrap();
-        let old_credential = keyring_entry(&credential_name("cleanup_error", old_url)).unwrap();
+        let old_credential_name = settings
+            .profile("cleanup_error")
+            .unwrap()
+            .unwrap()
+            .credential
+            .unwrap();
+        let old_credential = keyring_entry(&old_credential_name).unwrap();
         let mock = old_credential
             .inner
             .as_any()
@@ -481,6 +593,202 @@ mod tests {
         );
 
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn separate_config_files_do_not_share_keyring_credentials() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        initialize_mock_keyring();
+        let first_path = temp_config_path();
+        let second_path = temp_config_path();
+        let first = Settings::new(Some(first_path.clone())).unwrap();
+        let second = Settings::new(Some(second_path.clone())).unwrap();
+        let identity = test_identity();
+        let url = "https://shared.example.com";
+
+        first
+            .save_login("default", url, &identity, "first-token")
+            .unwrap();
+        second
+            .save_login("default", url, &identity, "second-token")
+            .unwrap();
+
+        let first_profile = first.profile("default").unwrap().unwrap();
+        let second_profile = second.profile("default").unwrap().unwrap();
+        assert_eq!(
+            load_profile_token(&first_profile).unwrap().as_deref(),
+            Some("first-token")
+        );
+        assert_eq!(
+            load_profile_token(&second_profile).unwrap().as_deref(),
+            Some("second-token")
+        );
+
+        fs::remove_dir_all(first_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(second_path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn environment_client_ignores_malformed_config_when_fully_configured() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        let old_url = std::env::var_os("TEXTBIN_URL");
+        let old_token = std::env::var_os("TEXTBIN_TOKEN");
+        let path = temp_config_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "not valid toml = [").unwrap();
+        unsafe {
+            std::env::set_var("TEXTBIN_URL", "https://environment.example.com");
+            std::env::set_var("TEXTBIN_TOKEN", "environment-token");
+        }
+
+        let result = Settings::new(Some(path.clone())).unwrap().client();
+
+        restore_environment("TEXTBIN_URL", old_url);
+        restore_environment("TEXTBIN_TOKEN", old_token);
+        let client = result.unwrap();
+        assert_eq!(client.base_url(), "https://environment.example.com");
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn failed_config_commit_does_not_forget_existing_token() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let identity = test_identity();
+
+        settings
+            .save_login("default", "https://example.com", &identity, "stored-token")
+            .unwrap();
+        fs::create_dir(temporary_path(&path)).unwrap();
+
+        assert!(settings.forget_login("default").is_err());
+        let profile = settings.profile("default").unwrap().unwrap();
+        assert_eq!(
+            load_profile_token(&profile).unwrap().as_deref(),
+            Some("stored-token")
+        );
+
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn legacy_credential_migration_does_not_log_out_other_configs() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        initialize_mock_keyring();
+        let first_path = temp_config_path();
+        let second_path = temp_config_path();
+        let first = Settings::new(Some(first_path.clone())).unwrap();
+        let second = Settings::new(Some(second_path.clone())).unwrap();
+        let legacy_credential = "default:https://legacy.example.com";
+        keyring_entry(legacy_credential)
+            .unwrap()
+            .set_password("legacy-token")
+            .unwrap();
+        let legacy_config = Config {
+            config_id: None,
+            active_profile: Some("default".to_string()),
+            profiles: BTreeMap::from([(
+                "default".to_string(),
+                Profile {
+                    url: "https://legacy.example.com".to_string(),
+                    credential: Some(legacy_credential.to_string()),
+                    user_id: Some("user-id".to_string()),
+                    email: Some("user@example.com".to_string()),
+                },
+            )]),
+        };
+        first.save(&legacy_config).unwrap();
+        second.save(&legacy_config).unwrap();
+
+        first.migrate_login("default", &test_identity()).unwrap();
+
+        let first_profile = first.profile("default").unwrap().unwrap();
+        let second_profile = second.profile("default").unwrap().unwrap();
+        assert_ne!(first_profile.credential, second_profile.credential);
+        assert_eq!(
+            load_profile_token(&first_profile).unwrap().as_deref(),
+            Some("legacy-token")
+        );
+        assert_eq!(
+            load_profile_token(&second_profile).unwrap().as_deref(),
+            Some("legacy-token")
+        );
+
+        fs::remove_dir_all(first_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(second_path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn environment_login_does_not_relabel_a_stored_credential() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let url = "https://example.com";
+        settings
+            .save_login("default", url, &test_identity(), "stored-token")
+            .unwrap();
+        let mut environment_identity = test_identity();
+        environment_identity.user.id = "other-user-id".to_string();
+        environment_identity.user.email = "other@example.com".to_string();
+
+        settings
+            .save_environment_login("default", url, &environment_identity)
+            .unwrap();
+
+        let profile = settings.profile("default").unwrap().unwrap();
+        assert_eq!(profile.user_id.as_deref(), Some("user-id"));
+        assert_eq!(profile.email.as_deref(), Some("user@example.com"));
+        assert_eq!(
+            load_profile_token(&profile).unwrap().as_deref(),
+            Some("stored-token")
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn failed_credential_deletion_restores_the_profile() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        settings
+            .save_login(
+                "default",
+                "https://example.com",
+                &test_identity(),
+                "stored-token",
+            )
+            .unwrap();
+        let profile = settings.profile("default").unwrap().unwrap();
+        let entry = keyring_entry(profile.credential.as_deref().unwrap()).unwrap();
+        entry
+            .inner
+            .as_any()
+            .downcast_ref::<keyring_core::mock::Cred>()
+            .unwrap()
+            .set_error(KeyringError::Invalid(
+                "test deletion error".to_string(),
+                "credential".to_string(),
+            ));
+
+        assert!(settings.forget_login("default").is_err());
+
+        let profile = settings.profile("default").unwrap().unwrap();
+        assert_eq!(
+            load_profile_token(&profile).unwrap().as_deref(),
+            Some("stored-token")
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    fn restore_environment(name: &str, value: Option<std::ffi::OsString>) {
+        match value {
+            Some(value) => unsafe { std::env::set_var(name, value) },
+            None => unsafe { std::env::remove_var(name) },
+        }
     }
 
     fn test_identity() -> Identity {

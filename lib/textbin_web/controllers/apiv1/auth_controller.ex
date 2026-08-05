@@ -28,8 +28,10 @@ defmodule TextbinWeb.ApiV1.AuthController do
           conn,
         _params
       ) do
-    :ok = Accounts.delete_user_api_token(user, user_token.id)
-    send_resp(conn, :no_content, "")
+    case Accounts.delete_user_api_token(user, user_token.id) do
+      :ok -> send_resp(conn, :no_content, "")
+      {:error, :not_found} -> send_resp(conn, :no_content, "")
+    end
   end
 
   defp create_token(conn, user, params) do

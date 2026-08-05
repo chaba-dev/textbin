@@ -16,6 +16,29 @@ pub struct LogoutArgs {
 }
 
 pub fn handle(args: &LogoutArgs, settings: &Settings) -> Result<()> {
+    if let Some(token) = environment_token() {
+        if !args.revoke {
+            bail!("TEXTBIN_TOKEN is still set; unset it to complete logout")
+        }
+
+        let server_url = match std::env::var("TEXTBIN_URL") {
+            Ok(url) => url,
+            Err(_) => {
+                let profile_name = args
+                    .profile
+                    .clone()
+                    .unwrap_or(settings.active_profile_name()?);
+                settings.validate_profile_name(&profile_name)?;
+                settings.default_server_url(&profile_name)?
+            }
+        };
+        let client = Client::try_new(server_url)?.with_api_token(Some(token));
+        client.revoke_current_token()?;
+        println!("Revoked the API token on {}", client.base_url());
+        println!("TEXTBIN_TOKEN is still set but now references a revoked token");
+        return Ok(());
+    }
+
     let profile_name = args
         .profile
         .clone()
@@ -23,29 +46,14 @@ pub fn handle(args: &LogoutArgs, settings: &Settings) -> Result<()> {
     settings.validate_profile_name(&profile_name)?;
 
     if args.revoke {
-        let client = if let Some(token) = environment_token() {
-            Client::try_new(settings.default_server_url(&profile_name)?)?
-                .with_api_token(Some(token))
-        } else {
-            settings
-                .stored_client(&profile_name)?
-                .context("profile is not authenticated; run `textbin auth login`")?
-        };
+        let client = settings
+            .stored_client(&profile_name)?
+            .context("profile is not authenticated; run `textbin auth login`")?;
         client.revoke_current_token()?;
         println!("Revoked the API token on {}", client.base_url());
     }
 
     let removed = settings.forget_login(&profile_name)?;
-    let environment_token_set = environment_token().is_some();
-
-    if environment_token_set {
-        if args.revoke {
-            println!("TEXTBIN_TOKEN is still set but now references a revoked token");
-            return Ok(());
-        }
-
-        bail!("TEXTBIN_TOKEN is still set; unset it to complete logout")
-    }
 
     if removed {
         println!("Logged out of profile {profile_name}");
@@ -105,11 +113,90 @@ mod tests {
             receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
             "demo"
         );
+        let profile = settings.profile("demo").unwrap().unwrap();
+        assert!(settings.stored_client("demo").unwrap().is_some());
+        assert_eq!(profile.url, demo_url);
 
         let _ = stop_demo_server.send(());
         let _ = stop_other_server.send(());
         demo_server.join().unwrap();
         other_server.join().unwrap();
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn environment_token_prevents_local_logout_before_profile_is_changed() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        let environment_token = std::env::var_os("TEXTBIN_TOKEN");
+        initialize_mock_keyring();
+        let path = temp_config_path();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        settings
+            .save_login(
+                "demo",
+                "https://demo.example.com",
+                &identity(),
+                "stored-demo-token",
+            )
+            .unwrap();
+        unsafe { std::env::set_var("TEXTBIN_TOKEN", "environment-token") };
+
+        let result = handle(
+            &LogoutArgs {
+                revoke: false,
+                profile: Some("demo".to_string()),
+            },
+            &settings,
+        );
+
+        match environment_token {
+            Some(token) => unsafe { std::env::set_var("TEXTBIN_TOKEN", token) },
+            None => unsafe { std::env::remove_var("TEXTBIN_TOKEN") },
+        }
+        assert!(result.is_err());
+        assert!(settings.stored_client("demo").unwrap().is_some());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn environment_logout_ignores_malformed_config_when_fully_configured() {
+        let _environment = TEST_ENVIRONMENT.lock().unwrap();
+        let old_url = std::env::var_os("TEXTBIN_URL");
+        let old_token = std::env::var_os("TEXTBIN_TOKEN");
+        let path = temp_config_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "not valid toml = [").unwrap();
+        let settings = Settings::new(Some(path.clone())).unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let (server_url, server, stop_server) = revoke_server("environment", sender);
+        unsafe {
+            std::env::set_var("TEXTBIN_URL", server_url);
+            std::env::set_var("TEXTBIN_TOKEN", "environment-token");
+        }
+
+        let result = handle(
+            &LogoutArgs {
+                revoke: true,
+                profile: None,
+            },
+            &settings,
+        );
+
+        match old_url {
+            Some(url) => unsafe { std::env::set_var("TEXTBIN_URL", url) },
+            None => unsafe { std::env::remove_var("TEXTBIN_URL") },
+        }
+        match old_token {
+            Some(token) => unsafe { std::env::set_var("TEXTBIN_TOKEN", token) },
+            None => unsafe { std::env::remove_var("TEXTBIN_TOKEN") },
+        }
+        result.unwrap();
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+            "environment"
+        );
+        let _ = stop_server.send(());
+        server.join().unwrap();
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

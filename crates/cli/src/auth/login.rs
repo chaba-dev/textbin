@@ -40,7 +40,7 @@ pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
     {
         let client = Client::try_new(&server_url)?.with_api_token(Some(token));
         let identity = client.identity()?;
-        settings.activate_profile(&profile_name)?;
+        settings.save_environment_login(&profile_name, &server_url, &identity)?;
         print_identity(
             "Authenticated through TEXTBIN_TOKEN",
             &server_url,
@@ -55,6 +55,7 @@ pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
     {
         match client.identity() {
             Ok(identity) => {
+                settings.migrate_login(&profile_name, &identity)?;
                 settings.activate_profile(&profile_name)?;
                 print_identity("Already logged in", client.base_url(), &identity.user.email);
                 return Ok(());
@@ -169,6 +170,7 @@ mod tests {
         server.join().unwrap();
 
         assert_eq!(settings.active_profile_name().unwrap(), "demo");
+        assert_eq!(settings.profile("demo").unwrap().unwrap().url, server_url);
 
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
@@ -183,9 +185,6 @@ mod tests {
         let (server_url, server) = identity_server();
 
         settings
-            .save_login("demo", &server_url, &identity(), "stored-demo-token")
-            .unwrap();
-        settings
             .save_login(
                 "other",
                 "https://other.example.com",
@@ -197,7 +196,7 @@ mod tests {
 
         let result = handle(
             &LoginArgs {
-                server: None,
+                server: Some(server_url.clone()),
                 profile: Some("demo".to_string()),
                 name: "Textbin CLI".to_string(),
                 with_token: false,
@@ -213,6 +212,7 @@ mod tests {
         server.join().unwrap();
 
         assert_eq!(settings.active_profile_name().unwrap(), "demo");
+        assert_eq!(settings.profile("demo").unwrap().unwrap().url, server_url);
 
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
