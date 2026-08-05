@@ -9,19 +9,7 @@ defmodule Textbin.Storage.Local do
   def put(storage_key, data, opts) when is_binary(data) do
     with {:ok, destination} <- storage_path(storage_key, opts),
          :ok <- File.mkdir_p(Path.dirname(destination)) do
-      temporary =
-        destination <> ".tmp-" <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
-
-      case write_temporary(temporary, data) do
-        :ok ->
-          case File.rename(temporary, destination) do
-            :ok -> {:ok, metadata(data)}
-            {:error, reason} -> cleanup_error(temporary, reason)
-          end
-
-        {:error, reason} ->
-          cleanup_error(temporary, reason)
-      end
+      finalize_put(destination, data)
     end
   end
 
@@ -65,16 +53,28 @@ defmodule Textbin.Storage.Local do
     %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
   end
 
+  defp finalize_put(destination, data) do
+    temporary =
+      destination <> ".tmp-" <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+
+    with :ok <- write_temporary(temporary, data),
+         :ok <- File.rename(temporary, destination) do
+      {:ok, metadata(data)}
+    else
+      {:error, reason} -> cleanup_error(temporary, reason)
+    end
+  end
+
   defp write_temporary(path, data) do
-    case File.open(path, [:write, :binary, :exclusive], fn file ->
-           with :ok <- IO.binwrite(file, data),
-                :ok <- :file.sync(file) do
-             :ok
-           end
-         end) do
+    case File.open(path, [:write, :binary, :exclusive], &write_and_sync(&1, data)) do
       {:ok, result} -> result
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp write_and_sync(file, data) do
+    IO.binwrite(file, data)
+    :file.sync(file)
   end
 
   defp cleanup_error(temporary, reason) do
