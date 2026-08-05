@@ -89,7 +89,7 @@ jobs:
         run: mix format --check-formatted
 
   test:
-    name: Test (${{ matrix.storage-backend }})
+    name: "Test (store: ${{ matrix.storage-backend }})"
     runs-on: blacksmith-2vcpu-ubuntu-2404
 
     strategy:
