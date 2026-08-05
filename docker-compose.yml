@@ -17,8 +17,28 @@ services:
     networks:
       - textbin
 
+  object-storage:
+    image: chrislusf/seaweedfs:4.40
+    command:
+      - server
+      - -s3
+      - -dir=/data
+      - -ip=object-storage
+      - -ip.bind=0.0.0.0
+      - -master.volumeSizeLimitMB=1024
+      - -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8333:8333"
+    volumes:
+      - object-storage-data:/data
+      - ./config/seaweedfs_s3.json:/etc/seaweedfs/s3.json:ro
+    restart: unless-stopped
+    networks:
+      - textbin
+
 volumes:
   postgres-data:
+  object-storage-data:
 
 networks:
   textbin:

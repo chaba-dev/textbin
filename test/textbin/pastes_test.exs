@@ -3,6 +3,7 @@ defmodule Textbin.PastesTest do
 
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
+  alias Textbin.Storage
 
   import Textbin.AccountsFixtures
 
@@ -88,6 +89,11 @@ defmodule Textbin.PastesTest do
     test "create_paste/2 with valid data creates a paste", %{scope: scope} do
       assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, @valid_attrs)
       assert paste.data == "some data"
+      assert paste.size_bytes == byte_size("some data")
+      assert paste.sha256 == :crypto.hash(:sha256, "some data")
+      assert paste.storage_key == "pastes/#{paste.id}"
+      assert Storage.get(paste.storage_key) == {:ok, "some data"}
+      assert Repo.get!(Paste, paste.id).data == nil
       assert paste.syntax_highlight == "plain"
       assert paste.visibility == "private"
       assert paste.user_id == scope.user.id
@@ -206,6 +212,19 @@ defmodule Textbin.PastesTest do
 
       assert {:ok, %Paste{}} = Pastes.delete_paste(scope, paste)
       assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
+      assert Storage.get(paste.storage_key) == {:error, :enoent}
+    end
+
+    test "reads legacy database-backed paste content", %{scope: scope} do
+      paste =
+        Repo.insert!(%Paste{
+          data: "legacy content",
+          syntax_highlight: "plain",
+          visibility: "private",
+          user_id: scope.user.id
+        })
+
+      assert Pastes.get_paste!(scope, paste.id).data == "legacy content"
     end
 
     test "delete_paste/2 does not delete another user's paste", %{

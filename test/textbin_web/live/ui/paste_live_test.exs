@@ -40,6 +40,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     paste =
       Paste
       |> Repo.one!()
+      |> Pastes.load_data()
       |> Repo.preload(:user)
 
     assert paste.data == "guest paste"

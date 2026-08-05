@@ -44,19 +44,29 @@ defmodule TextbinWeb.UI.PasteLive do
 
   def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :index}} = socket) do
     paste = Pastes.get_paste!(socket.assigns.current_scope, id)
-    {:ok, _paste} = Pastes.delete_paste(socket.assigns.current_scope, paste)
 
-    {:noreply, stream_delete(socket, :pastes, paste)}
+    case Pastes.delete_paste(socket.assigns.current_scope, paste) do
+      {:ok, _paste} ->
+        {:noreply, stream_delete(socket, :pastes, paste)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Paste deletion could not be completed")}
+    end
   end
 
   def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :show}} = socket) do
     paste = Pastes.get_paste!(socket.assigns.current_scope, id)
-    {:ok, _paste} = Pastes.delete_paste(socket.assigns.current_scope, paste)
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Paste deleted")
-     |> push_navigate(to: ~p"/pastes")}
+    case Pastes.delete_paste(socket.assigns.current_scope, paste) do
+      {:ok, _paste} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Paste deleted")
+         |> push_navigate(to: ~p"/pastes")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Paste deletion could not be completed")}
+    end
   end
 
   def handle_event("validate", %{"paste" => paste_params}, socket) do

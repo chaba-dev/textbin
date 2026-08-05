@@ -89,7 +89,13 @@ jobs:
         run: mix format --check-formatted
 
   test:
+    name: "Test (store: ${{ matrix.storage-backend }})"
     runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    strategy:
+      fail-fast: false
+      matrix:
+        storage-backend: [memory, local, s3]
 
     services:
       postgres:
@@ -122,10 +128,12 @@ jobs:
           path: |
             deps
             _build
-          key: mix-test-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          key: >-
+            mix-test-${{ matrix.storage-backend }}-${{ hashFiles('mix.lock') }}
           restore-keys: |
-            mix-test-${{ runner.os }}-
-            mix-${{ runner.os }}-
+            mix-test-${{ matrix.storage-backend }}-
+            mix-test-
+            mix-
 
       - name: Install Hex and Rebar
         run: |
@@ -141,5 +149,37 @@ jobs:
       - name: Check unused dependencies
         run: mix deps.unlock --check-unused
 
-      - name: Run tests
-        run: mix test
+      - name: Start SeaweedFS
+        if: matrix.storage-backend == 's3'
+        run: |
+          docker compose up -d object-storage
+
+          for attempt in $(seq 1 30); do
+            if curl --silent --show-error \
+              --output /dev/null http://127.0.0.1:8333/; then
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          docker compose logs object-storage
+          exit 1
+
+      - name: Run tests with ${{ matrix.storage-backend }} storage
+        env:
+          STORAGE_BACKEND: ${{ matrix.storage-backend }}
+          TEXTBIN_STORAGE_PATH: ${{ runner.temp }}/textbin-storage
+          S3_ENDPOINT: http://localhost:8333
+          S3_BUCKET: textbin
+          S3_REGION: us-east-1
+          S3_ACCESS_KEY_ID: textbin
+          S3_SECRET_ACCESS_KEY: textbin-development-secret
+        run: |
+          if [ "$STORAGE_BACKEND" = "memory" ]; then
+            unset TEXTBIN_STORAGE_BACKEND
+          else
+            export TEXTBIN_STORAGE_BACKEND="$STORAGE_BACKEND"
+          fi
+
+          mix test

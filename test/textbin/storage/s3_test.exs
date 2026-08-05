@@ -1,0 +1,78 @@
+defmodule Textbin.Storage.S3Test do
+  use ExUnit.Case, async: true
+
+  alias Textbin.Storage.S3
+
+  @base_opts [
+    endpoint: "http://object-storage:8333",
+    bucket: "textbin",
+    region: "us-east-1",
+    access_key_id: "access-key",
+    secret_access_key: "secret-key"
+  ]
+
+  test "puts content with a signed path-style request" do
+    parent = self()
+
+    plug = fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(parent, {:request, conn.method, conn.request_path, conn.req_headers, body})
+      Plug.Conn.send_resp(conn, 200, "")
+    end
+
+    opts = Keyword.put(@base_opts, :req_options, plug: plug)
+    data = "stored in s3"
+
+    assert {:ok, metadata} = S3.put("pastes/id", data, opts)
+    assert metadata.size_bytes == byte_size(data)
+    assert metadata.sha256 == :crypto.hash(:sha256, data)
+
+    assert_receive {:request, "PUT", "/textbin/pastes/id", headers, ^data}
+
+    assert {"authorization", "AWS4-HMAC-SHA256 " <> _signature} =
+             List.keyfind(headers, "authorization", 0)
+  end
+
+  test "gets content and maps missing objects" do
+    content_opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn conn -> Plug.Conn.send_resp(conn, 200, "object data") end
+      )
+
+    missing_opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn conn -> Plug.Conn.send_resp(conn, 404, "missing") end
+      )
+
+    assert S3.get("pastes/id", content_opts) == {:ok, "object data"}
+    assert S3.get("pastes/missing", missing_opts) == {:error, :enoent}
+  end
+
+  test "deletes content idempotently" do
+    opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn conn -> Plug.Conn.send_resp(conn, 204, "") end
+      )
+
+    assert :ok = S3.delete("pastes/id", opts)
+  end
+
+  test "does not mistake a missing bucket for a deleted object" do
+    opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn conn -> Plug.Conn.send_resp(conn, 404, "missing bucket") end
+      )
+
+    assert S3.delete("pastes/id", opts) == {:error, {:http_status, 404}}
+  end
+
+  test "returns non-success statuses without exposing response bodies" do
+    opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn conn -> Plug.Conn.send_resp(conn, 503, "provider details") end,
+        retry: false
+      )
+
+    assert S3.put("pastes/id", "data", opts) == {:error, {:http_status, 503}}
+  end
+end
