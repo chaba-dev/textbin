@@ -49,14 +49,21 @@ defmodule Textbin.Storage.S3Test do
   end
 
   test "deletes content idempotently" do
-    for status <- [204, 404] do
-      opts =
-        Keyword.put(@base_opts, :req_options,
-          plug: fn conn -> Plug.Conn.send_resp(conn, status, "") end
-        )
+    opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn conn -> Plug.Conn.send_resp(conn, 204, "") end
+      )
 
-      assert :ok = S3.delete("pastes/id", opts)
-    end
+    assert :ok = S3.delete("pastes/id", opts)
+  end
+
+  test "does not mistake a missing bucket for a deleted object" do
+    opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn conn -> Plug.Conn.send_resp(conn, 404, "missing bucket") end
+      )
+
+    assert S3.delete("pastes/id", opts) == {:error, {:http_status, 404}}
   end
 
   test "returns non-success statuses without exposing response bodies" do

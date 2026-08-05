@@ -36,7 +36,7 @@ defmodule Textbin.Storage.S3 do
   @impl true
   def delete(storage_key, opts) do
     case Req.delete(request(opts), url: object_url(storage_key, opts)) do
-      {:ok, %{status: status}} when status in 200..299 or status == 404 -> :ok
+      {:ok, %{status: status}} when status in 200..299 -> :ok
       result -> response_error(result)
     end
   end

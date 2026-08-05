@@ -79,13 +79,11 @@ defmodule Textbin.Pastes do
   end
 
   def delete_paste(%Scope{user: %User{id: user_id}}, %Paste{user_id: user_id} = paste) do
-    case Repo.delete(paste) do
-      {:ok, deleted_paste} = result ->
-        delete_stored_data(deleted_paste)
-        result
-
-      error ->
-        error
+    # Expired rows are invisible to normal reads and give cleanup a durable key
+    # to retry if storage is temporarily unavailable.
+    with {:ok, expired_paste} <- expire_paste(paste),
+         :ok <- delete_stored_data(expired_paste) do
+      Repo.delete(expired_paste)
     end
   end
 
@@ -106,21 +104,18 @@ defmodule Textbin.Pastes do
       raise ArgumentError, ":limit must be a positive integer"
     end
 
-    expired_ids =
-      from p in Paste,
-        where: not is_nil(p.expires_at) and p.expires_at <= ^now,
-        order_by: [asc: p.expires_at, asc: p.id],
-        limit: ^limit,
-        select: p.id
-
-    {deleted_count, storage_keys} =
-      Repo.delete_all(
+    expired_pastes =
+      Repo.all(
         from p in Paste,
-          where: p.id in subquery(expired_ids),
-          select: p.storage_key
+          where: not is_nil(p.expires_at) and p.expires_at <= ^now,
+          order_by: [asc: p.expires_at, asc: p.id],
+          limit: ^limit
       )
 
-    Enum.each(storage_keys, &delete_storage_key/1)
+    deletable_ids =
+      for paste <- expired_pastes, delete_stored_data(paste) == :ok, do: paste.id
+
+    {deleted_count, nil} = Repo.delete_all(from p in Paste, where: p.id in ^deletable_ids)
 
     deleted_count
   end
@@ -144,15 +139,28 @@ defmodule Textbin.Pastes do
 
     case Storage.put(storage_key, data) do
       {:ok, metadata} ->
-        changeset
-        |> Ecto.Changeset.put_change(:data, nil)
-        |> Ecto.Changeset.put_change(:storage_key, storage_key)
-        |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
-        |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
-        |> Repo.insert()
-        |> finalize_insert(storage_key, data)
+        try do
+          changeset
+          |> Ecto.Changeset.put_change(:data, nil)
+          |> Ecto.Changeset.put_change(:storage_key, storage_key)
+          |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
+          |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
+          |> Repo.insert()
+          |> finalize_insert(storage_key, data)
+        rescue
+          exception ->
+            delete_storage_key(storage_key)
+            reraise exception, __STACKTRACE__
+        catch
+          kind, reason ->
+            delete_storage_key(storage_key)
+            :erlang.raise(kind, reason, __STACKTRACE__)
+        end
 
       {:error, reason} ->
+        # A failed HTTP response can be ambiguous: the object store may have
+        # committed the PUT before the connection failed.
+        delete_storage_key(storage_key)
         Logger.error("Failed to store paste content: #{inspect(reason)}")
         {:error, Ecto.Changeset.add_error(changeset, :data, "could not be stored")}
     end
@@ -166,6 +174,12 @@ defmodule Textbin.Pastes do
   end
 
   defp delete_stored_data(%Paste{storage_key: storage_key}), do: delete_storage_key(storage_key)
+
+  defp expire_paste(paste) do
+    paste
+    |> Ecto.Changeset.change(expires_at: Paste.utc_now_ms())
+    |> Repo.update()
+  end
 
   defp delete_storage_key(nil), do: :ok
 

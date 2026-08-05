@@ -12,7 +12,7 @@ defmodule Textbin.Storage.Local do
       temporary =
         destination <> ".tmp-" <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
 
-      case File.write(temporary, data, [:binary, :exclusive]) do
+      case write_temporary(temporary, data) do
         :ok ->
           case File.rename(temporary, destination) do
             :ok -> {:ok, metadata(data)}
@@ -63,6 +63,18 @@ defmodule Textbin.Storage.Local do
 
   defp metadata(data) do
     %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
+  end
+
+  defp write_temporary(path, data) do
+    case File.open(path, [:write, :binary, :exclusive], fn file ->
+           with :ok <- IO.binwrite(file, data),
+                :ok <- :file.sync(file) do
+             :ok
+           end
+         end) do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp cleanup_error(temporary, reason) do

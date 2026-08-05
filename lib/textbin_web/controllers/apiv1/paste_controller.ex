@@ -164,12 +164,21 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   def delete(conn, %{"id" => id}) do
     with_api_scope(conn, fn current_scope ->
-      with {:ok, paste_id} <- Ecto.UUID.cast(id),
-           %{} = paste <- Pastes.get_paste(current_scope, paste_id) do
-        {:ok, _paste} = Pastes.delete_paste(current_scope, paste)
-      end
+      result =
+        with {:ok, paste_id} <- Ecto.UUID.cast(id),
+             %{} = paste <- Pastes.get_paste(current_scope, paste_id) do
+          Pastes.delete_paste(current_scope, paste)
+        end
 
-      send_resp(conn, :no_content, "")
+      case result do
+        {:error, _reason} ->
+          conn
+          |> put_status(:service_unavailable)
+          |> json(%{errors: %{detail: "Paste deletion could not be completed"}})
+
+        _result ->
+          send_resp(conn, :no_content, "")
+      end
     end)
   end
 
