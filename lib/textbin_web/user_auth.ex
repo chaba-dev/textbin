@@ -9,7 +9,7 @@ defmodule TextbinWeb.UserAuth do
   import Phoenix.Controller
 
   alias Textbin.Accounts
-  alias Textbin.Accounts.Scope
+  alias Textbin.Accounts.{Scope, User}
 
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
@@ -121,17 +121,23 @@ defmodule TextbinWeb.UserAuth do
   def fetch_current_scope_for_api_token(conn, _opts) do
     case get_bearer_token(conn) do
       {:ok, token} ->
-        if user = Accounts.get_user_by_api_token(token) do
-          assign(conn, :current_scope, Scope.for_user(user))
-        else
-          conn
-          |> put_status(:unauthorized)
-          |> json(%{errors: %{detail: "Invalid API token"}})
-          |> halt()
+        case Accounts.get_user_and_api_token(token) do
+          {user, user_token} ->
+            conn
+            |> assign(:current_scope, Scope.for_user(user))
+            |> assign(:current_api_token, user_token)
+
+          nil ->
+            conn
+            |> put_status(:unauthorized)
+            |> json(%{errors: %{detail: "Invalid API token"}})
+            |> halt()
         end
 
       :missing ->
-        assign(conn, :current_scope, Scope.for_user(nil))
+        conn
+        |> assign(:current_scope, Scope.for_user(nil))
+        |> assign(:current_api_token, nil)
 
       :invalid ->
         conn
@@ -139,6 +145,19 @@ defmodule TextbinWeb.UserAuth do
         |> json(%{errors: %{detail: "Invalid authorization header"}})
         |> halt()
     end
+  end
+
+  @doc """
+  Requires an authenticated API token.
+  """
+  def require_api_token(%{assigns: %{current_scope: %Scope{user: %User{}}}} = conn, _opts),
+    do: conn
+
+  def require_api_token(conn, _opts) do
+    conn
+    |> put_status(:unauthorized)
+    |> json(%{errors: %{detail: "API token required"}})
+    |> halt()
   end
 
   defp get_bearer_token(conn) do

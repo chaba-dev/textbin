@@ -388,9 +388,9 @@ defmodule Textbin.Accounts do
   end
 
   @doc """
-  Gets a user by API token and records the token's last-used timestamp.
+  Gets a user and token record by API token and records its last-used timestamp.
   """
-  def get_user_by_api_token(token) when is_binary(token) do
+  def get_user_and_api_token(token) when is_binary(token) do
     with {:ok, query} <- UserToken.verify_api_token_query(token),
          {user, user_token} <- Repo.one(query) do
       now = DateTime.utc_now(:second)
@@ -400,9 +400,19 @@ defmodule Textbin.Accounts do
         set: [last_used_at: now]
       )
 
-      user
+      {user, %{user_token | last_used_at: now}}
     else
       _ -> nil
+    end
+  end
+
+  @doc """
+  Gets a user by API token and records the token's last-used timestamp.
+  """
+  def get_user_by_api_token(token) when is_binary(token) do
+    case get_user_and_api_token(token) do
+      {user, _user_token} -> user
+      nil -> nil
     end
   end
 

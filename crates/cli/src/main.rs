@@ -1,5 +1,6 @@
 mod auth;
 mod base;
+mod settings;
 
 use std::path::PathBuf;
 
@@ -21,7 +22,7 @@ enum Commands {
     #[command(flatten)]
     Base(base::Commands),
 
-    /// auth placeholder
+    /// Manage CLI authentication
     #[command(subcommand)]
     Auth(auth::Commands),
 }
@@ -35,15 +36,13 @@ fn main() -> Result<()> {
 
     let cli = TextbinCli::parse();
 
-    if let Some(conf) = cli.config.as_deref() {
-        println!("Value for config: {}", conf.display());
-    }
+    let settings = settings::Settings::new(cli.config)?;
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
-        Some(Commands::Base(command)) => base::handle(command)?,
-        Some(Commands::Auth(command)) => auth::handle(command)?,
+        Some(Commands::Base(command)) => base::handle(command, &settings)?,
+        Some(Commands::Auth(command)) => auth::handle(command, &settings)?,
         None => {}
     }
 
@@ -78,5 +77,34 @@ mod tests {
         ]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_auth_workflows() {
+        assert!(TextbinCli::try_parse_from(["textbin", "auth", "whoami"]).is_ok());
+        assert!(
+            TextbinCli::try_parse_from([
+                "textbin",
+                "auth",
+                "login",
+                "--server",
+                "https://demo.textbin.com",
+                "--profile",
+                "demo",
+                "--with-token",
+            ])
+            .is_ok()
+        );
+        assert!(
+            TextbinCli::try_parse_from([
+                "textbin",
+                "auth",
+                "logout",
+                "--profile",
+                "demo",
+                "--revoke",
+            ])
+            .is_ok()
+        );
     }
 }

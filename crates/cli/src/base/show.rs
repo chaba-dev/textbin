@@ -4,7 +4,9 @@ use lumis::formatters::TerminalBuilder;
 use lumis::languages::Language;
 use lumis::themes;
 use std::io::{self, IsTerminal, Write};
-use textbin_client::{Client, Paste};
+use textbin_client::Paste;
+
+use crate::settings::Settings;
 
 #[derive(Args)]
 pub struct ShowArgs {
@@ -24,10 +26,9 @@ pub struct ShowArgs {
     open: bool,
 }
 
-pub fn handle(args: &ShowArgs) -> Result<()> {
-    let client = Client::from_env();
-
+pub fn handle(args: &ShowArgs, settings: &Settings) -> Result<()> {
     if args.open {
+        let client = settings.server_client()?;
         let url = if args.raw {
             client.raw_paste_url(&args.id)
         } else {
@@ -39,6 +40,7 @@ pub fn handle(args: &ShowArgs) -> Result<()> {
         return Ok(());
     }
 
+    let client = settings.client()?;
     let paste = client.get_paste(&args.id)?;
 
     if args.raw {

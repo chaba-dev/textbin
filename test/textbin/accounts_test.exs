@@ -444,6 +444,11 @@ defmodule Textbin.AccountsTest do
       user = user_fixture()
       {:ok, {token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
 
+      assert {%{id: user_id}, authenticated_token} = Accounts.get_user_and_api_token(token)
+      assert user_id == user.id
+      assert authenticated_token.id == user_token.id
+      assert %DateTime{} = authenticated_token.last_used_at
+
       assert %{id: user_id} = Accounts.get_user_by_api_token(token)
       assert user_id == user.id
 
@@ -451,6 +456,8 @@ defmodule Textbin.AccountsTest do
     end
 
     test "does not authenticate invalid API tokens" do
+      refute Accounts.get_user_and_api_token("txb_invalid")
+      refute Accounts.get_user_and_api_token("invalid")
       refute Accounts.get_user_by_api_token("txb_invalid")
       refute Accounts.get_user_by_api_token("invalid")
     end
