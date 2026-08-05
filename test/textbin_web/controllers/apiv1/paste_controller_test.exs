@@ -4,7 +4,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   alias Textbin.Accounts
   alias Textbin.Accounts.UserToken
   alias Textbin.Pastes
+  alias Textbin.Storage
 
+  import ExUnit.CaptureLog
   import Textbin.AccountsFixtures
 
   @max_paste_bytes 1_048_576
@@ -104,6 +106,8 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
 
     test "renders paste from raw request body", %{conn: conn, scope: scope} do
+      upload_tmp_dir = put_upload_tmp_dir()
+
       conn =
         conn
         |> put_req_header("content-type", "text/plain")
@@ -114,6 +118,11 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert is_nil(response_data["expires_at"])
       refute Map.has_key?(response_data, "data")
       assert_stored_paste(scope, id, "streamed data", "plain")
+
+      paste = Pastes.get_paste!(scope, id)
+      assert paste.size_bytes == byte_size("streamed data")
+      assert paste.sha256 == :crypto.hash(:sha256, "streamed data")
+      assert File.ls!(upload_tmp_dir) == []
     end
 
     test "renders paste from raw request body with syntax highlight", %{conn: conn, scope: scope} do
@@ -237,6 +246,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
 
     test "rejects raw request bodies over the configured size limit", %{conn: conn} do
+      upload_tmp_dir = put_upload_tmp_dir()
       too_large_data = String.duplicate("a", @max_paste_bytes + 1)
 
       conn =
@@ -249,6 +259,27 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                  "detail" => "Paste data exceeds the maximum size of 1048576 bytes"
                }
              } = json_response(conn, 413)
+
+      assert File.ls!(upload_tmp_dir) == []
+    end
+
+    test "removes the upload file when storage fails", %{conn: conn} do
+      upload_tmp_dir = put_upload_tmp_dir()
+      blocked_root = Path.join(System.tmp_dir!(), "textbin-blocked-#{Ecto.UUID.generate()}")
+      File.write!(blocked_root, "not a directory")
+      put_storage_config(adapter: Textbin.Storage.Local, opts: [root: blocked_root])
+      on_exit(fn -> File.rm(blocked_root) end)
+
+      capture_log(fn ->
+        conn =
+          conn
+          |> put_req_header("content-type", "text/plain")
+          |> post(~p"/api/v1/pastes", "cannot be stored")
+
+        assert %{"data" => ["could not be stored"]} = json_response(conn, 422)["errors"]
+      end)
+
+      assert File.ls!(upload_tmp_dir) == []
     end
 
     test "uses the configured size limit", %{conn: conn} do
@@ -350,7 +381,29 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     Application.put_env(:textbin, :max_paste_bytes, max_paste_bytes)
 
     on_exit(fn ->
-      Application.put_env(:textbin, :max_paste_bytes, previous_max_paste_bytes)
+      restore_application_env(:max_paste_bytes, previous_max_paste_bytes)
     end)
   end
+
+  defp put_upload_tmp_dir do
+    upload_tmp_dir = Path.join(System.tmp_dir!(), "textbin-uploads-#{Ecto.UUID.generate()}")
+    previous_upload_tmp_dir = Application.get_env(:textbin, :upload_tmp_dir)
+    Application.put_env(:textbin, :upload_tmp_dir, upload_tmp_dir)
+
+    on_exit(fn ->
+      restore_application_env(:upload_tmp_dir, previous_upload_tmp_dir)
+      File.rm_rf!(upload_tmp_dir)
+    end)
+
+    upload_tmp_dir
+  end
+
+  defp put_storage_config(config) do
+    previous_config = Application.fetch_env!(:textbin, Storage)
+    Application.put_env(:textbin, Storage, config)
+    on_exit(fn -> Application.put_env(:textbin, Storage, previous_config) end)
+  end
+
+  defp restore_application_env(key, nil), do: Application.delete_env(:textbin, key)
+  defp restore_application_env(key, value), do: Application.put_env(:textbin, key, value)
 end

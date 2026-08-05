@@ -178,6 +178,44 @@ defmodule Textbin.PastesTest do
       assert {:error, %Ecto.Changeset{}} = Pastes.create_paste(scope, @invalid_attrs)
     end
 
+    test "create_paste/2 rejects data over the configured size limit", %{scope: scope} do
+      oversized_data = String.duplicate("a", 1_048_577)
+
+      assert {:error, changeset} = Pastes.create_paste(scope, %{data: oversized_data})
+      assert %{data: ["must be at most 1048576 bytes"]} = errors_on(changeset)
+    end
+
+    test "create_paste_from_file/4 stores streamed content and metadata", %{scope: scope} do
+      path = Path.join(System.tmp_dir!(), "textbin-context-upload-#{Ecto.UUID.generate()}")
+      data = String.duplicate("streamed context data\n", 4_000)
+      metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
+      File.write!(path, data)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste_from_file(scope, path, metadata, %{syntax_highlight: "text"})
+
+      assert paste.data == nil
+      assert paste.size_bytes == metadata.size_bytes
+      assert paste.sha256 == metadata.sha256
+      assert File.exists?(path)
+      assert Pastes.get_paste!(scope, paste.id).data == data
+    end
+
+    test "create_paste_from_file/4 rejects metadata that does not match the file", %{
+      scope: scope
+    } do
+      path = Path.join(System.tmp_dir!(), "textbin-context-upload-#{Ecto.UUID.generate()}")
+      File.write!(path, "actual data")
+      on_exit(fn -> File.rm(path) end)
+
+      metadata = %{size_bytes: 1, sha256: :crypto.hash(:sha256, "actual data")}
+
+      assert {:error, changeset} = Pastes.create_paste_from_file(scope, path, metadata)
+      assert %{data: ["does not match the uploaded file"]} = errors_on(changeset)
+      assert Repo.aggregate(Paste, :count) == 0
+    end
+
     test "create_paste/2 with an invalid expiration returns error changeset", %{scope: scope} do
       assert {:error, changeset} =
                Pastes.create_paste(scope, %{data: "bad ttl", expires_in: "forever"})

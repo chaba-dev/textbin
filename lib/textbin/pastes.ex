@@ -12,6 +12,8 @@ defmodule Textbin.Pastes do
 
   require Logger
 
+  @default_max_paste_bytes 1_048_576
+
   def list_pastes(%Scope{user: %User{id: user_id}}) do
     now = Paste.utc_now_ms()
 
@@ -69,10 +71,33 @@ defmodule Textbin.Pastes do
   def create_paste(%Scope{user: %User{} = user}, attrs \\ %{}) do
     attrs = attrs_with_defaults(attrs, user)
     paste = %Paste{id: Ecto.UUID.generate(), user_id: user.id}
-    changeset = Paste.changeset(paste, attrs)
+    changeset = paste |> Paste.changeset(attrs) |> validate_data_size()
 
     if changeset.valid? do
       store_paste(changeset)
+    else
+      {:error, changeset}
+    end
+  end
+
+  def create_paste_from_file(
+        %Scope{user: %User{} = user},
+        path,
+        %{size_bytes: size_bytes, sha256: sha256} = metadata,
+        attrs \\ %{}
+      )
+      when is_binary(path) and is_integer(size_bytes) and is_binary(sha256) do
+    attrs = attrs_with_defaults(attrs, user)
+    paste = %Paste{id: Ecto.UUID.generate(), user_id: user.id}
+    storage_key = "pastes/#{paste.id}"
+
+    changeset =
+      %{paste | storage_key: storage_key}
+      |> Paste.changeset(attrs)
+      |> validate_uploaded_file(path, metadata)
+
+    if changeset.valid? do
+      store_paste_file(changeset, path, metadata)
     else
       {:error, changeset}
     end
@@ -137,33 +162,61 @@ defmodule Textbin.Pastes do
     data = Ecto.Changeset.get_field(changeset, :data)
     storage_key = "pastes/#{changeset.data.id}"
 
-    case Storage.put(storage_key, data) do
-      {:ok, metadata} ->
-        try do
-          changeset
-          |> Ecto.Changeset.put_change(:data, nil)
-          |> Ecto.Changeset.put_change(:storage_key, storage_key)
-          |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
-          |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
-          |> Repo.insert()
-          |> finalize_insert(storage_key, data)
-        rescue
-          exception ->
-            delete_storage_key(storage_key)
-            reraise exception, __STACKTRACE__
-        catch
-          kind, reason ->
-            delete_storage_key(storage_key)
-            :erlang.raise(kind, reason, __STACKTRACE__)
-        end
+    with_storage_compensation(storage_key, fn ->
+      case Storage.put(storage_key, data) do
+        {:ok, metadata} ->
+          insert_stored_paste(changeset, storage_key, metadata, data)
 
-      {:error, reason} ->
-        # A failed HTTP response can be ambiguous: the object store may have
-        # committed the PUT before the connection failed.
+        {:error, reason} ->
+          storage_error(changeset, storage_key, reason)
+      end
+    end)
+  end
+
+  defp store_paste_file(changeset, path, metadata) do
+    storage_key = changeset.data.storage_key
+
+    with_storage_compensation(storage_key, fn ->
+      case Storage.put_file(storage_key, path, metadata) do
+        {:ok, stored_metadata} ->
+          insert_stored_paste(changeset, storage_key, stored_metadata, nil)
+
+        {:error, reason} ->
+          storage_error(changeset, storage_key, reason)
+      end
+    end)
+  end
+
+  defp with_storage_compensation(storage_key, operation) do
+    try do
+      operation.()
+    rescue
+      exception ->
         delete_storage_key(storage_key)
-        Logger.error("Failed to store paste content: #{inspect(reason)}")
-        {:error, Ecto.Changeset.add_error(changeset, :data, "could not be stored")}
+        reraise exception, __STACKTRACE__
+    catch
+      kind, reason ->
+        delete_storage_key(storage_key)
+        :erlang.raise(kind, reason, __STACKTRACE__)
     end
+  end
+
+  defp insert_stored_paste(changeset, storage_key, metadata, data) do
+    changeset
+    |> Ecto.Changeset.put_change(:data, nil)
+    |> Ecto.Changeset.put_change(:storage_key, storage_key)
+    |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
+    |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
+    |> Repo.insert()
+    |> finalize_insert(storage_key, data)
+  end
+
+  defp storage_error(changeset, storage_key, reason) do
+    # A failed HTTP response can be ambiguous: the object store may have
+    # committed the PUT before the connection failed.
+    delete_storage_key(storage_key)
+    Logger.error("Failed to store paste content: #{inspect(reason)}")
+    {:error, Ecto.Changeset.add_error(changeset, :data, "could not be stored")}
   end
 
   defp finalize_insert({:ok, paste}, _storage_key, data), do: {:ok, %{paste | data: data}}
@@ -192,6 +245,48 @@ defmodule Textbin.Pastes do
         Logger.error("Failed to delete stored paste content: #{inspect(reason)}")
         {:error, reason}
     end
+  end
+
+  defp validate_data_size(changeset) do
+    case Ecto.Changeset.get_field(changeset, :data) do
+      data when is_binary(data) -> validate_uploaded_size(changeset, byte_size(data))
+      _data -> changeset
+    end
+  end
+
+  defp validate_uploaded_file(changeset, path, %{size_bytes: size_bytes, sha256: sha256}) do
+    case File.stat(path) do
+      {:ok, %{type: :regular, size: ^size_bytes}}
+      when size_bytes >= 0 and byte_size(sha256) == 32 ->
+        validate_uploaded_size(changeset, size_bytes)
+
+      {:ok, _stat} ->
+        Ecto.Changeset.add_error(changeset, :data, "does not match the uploaded file")
+
+      {:error, _reason} ->
+        Ecto.Changeset.add_error(changeset, :data, "could not be read")
+    end
+  end
+
+  defp validate_uploaded_size(changeset, size_bytes) do
+    cond do
+      size_bytes == 0 and !Keyword.has_key?(changeset.errors, :data) ->
+        Ecto.Changeset.add_error(changeset, :data, "can't be blank")
+
+      size_bytes > max_paste_bytes() ->
+        Ecto.Changeset.add_error(
+          changeset,
+          :data,
+          "must be at most #{max_paste_bytes()} bytes"
+        )
+
+      true ->
+        changeset
+    end
+  end
+
+  defp max_paste_bytes do
+    Application.get_env(:textbin, :max_paste_bytes, @default_max_paste_bytes)
   end
 
   defp attrs_with_defaults(attrs, user) do

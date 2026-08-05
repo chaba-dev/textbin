@@ -14,6 +14,14 @@ defmodule Textbin.Storage.Local do
   end
 
   @impl true
+  def put_file(storage_key, source, metadata, opts) do
+    with {:ok, destination} <- storage_path(storage_key, opts),
+         :ok <- File.mkdir_p(Path.dirname(destination)) do
+      finalize_file(destination, source, metadata)
+    end
+  end
+
+  @impl true
   def get(storage_key, opts) do
     with {:ok, path} <- storage_path(storage_key, opts) do
       File.read(path)
@@ -65,6 +73,22 @@ defmodule Textbin.Storage.Local do
     end
   end
 
+  defp finalize_file(destination, source, metadata) do
+    temporary = temporary_path(destination)
+
+    with {:ok, _bytes_copied} <- File.copy(source, temporary),
+         :ok <- sync_file(temporary),
+         :ok <- File.rename(temporary, destination) do
+      {:ok, metadata}
+    else
+      {:error, reason} -> cleanup_error(temporary, reason)
+    end
+  end
+
+  defp temporary_path(destination) do
+    destination <> ".tmp-" <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+  end
+
   defp write_temporary(path, data) do
     case File.open(path, [:write, :binary, :exclusive], &write_and_sync(&1, data)) do
       {:ok, result} -> result
@@ -75,6 +99,13 @@ defmodule Textbin.Storage.Local do
   defp write_and_sync(file, data) do
     IO.binwrite(file, data)
     :file.sync(file)
+  end
+
+  defp sync_file(path) do
+    case File.open(path, [:append, :binary], &:file.sync/1) do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp cleanup_error(temporary, reason) do

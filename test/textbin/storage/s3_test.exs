@@ -33,6 +33,31 @@ defmodule Textbin.Storage.S3Test do
              List.keyfind(headers, "authorization", 0)
   end
 
+  test "streams a file with its fixed content length" do
+    parent = self()
+    path = Path.join(System.tmp_dir!(), "textbin-s3-upload-#{Ecto.UUID.generate()}")
+    data = String.duplicate("streamed to s3\n", 8_000)
+    metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
+    File.write!(path, data)
+    on_exit(fn -> File.rm(path) end)
+
+    plug = fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(parent, {:request, conn.req_headers, body})
+      Plug.Conn.send_resp(conn, 200, "")
+    end
+
+    opts = Keyword.put(@base_opts, :req_options, plug: plug)
+
+    assert S3.put_file("pastes/file", path, metadata, opts) == {:ok, metadata}
+    assert_receive {:request, headers, ^data}
+    assert {"content-length", content_length} = List.keyfind(headers, "content-length", 0)
+    assert content_length == Integer.to_string(byte_size(data))
+
+    assert {"x-amz-content-sha256", "UNSIGNED-PAYLOAD"} =
+             List.keyfind(headers, "x-amz-content-sha256", 0)
+  end
+
   test "gets content and maps missing objects" do
     content_opts =
       Keyword.put(@base_opts, :req_options,

@@ -20,6 +20,20 @@ defmodule Textbin.Storage.S3 do
   end
 
   @impl true
+  def put_file(storage_key, path, metadata, opts) do
+    request_opts = [
+      url: object_url(storage_key, opts),
+      headers: [{"content-length", Integer.to_string(metadata.size_bytes)}],
+      body: File.stream!(path, 64_000, [])
+    ]
+
+    case Req.put(request(opts), request_opts) do
+      {:ok, %{status: status}} when status in 200..299 -> {:ok, metadata}
+      result -> response_error(result)
+    end
+  end
+
+  @impl true
   def get(storage_key, opts) do
     case Req.get(request(opts), url: object_url(storage_key, opts)) do
       {:ok, %{status: status, body: body}} when status in 200..299 and is_binary(body) ->
