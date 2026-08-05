@@ -22,6 +22,9 @@ erl_crash.dump
 # Temporary files, for example, from tests.
 /tmp/
 
+# Local paste bodies written by the development storage adapter.
+/storage/
+
 # Ignore package tarball (built via "mix hex.build").
 kopynpaste-*.tar
 

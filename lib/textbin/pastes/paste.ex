@@ -22,6 +22,9 @@ defmodule Textbin.Pastes.Paste do
 
   schema "pastes" do
     field :data, :string
+    field :storage_key, :string
+    field :size_bytes, :integer
+    field :sha256, :binary
     field :syntax_highlight, :string, default: "plain"
     field :visibility, :string, default: "private"
     field :expires_at, :utc_datetime_usec
@@ -36,9 +39,18 @@ defmodule Textbin.Pastes.Paste do
     paste
     |> cast(attrs, [:data, :syntax_highlight, :visibility, :expires_in])
     |> put_expires_at(attrs)
-    |> validate_required([:data, :syntax_highlight, :visibility, :user_id])
+    |> validate_required([:syntax_highlight, :visibility, :user_id])
+    |> validate_content_location()
     |> validate_inclusion(:visibility, @visibility_values)
     |> validate_expiration()
+  end
+
+  defp validate_content_location(changeset) do
+    if get_field(changeset, :data) || get_field(changeset, :storage_key) do
+      changeset
+    else
+      add_error(changeset, :data, "can't be blank")
+    end
   end
 
   defp put_expires_at(changeset, attrs) do

@@ -30,6 +30,10 @@ config :textbin,
   expiration_cleanup_interval_ms: :timer.minutes(15),
   expiration_cleanup_batch_size: 500
 
+config :textbin, Textbin.Storage,
+  adapter: Textbin.Storage.Local,
+  opts: [root: "storage"]
+
 # Configures the endpoint
 config :textbin, TextbinWeb.Endpoint,
   url: [host: "localhost"],

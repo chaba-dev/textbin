@@ -11,6 +11,10 @@ config :textbin, Textbin.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
+config :textbin, Textbin.Storage,
+  adapter: Textbin.Storage.Local,
+  opts: [root: Path.expand("../storage", __DIR__)]
+
 dev_http_ip =
   case System.get_env("PHX_BIND_IP") do
     nil ->

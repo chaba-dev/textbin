@@ -55,6 +55,10 @@ if config_env() == :prod do
 
   config :textbin, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  config :textbin, Textbin.Storage,
+    adapter: Textbin.Storage.Local,
+    opts: [root: System.get_env("TEXTBIN_STORAGE_PATH") || "/var/lib/textbin/pastes"]
+
   config :textbin, TextbinWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
