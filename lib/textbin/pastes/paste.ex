@@ -44,6 +44,7 @@ defmodule Textbin.Pastes.Paste do
     |> put_expires_at(attrs)
     |> validate_required([:content_type, :syntax_highlight, :visibility, :user_id])
     |> validate_content_location()
+    |> validate_length(:content_type, max: 255)
     |> validate_change(:content_type, &validate_content_type/2)
     |> validate_inclusion(:visibility, @visibility_values)
     |> validate_expiration()

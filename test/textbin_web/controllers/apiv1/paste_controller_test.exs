@@ -194,6 +194,20 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert Pastes.get_paste!(scope, id).content_type == "text/x-rust"
     end
 
+    test "returns a validation error for a content type exceeding the database limit", %{
+      conn: conn
+    } do
+      content_type = "application/" <> String.duplicate("a", 244)
+
+      conn =
+        conn
+        |> put_req_header("content-type", content_type)
+        |> post(~p"/api/v1/pastes", "content")
+
+      assert %{"content_type" => ["should be at most 255 character(s)"]} =
+               json_response(conn, 422)["errors"]
+    end
+
     test "stores and returns every registered-user visibility", %{conn: conn, scope: scope} do
       for visibility <- ["private", "unlisted", "public"] do
         conn = post(conn, ~p"/api/v1/pastes", %{data: visibility, visibility: visibility})

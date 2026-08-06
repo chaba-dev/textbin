@@ -174,6 +174,15 @@ defmodule Textbin.PastesTest do
       assert %{content_type: ["is invalid"]} = errors_on(changeset)
     end
 
+    test "create_paste/2 rejects a content type that exceeds the database limit", %{scope: scope} do
+      content_type = "application/" <> String.duplicate("a", 244)
+
+      assert {:error, changeset} =
+               Pastes.create_paste(scope, %{data: "content", content_type: content_type})
+
+      assert %{content_type: ["should be at most 255 character(s)"]} = errors_on(changeset)
+    end
+
     test "create_paste/2 stores the syntax highlight", %{scope: scope} do
       assert {:ok, %Paste{} = paste} =
                Pastes.create_paste(scope, %{data: "IO.puts(:ok)", syntax_highlight: "elixir"})
