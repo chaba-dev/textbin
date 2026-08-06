@@ -11,6 +11,7 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
   setup do
     original_config = Application.fetch_env!(:textbin, Storage)
+    original_inline_paste_bytes = Application.fetch_env!(:textbin, :inline_paste_bytes)
     root = Path.join(System.tmp_dir!(), "textbin-cleanup-#{Ecto.UUID.generate()}")
     blocked_root = root <> "-blocked"
 
@@ -19,8 +20,11 @@ defmodule Textbin.Pastes.StorageCleanupTest do
       opts: [root: root]
     )
 
+    Application.put_env(:textbin, :inline_paste_bytes, 0)
+
     on_exit(fn ->
       Application.put_env(:textbin, Storage, original_config)
+      Application.put_env(:textbin, :inline_paste_bytes, original_inline_paste_bytes)
       File.rm_rf!(root)
       File.rm_rf!(blocked_root)
     end)

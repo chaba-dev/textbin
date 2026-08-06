@@ -24,7 +24,7 @@ defmodule TextbinWeb.UI.PasteLive do
     {:noreply,
      socket
      |> assign_paste_form()
-     |> stream(:pastes, Pastes.list_pastes(socket.assigns.current_scope), reset: true)}
+     |> stream(:pastes, Pastes.list_paste_metadata(socket.assigns.current_scope), reset: true)}
   end
 
   def handle_params(%{"id" => id}, _uri, %{assigns: %{live_action: :show}} = socket) do

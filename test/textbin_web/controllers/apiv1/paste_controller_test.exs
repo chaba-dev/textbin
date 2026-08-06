@@ -36,6 +36,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert conn.private.phoenix_view["json"] == TextbinWeb.ApiV1.PasteJSON
       assert %{"data" => [data]} = json_response(conn, 200)
       assert data["id"] == paste.id
+      assert data["data"] == "some data"
       assert data["syntax_highlight"] == "plain"
       assert data["visibility"] == "private"
     end
@@ -140,6 +141,20 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       refute Map.has_key?(response_data, "data")
       assert is_nil(expires_at)
       assert_stored_paste(scope, id, "streamed data", "elixir")
+    end
+
+    test "keeps a small raw body containing NUL in blob storage", %{conn: conn, scope: scope} do
+      data = <<"binary", 0, "paste">>
+
+      conn =
+        conn
+        |> put_req_header("content-type", "application/octet-stream")
+        |> post(~p"/api/v1/pastes", data)
+
+      assert %{"id" => id} = json_response(conn, 201)["data"]
+      paste = Pastes.get_paste!(scope, id)
+      assert paste.data == data
+      assert paste.storage_key == "pastes/#{paste.id}"
     end
 
     test "stores and returns every registered-user visibility", %{conn: conn, scope: scope} do
@@ -310,10 +325,12 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       on_exit(fn -> File.rm(blocked_root) end)
 
       capture_log(fn ->
+        data = String.duplicate("a", 8_193)
+
         conn =
           conn
           |> put_req_header("content-type", "text/plain")
-          |> post(~p"/api/v1/pastes", "cannot be stored")
+          |> post(~p"/api/v1/pastes", data)
 
         assert %{"data" => ["could not be stored"]} = json_response(conn, 422)["errors"]
       end)

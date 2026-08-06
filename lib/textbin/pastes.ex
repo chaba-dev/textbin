@@ -12,6 +12,7 @@ defmodule Textbin.Pastes do
 
   require Logger
 
+  @default_inline_paste_bytes 8_192
   @default_max_paste_bytes 1_048_576
 
   def list_pastes(%Scope{user: %User{id: user_id}}) do
@@ -23,6 +24,29 @@ defmodule Textbin.Pastes do
         order_by: [desc: p.inserted_at]
     )
     |> Enum.map(&load_data/1)
+  end
+
+  def list_paste_metadata(%Scope{user: %User{id: user_id}}) do
+    now = Paste.utc_now_ms()
+
+    Repo.all(
+      from p in Paste,
+        where: p.user_id == ^user_id and (is_nil(p.expires_at) or p.expires_at > ^now),
+        select:
+          struct(p, [
+            :id,
+            :storage_key,
+            :size_bytes,
+            :sha256,
+            :syntax_highlight,
+            :visibility,
+            :expires_at,
+            :user_id,
+            :inserted_at,
+            :updated_at
+          ]),
+        order_by: [desc: p.inserted_at]
+    )
   end
 
   def get_paste(%Scope{user: %User{id: user_id}}, id) do
@@ -160,12 +184,22 @@ defmodule Textbin.Pastes do
 
   defp store_paste(changeset) do
     data = Ecto.Changeset.get_field(changeset, :data)
+    metadata = content_metadata(data)
+
+    if inline_data?(data) do
+      insert_inline_paste(changeset, metadata, data)
+    else
+      store_blob_paste(changeset, data)
+    end
+  end
+
+  defp store_blob_paste(changeset, data) do
     storage_key = "pastes/#{changeset.data.id}"
 
     with_storage_compensation(storage_key, fn ->
       case Storage.put(storage_key, data) do
-        {:ok, metadata} ->
-          insert_stored_paste(changeset, storage_key, metadata, data)
+        {:ok, stored_metadata} ->
+          insert_stored_paste(changeset, storage_key, stored_metadata, data)
 
         {:error, reason} ->
           storage_error(changeset, storage_key, reason)
@@ -174,6 +208,32 @@ defmodule Textbin.Pastes do
   end
 
   defp store_paste_file(changeset, path, metadata) do
+    if inline_size?(metadata) do
+      store_inline_file(changeset, path, metadata)
+    else
+      store_blob_file(changeset, path, metadata)
+    end
+  end
+
+  defp store_inline_file(changeset, path, expected_metadata) do
+    with {:ok, data} <- File.read(path),
+         metadata = content_metadata(data),
+         true <- metadata == expected_metadata do
+      if inline_data?(data) do
+        insert_inline_paste(changeset, metadata, data)
+      else
+        store_blob_file(changeset, path, metadata)
+      end
+    else
+      false ->
+        inline_metadata_error(changeset)
+
+      {:error, _reason} ->
+        {:error, Ecto.Changeset.add_error(changeset, :data, "could not be read")}
+    end
+  end
+
+  defp store_blob_file(changeset, path, metadata) do
     storage_key = changeset.data.storage_key
 
     with_storage_compensation(storage_key, fn ->
@@ -191,6 +251,15 @@ defmodule Textbin.Pastes do
           storage_error(changeset, storage_key, reason)
       end
     end)
+  end
+
+  defp insert_inline_paste(changeset, metadata, data) do
+    changeset
+    |> Ecto.Changeset.put_change(:data, data)
+    |> Ecto.Changeset.put_change(:storage_key, nil)
+    |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
+    |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
+    |> Repo.insert()
   end
 
   defp with_storage_compensation(storage_key, operation) do
@@ -227,6 +296,10 @@ defmodule Textbin.Pastes do
 
   defp storage_metadata_error(changeset, storage_key) do
     delete_storage_key(storage_key)
+    {:error, Ecto.Changeset.add_error(changeset, :data, "does not match the uploaded file")}
+  end
+
+  defp inline_metadata_error(changeset) do
     {:error, Ecto.Changeset.add_error(changeset, :data, "does not match the uploaded file")}
   end
 
@@ -298,6 +371,21 @@ defmodule Textbin.Pastes do
 
   defp max_paste_bytes do
     Application.get_env(:textbin, :max_paste_bytes, @default_max_paste_bytes)
+  end
+
+  defp inline_size?(metadata), do: metadata.size_bytes <= inline_paste_bytes()
+
+  defp inline_data?(data) do
+    byte_size(data) <= inline_paste_bytes() and String.valid?(data) and
+      :binary.match(data, <<0>>) == :nomatch
+  end
+
+  defp inline_paste_bytes do
+    Application.get_env(:textbin, :inline_paste_bytes, @default_inline_paste_bytes)
+  end
+
+  defp content_metadata(data) do
+    %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
   end
 
   defp attrs_with_defaults(attrs, user) do
