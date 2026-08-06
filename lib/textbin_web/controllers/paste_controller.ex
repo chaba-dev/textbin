@@ -10,6 +10,7 @@ defmodule TextbinWeb.PasteController do
       %Paste{} = paste ->
         conn
         |> put_resp_header("x-content-type-options", "nosniff")
+        |> put_resp_header("content-security-policy", "sandbox; default-src 'none'")
         |> maybe_force_download(paste)
         |> put_paste_content_type(paste)
         |> send_resp(:ok, paste.data)
@@ -28,7 +29,7 @@ defmodule TextbinWeb.PasteController do
   end
 
   defp maybe_force_download(conn, %Paste{} = paste) do
-    if ContentType.active?(paste.content_type) or !text_response?(paste) do
+    if !ContentType.inline_safe?(paste.content_type) or !text_response?(paste) do
       put_resp_header(conn, "content-disposition", ~s(attachment; filename="paste-#{paste.id}"))
     else
       conn

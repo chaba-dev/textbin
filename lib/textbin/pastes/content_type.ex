@@ -7,6 +7,7 @@ defmodule Textbin.Pastes.ContentType do
   @default "text/plain"
   @binary "application/octet-stream"
   @active_types MapSet.new(["application/xhtml+xml", "image/svg+xml", "text/html"])
+  @inline_safe_types MapSet.new(["application/json", "text/plain"])
   @textual_application_types MapSet.new([
                                "application/graphql",
                                "application/javascript",
@@ -54,6 +55,7 @@ defmodule Textbin.Pastes.ContentType do
   def textual?(_content_type), do: false
 
   def active?(content_type), do: MapSet.member?(@active_types, content_type)
+  def inline_safe?(content_type), do: MapSet.member?(@inline_safe_types, content_type)
 
   def text_safe?(data) when is_binary(data) do
     String.valid?(data) and :binary.match(data, <<0>>) == :nomatch
