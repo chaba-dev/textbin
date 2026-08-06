@@ -4,7 +4,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   alias Textbin.Accounts
   alias Textbin.Accounts.UserToken
   alias Textbin.Pastes
+  alias Textbin.Storage
 
+  import ExUnit.CaptureLog
   import Textbin.AccountsFixtures
 
   @max_paste_bytes 1_048_576
@@ -34,6 +36,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert conn.private.phoenix_view["json"] == TextbinWeb.ApiV1.PasteJSON
       assert %{"data" => [data]} = json_response(conn, 200)
       assert data["id"] == paste.id
+      assert data["data"] == "some data"
       assert data["syntax_highlight"] == "plain"
       assert data["visibility"] == "private"
     end
@@ -104,6 +107,8 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
 
     test "renders paste from raw request body", %{conn: conn, scope: scope} do
+      upload_tmp_dir = put_upload_tmp_dir()
+
       conn =
         conn
         |> put_req_header("content-type", "text/plain")
@@ -114,6 +119,14 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert is_nil(response_data["expires_at"])
       refute Map.has_key?(response_data, "data")
       assert_stored_paste(scope, id, "streamed data", "plain")
+
+      paste = Pastes.get_paste!(scope, id)
+      assert paste.size_bytes == byte_size("streamed data")
+      assert paste.sha256 == :crypto.hash(:sha256, "streamed data")
+
+      assert {:ok, %{mode: mode}} = File.stat(upload_tmp_dir)
+      assert Bitwise.band(mode, 0o777) == 0o700
+      assert File.ls!(upload_tmp_dir) == []
     end
 
     test "renders paste from raw request body with syntax highlight", %{conn: conn, scope: scope} do
@@ -128,6 +141,71 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       refute Map.has_key?(response_data, "data")
       assert is_nil(expires_at)
       assert_stored_paste(scope, id, "streamed data", "elixir")
+    end
+
+    test "keeps a small raw body containing NUL in blob storage", %{conn: conn, scope: scope} do
+      data = <<"binary", 0, "paste">>
+
+      conn =
+        conn
+        |> put_req_header("content-type", "application/octet-stream")
+        |> post(~p"/api/v1/pastes", data)
+
+      assert %{"id" => id} = json_response(conn, 201)["data"]
+      paste = Pastes.get_paste!(scope, id)
+      assert paste.data == data
+      assert paste.storage_key == "pastes/#{paste.id}"
+      assert paste.content_type == "application/octet-stream"
+
+      conn = get(conn, ~p"/api/v1/pastes/#{paste.id}")
+
+      assert %{
+               "content_type" => "application/octet-stream",
+               "data" => nil,
+               "data_base64" => encoded,
+               "data_encoding" => "base64"
+             } = json_response(conn, 200)["data"]
+
+      assert Base.decode64!(encoded) == data
+    end
+
+    test "normalizes and stores the raw request content type", %{conn: conn, scope: scope} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/html; charset=iso-8859-1")
+        |> post(~p"/api/v1/pastes", "<strong>source</strong>")
+
+      assert %{"id" => id, "content_type" => "text/html"} =
+               json_response(conn, 201)["data"]
+
+      assert Pastes.get_paste!(scope, id).content_type == "text/html"
+    end
+
+    test "accepts an explicit content type in JSON", %{conn: conn, scope: scope} do
+      conn =
+        post(conn, ~p"/api/v1/pastes", %{
+          data: "fn main() {}",
+          content_type: "text/x-rust"
+        })
+
+      assert %{"id" => id, "content_type" => "text/x-rust"} =
+               json_response(conn, 201)["data"]
+
+      assert Pastes.get_paste!(scope, id).content_type == "text/x-rust"
+    end
+
+    test "returns a validation error for a content type exceeding the database limit", %{
+      conn: conn
+    } do
+      content_type = "application/" <> String.duplicate("a", 244)
+
+      conn =
+        conn
+        |> put_req_header("content-type", content_type)
+        |> post(~p"/api/v1/pastes", "content")
+
+      assert %{"content_type" => ["should be at most 255 character(s)"]} =
+               json_response(conn, 422)["errors"]
     end
 
     test "stores and returns every registered-user visibility", %{conn: conn, scope: scope} do
@@ -237,6 +315,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
 
     test "rejects raw request bodies over the configured size limit", %{conn: conn} do
+      upload_tmp_dir = put_upload_tmp_dir()
       too_large_data = String.duplicate("a", @max_paste_bytes + 1)
 
       conn =
@@ -249,6 +328,65 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                  "detail" => "Paste data exceeds the maximum size of 1048576 bytes"
                }
              } = json_response(conn, 413)
+
+      assert get_resp_header(conn, "connection") == ["close"]
+      assert File.ls!(upload_tmp_dir) == []
+    end
+
+    test "does not send a connection header when rejecting an HTTP/2 upload", %{conn: conn} do
+      too_large_data = String.duplicate("a", @max_paste_bytes + 1)
+      {adapter, payload} = conn.adapter
+      conn = %{conn | adapter: {adapter, %{payload | http_protocol: :"HTTP/2"}}}
+
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/pastes", too_large_data)
+
+      assert json_response(conn, 413)
+      assert get_resp_header(conn, "connection") == []
+    end
+
+    test "reports an unavailable upload directory as a server failure", %{conn: conn} do
+      blocked_path =
+        Path.join(System.tmp_dir!(), "textbin-upload-blocked-#{Ecto.UUID.generate()}")
+
+      File.write!(blocked_path, "not a directory")
+      put_upload_tmp_dir(blocked_path)
+      on_exit(fn -> File.rm(blocked_path) end)
+
+      capture_log(fn ->
+        conn =
+          conn
+          |> put_req_header("content-type", "text/plain")
+          |> post(~p"/api/v1/pastes", "cannot be spooled")
+
+        assert %{"errors" => %{"detail" => "Paste upload is temporarily unavailable"}} =
+                 json_response(conn, 503)
+
+        assert get_resp_header(conn, "connection") == ["close"]
+      end)
+    end
+
+    test "removes the upload file when storage fails", %{conn: conn} do
+      upload_tmp_dir = put_upload_tmp_dir()
+      blocked_root = Path.join(System.tmp_dir!(), "textbin-blocked-#{Ecto.UUID.generate()}")
+      File.write!(blocked_root, "not a directory")
+      put_storage_config(adapter: Textbin.Storage.Local, opts: [root: blocked_root])
+      on_exit(fn -> File.rm(blocked_root) end)
+
+      capture_log(fn ->
+        data = String.duplicate("a", 8_193)
+
+        conn =
+          conn
+          |> put_req_header("content-type", "text/plain")
+          |> post(~p"/api/v1/pastes", data)
+
+        assert %{"data" => ["could not be stored"]} = json_response(conn, 422)["errors"]
+      end)
+
+      assert File.ls!(upload_tmp_dir) == []
     end
 
     test "uses the configured size limit", %{conn: conn} do
@@ -350,7 +488,31 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     Application.put_env(:textbin, :max_paste_bytes, max_paste_bytes)
 
     on_exit(fn ->
-      Application.put_env(:textbin, :max_paste_bytes, previous_max_paste_bytes)
+      restore_application_env(:max_paste_bytes, previous_max_paste_bytes)
     end)
   end
+
+  defp put_upload_tmp_dir(upload_tmp_dir \\ nil) do
+    upload_tmp_dir =
+      upload_tmp_dir || Path.join(System.tmp_dir!(), "textbin-uploads-#{Ecto.UUID.generate()}")
+
+    previous_upload_tmp_dir = Application.get_env(:textbin, :upload_tmp_dir)
+    Application.put_env(:textbin, :upload_tmp_dir, upload_tmp_dir)
+
+    on_exit(fn ->
+      restore_application_env(:upload_tmp_dir, previous_upload_tmp_dir)
+      File.rm_rf!(upload_tmp_dir)
+    end)
+
+    upload_tmp_dir
+  end
+
+  defp put_storage_config(config) do
+    previous_config = Application.fetch_env!(:textbin, Storage)
+    Application.put_env(:textbin, Storage, config)
+    on_exit(fn -> Application.put_env(:textbin, Storage, previous_config) end)
+  end
+
+  defp restore_application_env(key, nil), do: Application.delete_env(:textbin, key)
+  defp restore_application_env(key, value), do: Application.put_env(:textbin, key, value)
 end

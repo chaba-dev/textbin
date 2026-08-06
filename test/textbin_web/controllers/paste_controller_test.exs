@@ -35,6 +35,71 @@ defmodule TextbinWeb.PasteControllerTest do
     assert response(conn, 200) == "private raw"
   end
 
+  test "raw preserves HTML content type but forces a safe download", %{scope: scope} do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{
+        data: "<script>alert('unsafe')</script>",
+        content_type: "text/html",
+        visibility: "public"
+      })
+
+    conn = get(build_conn(), ~p"/pastes/#{paste.id}/raw")
+
+    assert response(conn, 200) == "<script>alert('unsafe')</script>"
+    assert get_resp_header(conn, "content-type") == ["text/html; charset=utf-8"]
+
+    assert get_resp_header(conn, "content-disposition") == [
+             ~s(attachment; filename="paste-#{paste.id}")
+           ]
+
+    assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+  end
+
+  test "raw forces executable XML to download with a sandbox policy", %{scope: scope} do
+    data = ~S|<script xmlns="http://www.w3.org/1999/xhtml">alert("unsafe")</script>|
+
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{
+        data: data,
+        content_type: "application/xml",
+        visibility: "public"
+      })
+
+    conn = get(build_conn(), ~p"/pastes/#{paste.id}/raw")
+
+    assert response(conn, 200) == data
+    assert get_resp_header(conn, "content-disposition") != []
+    assert get_resp_header(conn, "content-security-policy") == ["sandbox; default-src 'none'"]
+  end
+
+  test "raw serves binary bytes as an attachment", %{scope: scope} do
+    data = <<255, 0, 1>>
+    {:ok, paste} = Pastes.create_paste(scope, %{data: data, visibility: "public"})
+
+    conn = get(build_conn(), ~p"/pastes/#{paste.id}/raw")
+
+    assert response(conn, 200) == data
+    assert get_resp_header(conn, "content-type") == ["application/octet-stream"]
+    assert get_resp_header(conn, "content-disposition") != []
+  end
+
+  test "raw safely serves legacy binary content backfilled as text/plain", %{scope: scope} do
+    data = <<255, 0, 1>>
+    {:ok, paste} = Pastes.create_paste(scope, %{data: data, visibility: "public"})
+
+    paste
+    |> Repo.reload!()
+    |> Ecto.Changeset.change(content_type: "text/plain")
+    |> Repo.update!()
+
+    conn = get(build_conn(), ~p"/pastes/#{paste.id}/raw")
+
+    assert response(conn, 200) == data
+    assert get_resp_header(conn, "content-type") == ["application/octet-stream"]
+    assert get_resp_header(conn, "content-disposition") != []
+    assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+  end
+
   test "raw hides private pastes from anonymous and other signed-in viewers", %{scope: scope} do
     {:ok, paste} = Pastes.create_paste(scope, %{data: "private raw", visibility: "private"})
 

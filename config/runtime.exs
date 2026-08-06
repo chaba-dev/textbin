@@ -20,6 +20,17 @@ if System.get_env("PHX_SERVER") do
   config :textbin, TextbinWeb.Endpoint, server: true
 end
 
+if upload_tmp_dir = System.get_env("TEXTBIN_UPLOAD_TMP_DIR") do
+  config :textbin, upload_tmp_dir: upload_tmp_dir
+end
+
+if inline_paste_bytes = System.get_env("TEXTBIN_INLINE_PASTE_BYTES") do
+  case Integer.parse(inline_paste_bytes) do
+    {value, ""} when value >= 0 -> config :textbin, inline_paste_bytes: value
+    _result -> raise "TEXTBIN_INLINE_PASTE_BYTES must be a non-negative integer"
+  end
+end
+
 storage_backend = System.get_env("TEXTBIN_STORAGE_BACKEND")
 
 case storage_backend do

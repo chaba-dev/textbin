@@ -10,12 +10,29 @@ defmodule Textbin.Storage do
   @type metadata :: %{size_bytes: non_neg_integer(), sha256: binary()}
 
   @callback put(String.t(), binary(), keyword()) :: {:ok, metadata()} | {:error, term()}
+  @callback put_file(String.t(), Path.t(), metadata(), keyword()) ::
+              {:ok, metadata()} | {:error, term()}
   @callback get(String.t(), keyword()) :: {:ok, binary()} | {:error, term()}
   @callback delete(String.t(), keyword()) :: :ok | {:error, term()}
 
   def put(storage_key, data) when is_binary(storage_key) and is_binary(data) do
     {adapter, opts} = adapter_and_opts()
     adapter.put(storage_key, data, opts)
+  end
+
+  def put_file(storage_key, path, metadata)
+      when is_binary(storage_key) and is_binary(path) and is_map(metadata) do
+    {adapter, opts} = adapter_and_opts()
+    adapter.put_file(storage_key, path, metadata, opts)
+  end
+
+  def calculate_metadata(chunks) do
+    {size_bytes, hash} =
+      Enum.reduce(chunks, {0, :crypto.hash_init(:sha256)}, fn chunk, {size_bytes, hash} ->
+        {size_bytes + byte_size(chunk), :crypto.hash_update(hash, chunk)}
+      end)
+
+    %{size_bytes: size_bytes, sha256: :crypto.hash_final(hash)}
   end
 
   def get(storage_key) when is_binary(storage_key) do

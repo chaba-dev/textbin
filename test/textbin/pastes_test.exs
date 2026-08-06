@@ -26,6 +26,17 @@ defmodule Textbin.PastesTest do
       assert older_paste.id in paste_ids
       assert newer_paste.id in paste_ids
       refute other_paste.id in paste_ids
+      assert Enum.all?(Pastes.list_pastes(scope), &is_binary(&1.data))
+    end
+
+    test "list_paste_metadata/1 does not load paste bodies", %{scope: scope} do
+      {:ok, inline_paste} = Pastes.create_paste(scope, %{data: "inline"})
+      {:ok, blob_paste} = Pastes.create_paste(scope, %{data: String.duplicate("a", 8_193)})
+
+      listed_pastes = Pastes.list_paste_metadata(scope)
+
+      assert MapSet.new(listed_pastes, & &1.id) == MapSet.new([inline_paste.id, blob_paste.id])
+      assert Enum.all?(listed_pastes, &is_nil(&1.data))
     end
 
     test "get_paste!/2 returns the scoped paste with given id", %{scope: scope} do
@@ -91,15 +102,85 @@ defmodule Textbin.PastesTest do
       assert paste.data == "some data"
       assert paste.size_bytes == byte_size("some data")
       assert paste.sha256 == :crypto.hash(:sha256, "some data")
-      assert paste.storage_key == "pastes/#{paste.id}"
-      assert Storage.get(paste.storage_key) == {:ok, "some data"}
-      assert Repo.get!(Paste, paste.id).data == nil
+      assert paste.storage_key == nil
+      assert Repo.get!(Paste, paste.id).data == "some data"
+      assert paste.content_type == "text/plain"
       assert paste.syntax_highlight == "plain"
       assert paste.visibility == "private"
       assert paste.user_id == scope.user.id
       assert {microsecond, 6} = paste.inserted_at.microsecond
       assert rem(microsecond, 1000) == 0
       assert is_nil(paste.expires_at)
+    end
+
+    test "create_paste/2 stores content at the inline threshold in PostgreSQL", %{scope: scope} do
+      data = String.duplicate("a", 8_192)
+
+      assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, %{data: data})
+      assert paste.data == data
+      assert paste.storage_key == nil
+      assert paste.size_bytes == byte_size(data)
+      assert paste.sha256 == :crypto.hash(:sha256, data)
+    end
+
+    test "create_paste/2 stores content over the inline threshold in blob storage", %{
+      scope: scope
+    } do
+      data = String.duplicate("a", 8_193)
+
+      assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, %{data: data})
+      assert paste.data == data
+      assert paste.storage_key == "pastes/#{paste.id}"
+      assert Storage.get(paste.storage_key) == {:ok, data}
+      assert Repo.get!(Paste, paste.id).data == nil
+    end
+
+    test "create_paste/2 keeps PostgreSQL-unsafe small content in blob storage", %{scope: scope} do
+      for data <- ["contains\0null", <<255, 254, 253>>] do
+        assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, %{data: data})
+        assert paste.storage_key == "pastes/#{paste.id}"
+        assert paste.content_type == "application/octet-stream"
+        assert Storage.get(paste.storage_key) == {:ok, data}
+        assert Repo.get!(Paste, paste.id).data == nil
+      end
+    end
+
+    test "create_paste/2 normalizes a textual content type and stores it inline", %{scope: scope} do
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste(scope, %{
+                 data: "<strong>safe source</strong>",
+                 content_type: "TEXT/HTML; charset=iso-8859-1"
+               })
+
+      assert paste.content_type == "text/html"
+      assert paste.storage_key == nil
+    end
+
+    test "create_paste/2 keeps explicitly binary content in blob storage", %{scope: scope} do
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste(scope, %{
+                 data: "valid UTF-8 bytes",
+                 content_type: "application/octet-stream"
+               })
+
+      assert paste.content_type == "application/octet-stream"
+      assert paste.storage_key == "pastes/#{paste.id}"
+    end
+
+    test "create_paste/2 rejects an invalid content type", %{scope: scope} do
+      assert {:error, changeset} =
+               Pastes.create_paste(scope, %{data: "content", content_type: "not a media type"})
+
+      assert %{content_type: ["is invalid"]} = errors_on(changeset)
+    end
+
+    test "create_paste/2 rejects a content type that exceeds the database limit", %{scope: scope} do
+      content_type = "application/" <> String.duplicate("a", 244)
+
+      assert {:error, changeset} =
+               Pastes.create_paste(scope, %{data: "content", content_type: content_type})
+
+      assert %{content_type: ["should be at most 255 character(s)"]} = errors_on(changeset)
     end
 
     test "create_paste/2 stores the syntax highlight", %{scope: scope} do
@@ -178,6 +259,74 @@ defmodule Textbin.PastesTest do
       assert {:error, %Ecto.Changeset{}} = Pastes.create_paste(scope, @invalid_attrs)
     end
 
+    test "create_paste/2 rejects data over the configured size limit", %{scope: scope} do
+      oversized_data = String.duplicate("a", 1_048_577)
+
+      assert {:error, changeset} = Pastes.create_paste(scope, %{data: oversized_data})
+      assert %{data: ["must be at most 1048576 bytes"]} = errors_on(changeset)
+    end
+
+    test "create_paste_from_file/4 stores streamed content and metadata", %{scope: scope} do
+      path = Path.join(System.tmp_dir!(), "textbin-context-upload-#{Ecto.UUID.generate()}")
+      data = String.duplicate("streamed context data\n", 4_000)
+      metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
+      File.write!(path, data)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste_from_file(scope, path, metadata, %{syntax_highlight: "text"})
+
+      assert paste.data == nil
+      assert paste.size_bytes == metadata.size_bytes
+      assert paste.sha256 == metadata.sha256
+      assert File.exists?(path)
+      assert Pastes.get_paste!(scope, paste.id).data == data
+    end
+
+    test "create_paste_from_file/4 stores a small streamed paste inline", %{scope: scope} do
+      path = Path.join(System.tmp_dir!(), "textbin-context-upload-#{Ecto.UUID.generate()}")
+      data = String.duplicate("a", 8_192)
+      metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
+      File.write!(path, data)
+      on_exit(fn -> File.rm(path) end)
+
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste_from_file(scope, path, metadata)
+
+      assert paste.data == data
+      assert paste.storage_key == nil
+      assert paste.size_bytes == metadata.size_bytes
+      assert paste.sha256 == metadata.sha256
+      assert File.exists?(path)
+    end
+
+    test "create_paste_from_file/4 rejects metadata that does not match the file", %{
+      scope: scope
+    } do
+      path = Path.join(System.tmp_dir!(), "textbin-context-upload-#{Ecto.UUID.generate()}")
+      File.write!(path, "actual data")
+      on_exit(fn -> File.rm(path) end)
+
+      metadata = %{size_bytes: 1, sha256: :crypto.hash(:sha256, "actual data")}
+
+      assert {:error, changeset} = Pastes.create_paste_from_file(scope, path, metadata)
+      assert %{data: ["does not match the uploaded file"]} = errors_on(changeset)
+      assert Repo.aggregate(Paste, :count) == 0
+    end
+
+    test "create_paste_from_file/4 rejects a same-size SHA-256 mismatch", %{scope: scope} do
+      path = Path.join(System.tmp_dir!(), "textbin-context-upload-#{Ecto.UUID.generate()}")
+      data = "actual data"
+      File.write!(path, data)
+      on_exit(fn -> File.rm(path) end)
+
+      metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, "other data!")}
+
+      assert {:error, changeset} = Pastes.create_paste_from_file(scope, path, metadata)
+      assert %{data: ["does not match the uploaded file"]} = errors_on(changeset)
+      assert Repo.aggregate(Paste, :count) == 0
+    end
+
     test "create_paste/2 with an invalid expiration returns error changeset", %{scope: scope} do
       assert {:error, changeset} =
                Pastes.create_paste(scope, %{data: "bad ttl", expires_in: "forever"})
@@ -212,7 +361,7 @@ defmodule Textbin.PastesTest do
 
       assert {:ok, %Paste{}} = Pastes.delete_paste(scope, paste)
       assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
-      assert Storage.get(paste.storage_key) == {:error, :enoent}
+      assert paste.storage_key == nil
     end
 
     test "reads legacy database-backed paste content", %{scope: scope} do

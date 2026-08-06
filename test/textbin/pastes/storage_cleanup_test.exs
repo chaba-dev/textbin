@@ -11,6 +11,7 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
   setup do
     original_config = Application.fetch_env!(:textbin, Storage)
+    original_inline_paste_bytes = Application.fetch_env!(:textbin, :inline_paste_bytes)
     root = Path.join(System.tmp_dir!(), "textbin-cleanup-#{Ecto.UUID.generate()}")
     blocked_root = root <> "-blocked"
 
@@ -19,8 +20,11 @@ defmodule Textbin.Pastes.StorageCleanupTest do
       opts: [root: root]
     )
 
+    Application.put_env(:textbin, :inline_paste_bytes, 0)
+
     on_exit(fn ->
       Application.put_env(:textbin, Storage, original_config)
+      Application.put_env(:textbin, :inline_paste_bytes, original_inline_paste_bytes)
       File.rm_rf!(root)
       File.rm_rf!(blocked_root)
     end)
@@ -61,6 +65,15 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     use_storage_root(context.root)
     assert Pastes.delete_expired_pastes(limit: 1) == 1
     refute Repo.get(Paste, paste.id)
+  end
+
+  test "blob reads reject same-size content with the wrong checksum", context do
+    {:ok, paste} = Pastes.create_paste(context.scope, %{data: "original content"})
+    File.write!(Path.join(context.root, paste.storage_key), "corrupted bytes!")
+
+    assert_raise Textbin.Storage.IntegrityError, ~r/integrity check failed/, fn ->
+      Pastes.get_paste!(context.scope, paste.id)
+    end
   end
 
   defp expire!(paste) do

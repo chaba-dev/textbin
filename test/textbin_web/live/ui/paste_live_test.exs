@@ -147,6 +147,33 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#delete-paste-#{paste.id}")
   end
 
+  test "renders HTML paste content as escaped source", %{conn: conn, scope: scope} do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{
+        data: "<script id=\"injected\">alert('unsafe')</script>",
+        content_type: "text/html",
+        visibility: "public"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+
+    assert has_element?(view, "#paste-content-type", "text/html")
+    assert has_element?(view, "#paste-data", "alert('unsafe')")
+    refute has_element?(view, "#paste-data script#injected")
+  end
+
+  test "does not render or copy binary paste content", %{conn: conn, scope: scope} do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{data: <<255, 0, 1>>, visibility: "public"})
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+
+    assert has_element?(view, "#paste-content-type", "application/octet-stream")
+    assert has_element?(view, "#paste-binary-data", "Binary paste")
+    refute has_element?(view, "#paste-data")
+    refute has_element?(view, "#copy-paste-content")
+  end
+
   test "anonymous viewers can open unlisted and public pastes", %{scope: scope} do
     for visibility <- ["unlisted", "public"] do
       {:ok, paste} =

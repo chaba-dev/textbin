@@ -3,12 +3,13 @@ members = ["crates/cli", "crates/client"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 anyhow = "1.0.100"
+base64 = "0.22.1"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 directories = "6.0.0"
 keyring = "4.1.5"

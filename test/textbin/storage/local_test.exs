@@ -22,6 +22,92 @@ defmodule Textbin.Storage.LocalTest do
     assert :ok = Local.delete("pastes/one", opts)
   end
 
+  test "synchronizes the containing directory before acknowledging a write", %{
+    opts: opts,
+    root: root
+  } do
+    File.mkdir_p!(Path.join(root, "pastes"))
+    test_pid = self()
+
+    sync_directory = fn path ->
+      send(test_pid, {:directory_synced, path})
+      :ok
+    end
+
+    opts = Keyword.put(opts, :sync_directory, sync_directory)
+
+    assert {:ok, _metadata} = Local.put("pastes/durable", "durable data", opts)
+    assert_receive {:directory_synced, path}
+    assert path == Path.join(root, "pastes")
+  end
+
+  test "retries directory synchronization when a deleted object is already absent", %{
+    opts: opts,
+    root: root
+  } do
+    assert {:ok, _metadata} = Local.put("pastes/delete", "data", opts)
+    test_pid = self()
+    attempts = :counters.new(1, [])
+
+    sync_directory = fn path ->
+      :counters.add(attempts, 1, 1)
+      send(test_pid, {:delete_sync, :counters.get(attempts, 1), path})
+      if :counters.get(attempts, 1) == 1, do: {:error, :eio}, else: :ok
+    end
+
+    opts = Keyword.put(opts, :sync_directory, sync_directory)
+
+    assert Local.delete("pastes/delete", opts) == {:error, :eio}
+    assert Local.delete("pastes/delete", opts) == :ok
+    assert_receive {:delete_sync, 2, path}
+    assert path == Path.join(root, "pastes")
+  end
+
+  test "copies a file into storage without consuming the source", %{opts: opts, root: root} do
+    data = String.duplicate("streamed locally\n", 8_000)
+    source = Path.join(root, "upload")
+    metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
+    File.mkdir_p!(root)
+    File.write!(source, data)
+
+    assert Local.put_file("pastes/file", source, metadata, opts) == {:ok, metadata}
+    assert Local.get("pastes/file", opts) == {:ok, data}
+    assert File.read!(source) == data
+
+    assert {:ok, %{mode: mode}} = File.stat(Path.join(root, "pastes/file"))
+    assert Bitwise.band(mode, 0o777) == 0o600
+    assert Path.wildcard(Path.join(root, "pastes/file.tmp-*")) == []
+  end
+
+  test "rejects file metadata that does not match copied content", %{opts: opts, root: root} do
+    source = Path.join(System.tmp_dir!(), "textbin-local-upload-#{Ecto.UUID.generate()}")
+    data = "same-size metadata mismatch"
+    metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, "x" <> data)}
+    File.write!(source, data)
+    on_exit(fn -> File.rm(source) end)
+
+    assert Local.put_file("pastes/mismatch", source, metadata, opts) ==
+             {:error, :metadata_mismatch}
+
+    assert Local.get("pastes/mismatch", opts) == {:error, :enoent}
+    assert Path.wildcard(Path.join(root, "pastes/mismatch.tmp-*")) == []
+  end
+
+  test "stores paste objects with private permissions", %{opts: opts, root: root} do
+    assert {:ok, _metadata} = Local.put("pastes/private", "private data", opts)
+
+    assert {:ok, %{mode: mode}} = File.stat(Path.join(root, "pastes/private"))
+    assert Bitwise.band(mode, 0o777) == 0o600
+  end
+
+  test "removes temporary files when finalizing a direct write fails", %{opts: opts, root: root} do
+    destination = Path.join(root, "pastes/destination")
+    File.mkdir_p!(destination)
+
+    assert Local.put("pastes/destination", "data", opts) == {:error, :eisdir}
+    assert Path.wildcard(destination <> ".tmp-*") == []
+  end
+
   test "rejects storage keys that could escape the configured root", %{opts: opts, root: root} do
     assert Local.put("../outside", "unsafe", opts) == {:error, :invalid_storage_key}
     refute File.exists?(Path.join(Path.dirname(root), "outside"))

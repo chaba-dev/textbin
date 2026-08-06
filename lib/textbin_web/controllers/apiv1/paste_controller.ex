@@ -3,6 +3,9 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   alias Textbin.Accounts.Scope
   alias Textbin.Pastes
+  alias Textbin.Pastes.UploadCleaner
+
+  require Logger
 
   # Keep raw upload reads small enough that an oversized request is rejected
   # after one bounded chunk instead of being accumulated in memory.
@@ -24,14 +27,22 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # clients wrap data unless they want to.
   def create(conn, params) do
     case paste_attrs(conn, params) do
-      {:ok, paste_attrs, conn} ->
+      {:ok, {:data, paste_attrs}, conn} ->
         create_paste(conn, paste_attrs)
 
+      {:ok, {:file, path, metadata, paste_attrs}, conn} ->
+        create_paste_from_file(conn, path, metadata, paste_attrs)
+
       {:error, :too_large, conn} ->
-        render_too_large(conn)
+        render_too_large(conn, close?: true)
+
+      {:error, {:spool, reason}, conn} ->
+        Logger.error("Failed to spool paste upload: #{inspect(reason)}")
+        render_upload_unavailable(conn)
 
       {:error, reason, conn} ->
         conn
+        |> close_connection()
         |> put_status(:bad_request)
         |> json(%{errors: %{detail: "Could not read request body: #{inspect(reason)}"}})
     end
@@ -39,31 +50,37 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   # Preferred JSON shape for API clients that already send objects.
   defp paste_attrs(conn, %{"data" => data} = params) when is_binary(data) do
-    {:ok, build_paste_attrs(data, params), conn}
+    {:ok, {:data, build_paste_attrs(data, params)}, conn}
   end
 
   # Keep Phoenix generator-style wrapped params working for conventional clients
   # and tests.
   defp paste_attrs(conn, %{"paste" => %{"data" => data} = params}) when is_binary(data) do
-    {:ok, build_paste_attrs(data, params), conn}
+    {:ok, {:data, build_paste_attrs(data, params)}, conn}
   end
 
   # Plug puts non-object JSON bodies, such as `"hello"`, under "_json". This is
   # useful for callers that want JSON content negotiation without an object
   # envelope.
   defp paste_attrs(conn, %{"_json" => data} = params) when is_binary(data) do
-    {:ok, build_paste_attrs(data, params), conn}
+    {:ok, {:data, build_paste_attrs(data, params)}, conn}
   end
 
   # Non-JSON uploads keep the body unread after Plug.Parsers, so streamed
   # CLI/stdin data can be consumed here.
   defp paste_attrs(conn, params)
        when map_size(params) == 0 or is_map_key(params, "syntax_highlight") or
+              is_map_key(params, "content_type") or
               is_map_key(params, "visibility") or
               is_map_key(params, "expires_in") or is_map_key(params, "ttl") do
     case read_request_body(conn) do
-      {:ok, data, conn} ->
-        {:ok, build_paste_attrs(data, params), conn}
+      {:ok, path, metadata, conn} ->
+        paste_attrs =
+          params
+          |> build_paste_attrs()
+          |> Map.put_new("content_type", request_content_type(conn))
+
+        {:ok, {:file, path, metadata, paste_attrs}, conn}
 
       {:error, reason, conn} ->
         {:error, reason, conn}
@@ -73,11 +90,21 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # Let the changeset produce the canonical "data can't be blank" error for
   # unsupported payload shapes instead of inventing a separate controller error.
   defp paste_attrs(conn, _params) do
-    {:ok, %{"data" => nil}, conn}
+    {:ok, {:data, %{"data" => nil}}, conn}
   end
 
   defp build_paste_attrs(data, params) do
     %{"data" => data}
+    |> put_paste_params(params)
+  end
+
+  defp build_paste_attrs(params) do
+    put_paste_params(%{}, params)
+  end
+
+  defp put_paste_params(attrs, params) do
+    attrs
+    |> put_string_param(params, "content_type")
     |> put_string_param(params, "syntax_highlight")
     |> put_string_param(params, "visibility")
     |> put_string_param(params, "expires_in")
@@ -91,8 +118,26 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end
   end
 
+  defp request_content_type(conn) do
+    case get_req_header(conn, "content-type") do
+      [content_type | _rest] -> content_type
+      [] -> nil
+    end
+  end
+
   defp create_paste(conn, paste_params) do
     with_api_scope(conn, &create_scoped_paste(conn, &1, paste_params))
+  end
+
+  defp create_paste_from_file(conn, path, metadata, paste_params) do
+    try do
+      with_api_scope(
+        conn,
+        &insert_file_paste(conn, &1, path, metadata, paste_params)
+      )
+    after
+      cleanup_spool(path)
+    end
   end
 
   defp create_scoped_paste(conn, current_scope, paste_params) do
@@ -115,36 +160,117 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end
   end
 
-  # The current MVP stores data in a single text column, so we still assemble
-  # chunks before inserting. The chunked read path keeps the HTTP interface
-  # friendly to stdin/pipe callers and leaves room for a streamed storage backend.
-  defp read_request_body(conn) do
-    read_request_body(conn, [], 0, max_paste_bytes())
+  defp insert_file_paste(conn, current_scope, path, metadata, paste_params) do
+    case Pastes.create_paste_from_file(current_scope, path, metadata, paste_params) do
+      {:ok, paste} ->
+        conn
+        |> put_status(:created)
+        |> put_resp_header("location", ~p"/api/v1/pastes/#{paste.id}")
+        |> render(:create, paste: paste)
+
+      {:error, changeset} ->
+        render_changeset_errors(conn, changeset)
+    end
   end
 
-  defp read_request_body(conn, chunks, total_size, max_size) do
+  defp read_request_body(conn) do
+    case prepare_upload_tmp_dir(upload_tmp_dir()) do
+      :ok ->
+        path = Path.join(upload_tmp_dir(), "textbin-upload-#{Ecto.UUID.generate()}")
+        UploadCleaner.register_spool(path)
+        open_request_body(conn, path)
+
+      {:error, reason} ->
+        {:error, {:spool, reason}, conn}
+    end
+  end
+
+  defp open_request_body(conn, path) do
+    try do
+      result =
+        File.open(path, [:write, :binary, :exclusive], fn file ->
+          case File.chmod(path, 0o600) do
+            :ok ->
+              read_request_body(conn, file, :crypto.hash_init(:sha256), 0, max_paste_bytes())
+
+            {:error, reason} ->
+              {:error, {:spool, reason}, conn}
+          end
+        end)
+
+      case result do
+        {:ok, {:ok, metadata, conn}} ->
+          {:ok, path, metadata, conn}
+
+        {:ok, {:error, reason, conn}} ->
+          cleanup_spool(path)
+          {:error, reason, conn}
+
+        {:error, reason} ->
+          cleanup_spool(path)
+          {:error, {:spool, reason}, conn}
+      end
+    rescue
+      exception ->
+        cleanup_spool(path)
+        reraise exception, __STACKTRACE__
+    catch
+      kind, reason ->
+        cleanup_spool(path)
+        :erlang.raise(kind, reason, __STACKTRACE__)
+    end
+  end
+
+  defp cleanup_spool(path) do
+    File.rm(path)
+    UploadCleaner.unregister_spool(path)
+  end
+
+  defp read_request_body(conn, file, hash, total_size, max_size) do
     case Plug.Conn.read_body(conn, length: @read_chunk_size, read_length: @read_chunk_size) do
       {:ok, chunk, conn} ->
-        chunk_size = byte_size(chunk)
-
-        if total_size + chunk_size > max_size do
-          {:error, :too_large, conn}
-        else
-          {:ok, IO.iodata_to_binary(Enum.reverse([chunk | chunks])), conn}
-        end
+        finalize_request_body(conn, file, hash, total_size, chunk, max_size)
 
       {:more, chunk, conn} ->
-        chunk_size = byte_size(chunk)
-        total_size = total_size + chunk_size
+        continue_request_body(conn, file, hash, total_size, chunk, max_size)
 
-        if total_size > max_size do
-          {:error, :too_large, conn}
-        else
-          read_request_body(conn, [chunk | chunks], total_size, max_size)
-        end
+      {:error, reason} ->
+        {:error, {:request_body, reason}, conn}
+    end
+  end
+
+  defp finalize_request_body(conn, file, hash, total_size, chunk, max_size) do
+    with {:ok, hash, total_size} <- write_chunk(file, hash, total_size, chunk, max_size),
+         :ok <- :file.sync(file) do
+      metadata = %{size_bytes: total_size, sha256: :crypto.hash_final(hash)}
+      {:ok, metadata, conn}
+    else
+      {:error, :too_large} -> {:error, :too_large, conn}
+      {:error, {:spool, _reason} = error} -> {:error, error, conn}
+      {:error, reason} -> {:error, {:spool, reason}, conn}
+    end
+  end
+
+  defp continue_request_body(conn, file, hash, total_size, chunk, max_size) do
+    case write_chunk(file, hash, total_size, chunk, max_size) do
+      {:ok, hash, total_size} ->
+        read_request_body(conn, file, hash, total_size, max_size)
 
       {:error, reason} ->
         {:error, reason, conn}
+    end
+  end
+
+  defp write_chunk(file, hash, total_size, chunk, max_size) do
+    total_size = total_size + byte_size(chunk)
+
+    if total_size > max_size do
+      {:error, :too_large}
+    else
+      case :file.write(file, chunk) do
+        :ok -> {:ok, :crypto.hash_update(hash, chunk), total_size}
+        {:error, reason} -> {:error, {:spool, reason}}
+      end
     end
   end
 
@@ -192,7 +318,9 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   defp validate_paste_size(_params), do: :ok
 
-  defp render_too_large(conn) do
+  defp render_too_large(conn, opts \\ []) do
+    conn = if Keyword.get(opts, :close?, false), do: close_connection(conn), else: conn
+
     conn
     |> put_status(413)
     |> json(%{
@@ -201,6 +329,33 @@ defmodule TextbinWeb.ApiV1.PasteController do
       }
     })
   end
+
+  defp render_upload_unavailable(conn) do
+    conn
+    |> close_connection()
+    |> put_status(:service_unavailable)
+    |> json(%{errors: %{detail: "Paste upload is temporarily unavailable"}})
+  end
+
+  defp close_connection(conn) do
+    if Plug.Conn.get_http_protocol(conn) in [:"HTTP/1.0", :"HTTP/1.1"] do
+      put_resp_header(conn, "connection", "close")
+    else
+      conn
+    end
+  end
+
+  defp prepare_upload_tmp_dir(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :directory}} -> File.chmod(path, 0o700)
+      {:ok, _stat} -> {:error, :invalid_upload_tmp_dir}
+      {:error, :enoent} -> path |> File.mkdir_p() |> then_chmod(path)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp then_chmod(:ok, path), do: File.chmod(path, 0o700)
+  defp then_chmod({:error, reason}, _path), do: {:error, reason}
 
   defp render_invalid_paste_id(conn) do
     conn
@@ -223,6 +378,10 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   defp max_paste_bytes do
     Application.get_env(:textbin, :max_paste_bytes, @default_max_paste_bytes)
+  end
+
+  defp upload_tmp_dir do
+    Application.get_env(:textbin, :upload_tmp_dir, System.tmp_dir!())
   end
 
   defp with_api_scope(%{assigns: %{current_scope: %Scope{user: %{}} = current_scope}}, fun) do

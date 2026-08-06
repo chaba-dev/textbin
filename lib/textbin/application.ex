@@ -13,7 +13,9 @@ defmodule Textbin.Application do
         Textbin.Repo,
         {DNSCluster, query: Application.get_env(:textbin, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Textbin.PubSub}
-      ] ++ storage_children() ++ expiration_cleanup_children() ++ [TextbinWeb.Endpoint]
+      ] ++
+        storage_children() ++
+        expiration_cleanup_children() ++ upload_cleanup_children() ++ [TextbinWeb.Endpoint]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -32,6 +34,14 @@ defmodule Textbin.Application do
   defp expiration_cleanup_children do
     if Application.get_env(:textbin, :expiration_cleanup_enabled, true) do
       [Textbin.Pastes.ExpirationCleaner]
+    else
+      []
+    end
+  end
+
+  defp upload_cleanup_children do
+    if Application.get_env(:textbin, :upload_cleanup_enabled, true) do
+      [Textbin.Pastes.UploadCleaner]
     else
       []
     end

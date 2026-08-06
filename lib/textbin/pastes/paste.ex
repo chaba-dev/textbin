@@ -3,6 +3,8 @@ defmodule Textbin.Pastes.Paste do
 
   import Ecto.Changeset
 
+  alias Textbin.Pastes.ContentType
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
@@ -25,6 +27,7 @@ defmodule Textbin.Pastes.Paste do
     field :storage_key, :string
     field :size_bytes, :integer
     field :sha256, :binary
+    field :content_type, :string, default: "text/plain"
     field :syntax_highlight, :string, default: "plain"
     field :visibility, :string, default: "private"
     field :expires_at, :utc_datetime_usec
@@ -37,10 +40,12 @@ defmodule Textbin.Pastes.Paste do
 
   def changeset(paste, attrs) do
     paste
-    |> cast(attrs, [:data, :syntax_highlight, :visibility, :expires_in])
+    |> cast(attrs, [:data, :content_type, :syntax_highlight, :visibility, :expires_in])
     |> put_expires_at(attrs)
-    |> validate_required([:syntax_highlight, :visibility, :user_id])
+    |> validate_required([:content_type, :syntax_highlight, :visibility, :user_id])
     |> validate_content_location()
+    |> validate_length(:content_type, max: 255)
+    |> validate_change(:content_type, &validate_content_type/2)
     |> validate_inclusion(:visibility, @visibility_values)
     |> validate_expiration()
   end
@@ -51,6 +56,10 @@ defmodule Textbin.Pastes.Paste do
     else
       add_error(changeset, :data, "can't be blank")
     end
+  end
+
+  defp validate_content_type(:content_type, content_type) do
+    if ContentType.valid?(content_type), do: [], else: [content_type: "is invalid"]
   end
 
   defp put_expires_at(changeset, attrs) do

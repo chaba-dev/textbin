@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Hw1fC0CZGC6kPpwCiQew1wxB3bV342xBmYJ5Q874gE69MZ2JJHJ7c5CRfKo4tSK
+\restrict pBrhubflvQFSAQmw9Y79H195OScSjK8sjuilkYsrsEP1DvqhuFtyrR9z2yp0qMb
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -53,8 +53,20 @@ CREATE TABLE public.pastes (
     storage_key character varying(255),
     size_bytes bigint,
     sha256 bytea,
+    content_type character varying(255) DEFAULT 'text/plain'::character varying NOT NULL,
     CONSTRAINT pastes_content_location_check CHECK (((data IS NOT NULL) OR (storage_key IS NOT NULL))),
     CONSTRAINT pastes_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['private'::character varying, 'unlisted'::character varying, 'public'::character varying])::text[])))
+);
+
+
+--
+-- Name: pending_uploads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_uploads (
+    storage_key character varying(255) NOT NULL,
+    inserted_at timestamp without time zone NOT NULL,
+    claimed_at timestamp(6) without time zone
 );
 
 
@@ -111,6 +123,14 @@ ALTER TABLE ONLY public.pastes
 
 
 --
+-- Name: pending_uploads pending_uploads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_uploads
+    ADD CONSTRAINT pending_uploads_pkey PRIMARY KEY (storage_key);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -163,6 +183,13 @@ CREATE INDEX pastes_visibility_index ON public.pastes USING btree (visibility);
 
 
 --
+-- Name: pending_uploads_inserted_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_uploads_inserted_at_index ON public.pending_uploads USING btree (inserted_at);
+
+
+--
 -- Name: users_email_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -210,7 +237,7 @@ ALTER TABLE ONLY public.users_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Hw1fC0CZGC6kPpwCiQew1wxB3bV342xBmYJ5Q874gE69MZ2JJHJ7c5CRfKo4tSK
+\unrestrict pBrhubflvQFSAQmw9Y79H195OScSjK8sjuilkYsrsEP1DvqhuFtyrR9z2yp0qMb
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -223,3 +250,5 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260716100000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260717070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260718070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260805090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260806090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260806100000);

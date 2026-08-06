@@ -1,4 +1,5 @@
 defmodule TextbinWeb.ApiV1.PasteJSON do
+  alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
 
   def index(%{pastes: pastes}) do
@@ -6,7 +7,7 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
   end
 
   def create(%{paste: paste}) do
-    %{data: data(paste) |> Map.delete(:data)}
+    %{data: metadata(paste)}
   end
 
   def show(%{paste: paste}) do
@@ -14,9 +15,23 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
   end
 
   defp data(%Paste{} = paste) do
+    metadata = metadata(paste)
+
+    if ContentType.textual?(paste.content_type) and ContentType.text_safe?(paste.data) do
+      Map.put(metadata, :data, paste.data)
+    else
+      Map.merge(metadata, %{
+        data: nil,
+        data_base64: Base.encode64(paste.data),
+        data_encoding: "base64"
+      })
+    end
+  end
+
+  defp metadata(%Paste{} = paste) do
     %{
       id: paste.id,
-      data: paste.data,
+      content_type: paste.content_type,
       syntax_highlight: paste.syntax_highlight,
       visibility: paste.visibility,
       expires_at: timestamp(paste.expires_at),
