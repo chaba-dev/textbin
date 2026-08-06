@@ -1,0 +1,17 @@
+.git
+.github
+.agents
+.codex
+.direnv
+.expert
+.nix
+_build
+cover
+deps
+docs
+storage
+target
+tmp
+assets/node_modules
+erl_crash.dump
+npm-debug.log
