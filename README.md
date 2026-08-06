@@ -19,6 +19,13 @@ Then run `mix setup` and `mix phx.server` locally as usual.
 
 Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
 
+## Self-hosting
+
+The production OCI image is runtime-agnostic and includes an explicit migration
+command plus writable locations for local paste storage and staged uploads. See
+the [self-hosting guide](docs/self-hosting.md) for the image contract, storage
+configuration, backup boundaries, and upgrade procedure.
+
 ## API binary content
 
 API v1 returns UTF-8 textual paste bodies in `data`. Arbitrary binary bodies use
