@@ -60,6 +60,29 @@ defmodule Textbin.Storage.S3Test do
     assert payload_sha256 == Base.encode16(metadata.sha256, case: :lower)
   end
 
+  test "does not follow redirects or retry a one-shot file stream" do
+    parent = self()
+    path = Path.join(System.tmp_dir!(), "textbin-s3-upload-#{Ecto.UUID.generate()}")
+    data = "one-shot stream"
+    metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
+    File.write!(path, data)
+    on_exit(fn -> File.rm(path) end)
+
+    plug = fn conn ->
+      send(parent, :stream_request)
+
+      conn
+      |> Plug.Conn.put_resp_header("location", "http://object-storage:8333/redirected")
+      |> Plug.Conn.send_resp(307, "")
+    end
+
+    opts = Keyword.put(@base_opts, :req_options, plug: plug)
+
+    assert S3.put_file("pastes/file", path, metadata, opts) == {:error, {:http_status, 307}}
+    assert_receive :stream_request
+    refute_receive :stream_request
+  end
+
   test "rejects mismatched file metadata before sending a request" do
     path = Path.join(System.tmp_dir!(), "textbin-s3-upload-#{Ecto.UUID.generate()}")
     data = "same-size metadata mismatch"

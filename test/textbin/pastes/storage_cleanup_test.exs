@@ -67,6 +67,15 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     refute Repo.get(Paste, paste.id)
   end
 
+  test "blob reads reject same-size content with the wrong checksum", context do
+    {:ok, paste} = Pastes.create_paste(context.scope, %{data: "original content"})
+    File.write!(Path.join(context.root, paste.storage_key), "corrupted bytes!")
+
+    assert_raise Textbin.Storage.IntegrityError, ~r/integrity check failed/, fn ->
+      Pastes.get_paste!(context.scope, paste.id)
+    end
+  end
+
   defp expire!(paste) do
     paste
     |> Ecto.Changeset.change(expires_at: DateTime.add(Paste.utc_now_ms(), -1, :second))

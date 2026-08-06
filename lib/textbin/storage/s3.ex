@@ -97,7 +97,13 @@ defmodule Textbin.Storage.S3 do
 
     request = Req.new(Keyword.get(opts, :req_options, []))
 
-    case Req.put(request, url: url, headers: signed_headers, body: IO.binstream(file, 64_000)) do
+    case Req.put(request,
+           url: url,
+           headers: signed_headers,
+           body: IO.binstream(file, 64_000),
+           redirect: false,
+           retry: false
+         ) do
       {:ok, %{status: status}} when status in 200..299 -> {:ok, metadata}
       result -> response_error(result)
     end

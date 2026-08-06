@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jqT5QmdmWOByW2hdr1SUo69iPNMgMF5KzgUpDj7HW9h3KB2GtpKaXeHQIja9RDI
+\restrict pBrhubflvQFSAQmw9Y79H195OScSjK8sjuilkYsrsEP1DvqhuFtyrR9z2yp0qMb
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -60,6 +60,17 @@ CREATE TABLE public.pastes (
 
 
 --
+-- Name: pending_uploads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_uploads (
+    storage_key character varying(255) NOT NULL,
+    inserted_at timestamp without time zone NOT NULL,
+    claimed_at timestamp(6) without time zone
+);
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -109,6 +120,14 @@ CREATE TABLE public.users_tokens (
 
 ALTER TABLE ONLY public.pastes
     ADD CONSTRAINT pastes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pending_uploads pending_uploads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_uploads
+    ADD CONSTRAINT pending_uploads_pkey PRIMARY KEY (storage_key);
 
 
 --
@@ -164,6 +183,13 @@ CREATE INDEX pastes_visibility_index ON public.pastes USING btree (visibility);
 
 
 --
+-- Name: pending_uploads_inserted_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_uploads_inserted_at_index ON public.pending_uploads USING btree (inserted_at);
+
+
+--
 -- Name: users_email_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -211,7 +237,7 @@ ALTER TABLE ONLY public.users_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jqT5QmdmWOByW2hdr1SUo69iPNMgMF5KzgUpDj7HW9h3KB2GtpKaXeHQIja9RDI
+\unrestrict pBrhubflvQFSAQmw9Y79H195OScSjK8sjuilkYsrsEP1DvqhuFtyrR9z2yp0qMb
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -225,3 +251,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260717070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260718070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260805090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260806090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260806100000);

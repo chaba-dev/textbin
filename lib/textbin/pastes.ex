@@ -8,8 +8,10 @@ defmodule Textbin.Pastes do
   alias Textbin.Accounts.{Scope, User}
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
+  alias Textbin.Pastes.PendingUpload
   alias Textbin.Repo
   alias Textbin.Storage
+  alias Textbin.Storage.IntegrityError
 
   require Logger
 
@@ -173,10 +175,26 @@ defmodule Textbin.Pastes do
   end
 
   def load_data(nil), do: nil
-  def load_data(%Paste{data: data} = paste) when is_binary(data), do: paste
+
+  def load_data(%Paste{data: data} = paste) when is_binary(data) do
+    verify_content!(paste, data)
+  end
 
   def load_data(%Paste{storage_key: storage_key} = paste) when is_binary(storage_key) do
-    %{paste | data: Storage.get!(storage_key)}
+    data = Storage.get!(storage_key)
+    paste = verify_content!(paste, data)
+    %{paste | data: data}
+  end
+
+  defp verify_content!(%Paste{size_bytes: nil, sha256: nil} = paste, _data), do: paste
+
+  defp verify_content!(%Paste{} = paste, data) do
+    if paste.size_bytes == byte_size(data) and
+         paste.sha256 == :crypto.hash(:sha256, data) do
+      paste
+    else
+      raise IntegrityError, storage_key: paste.storage_key
+    end
   end
 
   def change_paste(%Scope{user: %User{} = user}, %Paste{} = paste, attrs \\ %{}) do
@@ -199,7 +217,7 @@ defmodule Textbin.Pastes do
   defp store_blob_paste(changeset, data) do
     storage_key = "pastes/#{changeset.data.id}"
 
-    with_storage_compensation(storage_key, fn ->
+    with_pending_upload(storage_key, changeset, fn ->
       case Storage.put(storage_key, data) do
         {:ok, stored_metadata} ->
           insert_stored_paste(changeset, storage_key, stored_metadata, data)
@@ -239,7 +257,7 @@ defmodule Textbin.Pastes do
   defp store_blob_file(changeset, path, metadata) do
     storage_key = changeset.data.storage_key
 
-    with_storage_compensation(storage_key, fn ->
+    with_pending_upload(storage_key, changeset, fn ->
       case Storage.put_file(storage_key, path, metadata) do
         {:ok, stored_metadata} when stored_metadata == metadata ->
           insert_stored_paste(changeset, storage_key, stored_metadata, nil)
@@ -279,14 +297,39 @@ defmodule Textbin.Pastes do
     end
   end
 
+  defp with_pending_upload(storage_key, changeset, operation) do
+    case Repo.insert(%PendingUpload{storage_key: storage_key}) do
+      {:ok, _pending_upload} ->
+        with_storage_compensation(storage_key, operation)
+
+      {:error, pending_changeset} ->
+        Logger.error("Failed to journal paste upload: #{inspect(pending_changeset.errors)}")
+        {:error, Ecto.Changeset.add_error(changeset, :data, "could not be stored")}
+    end
+  end
+
   defp insert_stored_paste(changeset, storage_key, metadata, data) do
-    changeset
-    |> Ecto.Changeset.put_change(:data, nil)
-    |> Ecto.Changeset.put_change(:storage_key, storage_key)
-    |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
-    |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
-    |> Repo.insert()
-    |> finalize_insert(storage_key, data)
+    stored_changeset =
+      changeset
+      |> Ecto.Changeset.put_change(:data, nil)
+      |> Ecto.Changeset.put_change(:storage_key, storage_key)
+      |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
+      |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
+
+    Repo.transaction(fn ->
+      with {:ok, paste} <- Repo.insert(stored_changeset),
+           {1, nil} <-
+             Repo.delete_all(
+               from upload in PendingUpload,
+                 where: upload.storage_key == ^storage_key and is_nil(upload.claimed_at)
+             ) do
+        paste
+      else
+        {:error, insert_changeset} -> Repo.rollback(insert_changeset)
+        {0, nil} -> Repo.rollback(:upload_claimed)
+      end
+    end)
+    |> finalize_insert(stored_changeset, storage_key, data)
   end
 
   defp storage_error(changeset, storage_key, reason) do
@@ -306,11 +349,17 @@ defmodule Textbin.Pastes do
     {:error, Ecto.Changeset.add_error(changeset, :data, "does not match the uploaded file")}
   end
 
-  defp finalize_insert({:ok, paste}, _storage_key, data), do: {:ok, %{paste | data: data}}
+  defp finalize_insert({:ok, paste}, _changeset, _storage_key, data),
+    do: {:ok, %{paste | data: data}}
 
-  defp finalize_insert({:error, _changeset} = error, storage_key, _data) do
+  defp finalize_insert({:error, %Ecto.Changeset{}} = error, _changeset, storage_key, _data) do
     delete_storage_key(storage_key)
     error
+  end
+
+  defp finalize_insert({:error, :upload_claimed}, changeset, storage_key, _data) do
+    delete_storage_key(storage_key)
+    {:error, Ecto.Changeset.add_error(changeset, :data, "could not be finalized")}
   end
 
   defp delete_stored_data(%Paste{storage_key: storage_key}), do: delete_storage_key(storage_key)

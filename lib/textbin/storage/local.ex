@@ -8,16 +8,16 @@ defmodule Textbin.Storage.Local do
   @impl true
   def put(storage_key, data, opts) when is_binary(data) do
     with {:ok, destination} <- storage_path(storage_key, opts),
-         :ok <- prepare_directory(Path.dirname(destination)) do
-      finalize_put(destination, data)
+         :ok <- prepare_directory(Path.dirname(destination), opts) do
+      finalize_put(destination, data, opts)
     end
   end
 
   @impl true
   def put_file(storage_key, source, metadata, opts) do
     with {:ok, destination} <- storage_path(storage_key, opts),
-         :ok <- prepare_directory(Path.dirname(destination)) do
-      finalize_file(destination, source, metadata)
+         :ok <- prepare_directory(Path.dirname(destination), opts) do
+      finalize_file(destination, source, metadata, opts)
     end
   end
 
@@ -31,11 +31,7 @@ defmodule Textbin.Storage.Local do
   @impl true
   def delete(storage_key, opts) do
     with {:ok, path} <- storage_path(storage_key, opts) do
-      case File.rm(path) do
-        :ok -> :ok
-        {:error, :enoent} -> :ok
-        {:error, reason} -> {:error, reason}
-      end
+      durable_remove(path, opts)
     end
   end
 
@@ -61,20 +57,21 @@ defmodule Textbin.Storage.Local do
     %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
   end
 
-  defp finalize_put(destination, data) do
+  defp finalize_put(destination, data, opts) do
     temporary = temporary_path(destination)
 
     try do
       with :ok <- write_temporary(temporary, data),
-           :ok <- File.rename(temporary, destination) do
+           :ok <- File.rename(temporary, destination),
+           :ok <- sync_directory(Path.dirname(destination), opts) do
         {:ok, metadata(data)}
       end
     after
-      File.rm(temporary)
+      durable_remove!(temporary, opts)
     end
   end
 
-  defp finalize_file(destination, source, metadata) do
+  defp finalize_file(destination, source, metadata, opts) do
     temporary = temporary_path(destination)
 
     try do
@@ -84,13 +81,14 @@ defmodule Textbin.Storage.Local do
            stored_metadata <-
              Textbin.Storage.calculate_metadata(File.stream!(temporary, 64_000, [])),
            :ok <- verify_metadata(stored_metadata, metadata),
-           :ok <- File.rename(temporary, destination) do
+           :ok <- File.rename(temporary, destination),
+           :ok <- sync_directory(Path.dirname(destination), opts) do
         {:ok, stored_metadata}
       else
         {:error, reason} -> {:error, reason}
       end
     after
-      File.rm(temporary)
+      durable_remove!(temporary, opts)
     end
   end
 
@@ -124,9 +122,77 @@ defmodule Textbin.Storage.Local do
     end
   end
 
-  defp prepare_directory(path) do
-    with :ok <- File.mkdir_p(path) do
+  defp prepare_directory(path, opts) do
+    with :ok <- ensure_directory(path, opts) do
       File.chmod(path, 0o700)
+    end
+  end
+
+  defp ensure_directory(path, opts) do
+    case File.lstat(path) do
+      {:ok, %{type: :directory}} ->
+        :ok
+
+      {:ok, _stat} ->
+        {:error, :enotdir}
+
+      {:error, :enoent} ->
+        parent = Path.dirname(path)
+
+        with :ok <- ensure_directory(parent, opts),
+             :ok <- mkdir(path),
+             :ok <- File.chmod(path, 0o700),
+             :ok <- sync_directory(parent, opts) do
+          sync_directory(path, opts)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp mkdir(path) do
+    case File.mkdir(path) do
+      :ok -> :ok
+      {:error, :eexist} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp sync_directory(path, opts) do
+    case Keyword.get(opts, :sync_directory) do
+      sync when is_function(sync, 1) ->
+        sync.(path)
+
+      nil ->
+        case File.open(path, [:read, :directory], &:file.sync/1) do
+          {:ok, result} -> result
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  defp durable_remove(path, opts) do
+    case File.rm(path) do
+      :ok -> sync_directory(Path.dirname(path), opts)
+      {:error, :enoent} -> sync_parent_if_present(path, opts)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp sync_parent_if_present(path, opts) do
+    case File.lstat(Path.dirname(path)) do
+      {:ok, %{type: :directory}} -> sync_directory(Path.dirname(path), opts)
+      {:error, :enoent} -> :ok
+      {:ok, _stat} -> {:error, :enotdir}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp durable_remove!(path, opts) do
+    case durable_remove(path, opts) do
+      :ok -> :ok
+      {:error, reason} -> raise "could not durably remove temporary file: #{inspect(reason)}"
     end
   end
 

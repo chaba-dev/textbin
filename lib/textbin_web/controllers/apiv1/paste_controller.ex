@@ -3,6 +3,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   alias Textbin.Accounts.Scope
   alias Textbin.Pastes
+  alias Textbin.Pastes.UploadCleaner
 
   require Logger
 
@@ -135,7 +136,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
         &insert_file_paste(conn, &1, path, metadata, paste_params)
       )
     after
-      File.rm(path)
+      cleanup_spool(path)
     end
   end
 
@@ -176,6 +177,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
     case prepare_upload_tmp_dir(upload_tmp_dir()) do
       :ok ->
         path = Path.join(upload_tmp_dir(), "textbin-upload-#{Ecto.UUID.generate()}")
+        UploadCleaner.register_spool(path)
         open_request_body(conn, path)
 
       {:error, reason} ->
@@ -201,22 +203,27 @@ defmodule TextbinWeb.ApiV1.PasteController do
           {:ok, path, metadata, conn}
 
         {:ok, {:error, reason, conn}} ->
-          File.rm(path)
+          cleanup_spool(path)
           {:error, reason, conn}
 
         {:error, reason} ->
-          File.rm(path)
+          cleanup_spool(path)
           {:error, {:spool, reason}, conn}
       end
     rescue
       exception ->
-        File.rm(path)
+        cleanup_spool(path)
         reraise exception, __STACKTRACE__
     catch
       kind, reason ->
-        File.rm(path)
+        cleanup_spool(path)
         :erlang.raise(kind, reason, __STACKTRACE__)
     end
+  end
+
+  defp cleanup_spool(path) do
+    File.rm(path)
+    UploadCleaner.unregister_spool(path)
   end
 
   defp read_request_body(conn, file, hash, total_size, max_size) do

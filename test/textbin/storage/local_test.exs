@@ -22,6 +22,47 @@ defmodule Textbin.Storage.LocalTest do
     assert :ok = Local.delete("pastes/one", opts)
   end
 
+  test "synchronizes the containing directory before acknowledging a write", %{
+    opts: opts,
+    root: root
+  } do
+    File.mkdir_p!(Path.join(root, "pastes"))
+    test_pid = self()
+
+    sync_directory = fn path ->
+      send(test_pid, {:directory_synced, path})
+      :ok
+    end
+
+    opts = Keyword.put(opts, :sync_directory, sync_directory)
+
+    assert {:ok, _metadata} = Local.put("pastes/durable", "durable data", opts)
+    assert_receive {:directory_synced, path}
+    assert path == Path.join(root, "pastes")
+  end
+
+  test "retries directory synchronization when a deleted object is already absent", %{
+    opts: opts,
+    root: root
+  } do
+    assert {:ok, _metadata} = Local.put("pastes/delete", "data", opts)
+    test_pid = self()
+    attempts = :counters.new(1, [])
+
+    sync_directory = fn path ->
+      :counters.add(attempts, 1, 1)
+      send(test_pid, {:delete_sync, :counters.get(attempts, 1), path})
+      if :counters.get(attempts, 1) == 1, do: {:error, :eio}, else: :ok
+    end
+
+    opts = Keyword.put(opts, :sync_directory, sync_directory)
+
+    assert Local.delete("pastes/delete", opts) == {:error, :eio}
+    assert Local.delete("pastes/delete", opts) == :ok
+    assert_receive {:delete_sync, 2, path}
+    assert path == Path.join(root, "pastes")
+  end
+
   test "copies a file into storage without consuming the source", %{opts: opts, root: root} do
     data = String.duplicate("streamed locally\n", 8_000)
     source = Path.join(root, "upload")
