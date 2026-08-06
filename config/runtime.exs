@@ -20,6 +20,10 @@ if System.get_env("PHX_SERVER") do
   config :textbin, TextbinWeb.Endpoint, server: true
 end
 
+if upload_tmp_dir = System.get_env("TEXTBIN_UPLOAD_TMP_DIR") do
+  config :textbin, upload_tmp_dir: upload_tmp_dir
+end
+
 storage_backend = System.get_env("TEXTBIN_STORAGE_BACKEND")
 
 case storage_backend do

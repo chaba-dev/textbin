@@ -178,8 +178,14 @@ defmodule Textbin.Pastes do
 
     with_storage_compensation(storage_key, fn ->
       case Storage.put_file(storage_key, path, metadata) do
-        {:ok, stored_metadata} ->
+        {:ok, stored_metadata} when stored_metadata == metadata ->
           insert_stored_paste(changeset, storage_key, stored_metadata, nil)
+
+        {:ok, _stored_metadata} ->
+          storage_metadata_error(changeset, storage_key)
+
+        {:error, :metadata_mismatch} ->
+          storage_metadata_error(changeset, storage_key)
 
         {:error, reason} ->
           storage_error(changeset, storage_key, reason)
@@ -217,6 +223,11 @@ defmodule Textbin.Pastes do
     delete_storage_key(storage_key)
     Logger.error("Failed to store paste content: #{inspect(reason)}")
     {:error, Ecto.Changeset.add_error(changeset, :data, "could not be stored")}
+  end
+
+  defp storage_metadata_error(changeset, storage_key) do
+    delete_storage_key(storage_key)
+    {:error, Ecto.Changeset.add_error(changeset, :data, "does not match the uploaded file")}
   end
 
   defp finalize_insert({:ok, paste}, _storage_key, data), do: {:ok, %{paste | data: data}}

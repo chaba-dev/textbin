@@ -54,8 +54,26 @@ defmodule Textbin.Storage.S3Test do
     assert {"content-length", content_length} = List.keyfind(headers, "content-length", 0)
     assert content_length == Integer.to_string(byte_size(data))
 
-    assert {"x-amz-content-sha256", "UNSIGNED-PAYLOAD"} =
+    assert {"x-amz-content-sha256", payload_sha256} =
              List.keyfind(headers, "x-amz-content-sha256", 0)
+
+    assert payload_sha256 == Base.encode16(metadata.sha256, case: :lower)
+  end
+
+  test "rejects mismatched file metadata before sending a request" do
+    path = Path.join(System.tmp_dir!(), "textbin-s3-upload-#{Ecto.UUID.generate()}")
+    data = "same-size metadata mismatch"
+    metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, "x" <> data)}
+    File.write!(path, data)
+    on_exit(fn -> File.rm(path) end)
+
+    opts =
+      Keyword.put(@base_opts, :req_options,
+        plug: fn _conn -> flunk("mismatched content must not be uploaded") end
+      )
+
+    assert S3.put_file("pastes/mismatch", path, metadata, opts) ==
+             {:error, :metadata_mismatch}
   end
 
   test "gets content and maps missing objects" do

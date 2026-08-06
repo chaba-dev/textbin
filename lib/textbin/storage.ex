@@ -26,6 +26,15 @@ defmodule Textbin.Storage do
     adapter.put_file(storage_key, path, metadata, opts)
   end
 
+  def calculate_metadata(chunks) do
+    {size_bytes, hash} =
+      Enum.reduce(chunks, {0, :crypto.hash_init(:sha256)}, fn chunk, {size_bytes, hash} ->
+        {size_bytes + byte_size(chunk), :crypto.hash_update(hash, chunk)}
+      end)
+
+    %{size_bytes: size_bytes, sha256: :crypto.hash_final(hash)}
+  end
+
   def get(storage_key) when is_binary(storage_key) do
     {adapter, opts} = adapter_and_opts()
     adapter.get(storage_key, opts)

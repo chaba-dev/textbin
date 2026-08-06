@@ -4,6 +4,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
   alias Textbin.Accounts.Scope
   alias Textbin.Pastes
 
+  require Logger
+
   # Keep raw upload reads small enough that an oversized request is rejected
   # after one bounded chunk instead of being accumulated in memory.
   @read_chunk_size 64_000
@@ -31,10 +33,15 @@ defmodule TextbinWeb.ApiV1.PasteController do
         create_paste_from_file(conn, path, metadata, paste_attrs)
 
       {:error, :too_large, conn} ->
-        render_too_large(conn)
+        render_too_large(conn, close?: true)
+
+      {:error, {:spool, reason}, conn} ->
+        Logger.error("Failed to spool paste upload: #{inspect(reason)}")
+        render_upload_unavailable(conn)
 
       {:error, reason, conn} ->
         conn
+        |> close_connection()
         |> put_status(:bad_request)
         |> json(%{errors: %{detail: "Could not read request body: #{inspect(reason)}"}})
     end
@@ -152,13 +159,13 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   defp read_request_body(conn) do
-    case File.mkdir_p(upload_tmp_dir()) do
+    case prepare_upload_tmp_dir(upload_tmp_dir()) do
       :ok ->
         path = Path.join(upload_tmp_dir(), "textbin-upload-#{Ecto.UUID.generate()}")
         open_request_body(conn, path)
 
       {:error, reason} ->
-        {:error, reason, conn}
+        {:error, {:spool, reason}, conn}
     end
   end
 
@@ -166,7 +173,13 @@ defmodule TextbinWeb.ApiV1.PasteController do
     try do
       result =
         File.open(path, [:write, :binary, :exclusive], fn file ->
-          read_request_body(conn, file, :crypto.hash_init(:sha256), 0, max_paste_bytes())
+          case File.chmod(path, 0o600) do
+            :ok ->
+              read_request_body(conn, file, :crypto.hash_init(:sha256), 0, max_paste_bytes())
+
+            {:error, reason} ->
+              {:error, {:spool, reason}, conn}
+          end
         end)
 
       case result do
@@ -179,7 +192,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
         {:error, reason} ->
           File.rm(path)
-          {:error, reason, conn}
+          {:error, {:spool, reason}, conn}
       end
     rescue
       exception ->
@@ -201,7 +214,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
         continue_request_body(conn, file, hash, total_size, chunk, max_size)
 
       {:error, reason} ->
-        {:error, reason, conn}
+        {:error, {:request_body, reason}, conn}
     end
   end
 
@@ -211,7 +224,9 @@ defmodule TextbinWeb.ApiV1.PasteController do
       metadata = %{size_bytes: total_size, sha256: :crypto.hash_final(hash)}
       {:ok, metadata, conn}
     else
-      {:error, reason} -> {:error, reason, conn}
+      {:error, :too_large} -> {:error, :too_large, conn}
+      {:error, {:spool, _reason} = error} -> {:error, error, conn}
+      {:error, reason} -> {:error, {:spool, reason}, conn}
     end
   end
 
@@ -233,7 +248,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
     else
       case :file.write(file, chunk) do
         :ok -> {:ok, :crypto.hash_update(hash, chunk), total_size}
-        {:error, reason} -> {:error, reason}
+        {:error, reason} -> {:error, {:spool, reason}}
       end
     end
   end
@@ -282,7 +297,9 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   defp validate_paste_size(_params), do: :ok
 
-  defp render_too_large(conn) do
+  defp render_too_large(conn, opts \\ []) do
+    conn = if Keyword.get(opts, :close?, false), do: close_connection(conn), else: conn
+
     conn
     |> put_status(413)
     |> json(%{
@@ -291,6 +308,33 @@ defmodule TextbinWeb.ApiV1.PasteController do
       }
     })
   end
+
+  defp render_upload_unavailable(conn) do
+    conn
+    |> close_connection()
+    |> put_status(:service_unavailable)
+    |> json(%{errors: %{detail: "Paste upload is temporarily unavailable"}})
+  end
+
+  defp close_connection(conn) do
+    if Plug.Conn.get_http_protocol(conn) in [:"HTTP/1.0", :"HTTP/1.1"] do
+      put_resp_header(conn, "connection", "close")
+    else
+      conn
+    end
+  end
+
+  defp prepare_upload_tmp_dir(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :directory}} -> File.chmod(path, 0o700)
+      {:ok, _stat} -> {:error, :invalid_upload_tmp_dir}
+      {:error, :enoent} -> path |> File.mkdir_p() |> then_chmod(path)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp then_chmod(:ok, path), do: File.chmod(path, 0o700)
+  defp then_chmod({:error, reason}, _path), do: {:error, reason}
 
   defp render_invalid_paste_id(conn) do
     conn

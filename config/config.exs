@@ -26,6 +26,7 @@ config :textbin,
   allow_guest_pastes: false,
   guest_paste_ttl: "6h",
   max_paste_bytes: 1_048_576,
+  upload_tmp_dir: Path.join(System.tmp_dir!(), "textbin-uploads"),
   expiration_cleanup_enabled: true,
   expiration_cleanup_interval_ms: :timer.minutes(15),
   expiration_cleanup_batch_size: 500

@@ -8,7 +8,7 @@ defmodule Textbin.Storage.Local do
   @impl true
   def put(storage_key, data, opts) when is_binary(data) do
     with {:ok, destination} <- storage_path(storage_key, opts),
-         :ok <- File.mkdir_p(Path.dirname(destination)) do
+         :ok <- prepare_directory(Path.dirname(destination)) do
       finalize_put(destination, data)
     end
   end
@@ -16,7 +16,7 @@ defmodule Textbin.Storage.Local do
   @impl true
   def put_file(storage_key, source, metadata, opts) do
     with {:ok, destination} <- storage_path(storage_key, opts),
-         :ok <- File.mkdir_p(Path.dirname(destination)) do
+         :ok <- prepare_directory(Path.dirname(destination)) do
       finalize_file(destination, source, metadata)
     end
   end
@@ -76,12 +76,20 @@ defmodule Textbin.Storage.Local do
   defp finalize_file(destination, source, metadata) do
     temporary = temporary_path(destination)
 
-    with {:ok, _bytes_copied} <- File.copy(source, temporary),
-         :ok <- sync_file(temporary),
-         :ok <- File.rename(temporary, destination) do
-      {:ok, metadata}
-    else
-      {:error, reason} -> cleanup_error(temporary, reason)
+    try do
+      with {:ok, _bytes_copied} <- File.copy(source, temporary),
+           :ok <- File.chmod(temporary, 0o600),
+           :ok <- sync_file(temporary),
+           stored_metadata <-
+             Textbin.Storage.calculate_metadata(File.stream!(temporary, 64_000, [])),
+           :ok <- verify_metadata(stored_metadata, metadata),
+           :ok <- File.rename(temporary, destination) do
+        {:ok, stored_metadata}
+      else
+        {:error, reason} -> {:error, reason}
+      end
+    after
+      File.rm(temporary)
     end
   end
 
@@ -90,9 +98,15 @@ defmodule Textbin.Storage.Local do
   end
 
   defp write_temporary(path, data) do
-    case File.open(path, [:write, :binary, :exclusive], &write_and_sync(&1, data)) do
+    case File.open(path, [:write, :binary, :exclusive], &write_private_file(&1, path, data)) do
       {:ok, result} -> result
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp write_private_file(file, path, data) do
+    with :ok <- File.chmod(path, 0o600) do
+      write_and_sync(file, data)
     end
   end
 
@@ -112,4 +126,13 @@ defmodule Textbin.Storage.Local do
     File.rm(temporary)
     {:error, reason}
   end
+
+  defp prepare_directory(path) do
+    with :ok <- File.mkdir_p(path) do
+      File.chmod(path, 0o700)
+    end
+  end
+
+  defp verify_metadata(metadata, metadata), do: :ok
+  defp verify_metadata(_stored_metadata, _expected_metadata), do: {:error, :metadata_mismatch}
 end

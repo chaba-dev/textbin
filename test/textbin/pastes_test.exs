@@ -216,6 +216,19 @@ defmodule Textbin.PastesTest do
       assert Repo.aggregate(Paste, :count) == 0
     end
 
+    test "create_paste_from_file/4 rejects a same-size SHA-256 mismatch", %{scope: scope} do
+      path = Path.join(System.tmp_dir!(), "textbin-context-upload-#{Ecto.UUID.generate()}")
+      data = "actual data"
+      File.write!(path, data)
+      on_exit(fn -> File.rm(path) end)
+
+      metadata = %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, "other data!")}
+
+      assert {:error, changeset} = Pastes.create_paste_from_file(scope, path, metadata)
+      assert %{data: ["does not match the uploaded file"]} = errors_on(changeset)
+      assert Repo.aggregate(Paste, :count) == 0
+    end
+
     test "create_paste/2 with an invalid expiration returns error changeset", %{scope: scope} do
       assert {:error, changeset} =
                Pastes.create_paste(scope, %{data: "bad ttl", expires_in: "forever"})

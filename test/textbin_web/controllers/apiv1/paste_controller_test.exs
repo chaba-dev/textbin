@@ -122,6 +122,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       paste = Pastes.get_paste!(scope, id)
       assert paste.size_bytes == byte_size("streamed data")
       assert paste.sha256 == :crypto.hash(:sha256, "streamed data")
+
+      assert {:ok, %{mode: mode}} = File.stat(upload_tmp_dir)
+      assert Bitwise.band(mode, 0o777) == 0o700
       assert File.ls!(upload_tmp_dir) == []
     end
 
@@ -260,7 +263,43 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                }
              } = json_response(conn, 413)
 
+      assert get_resp_header(conn, "connection") == ["close"]
       assert File.ls!(upload_tmp_dir) == []
+    end
+
+    test "does not send a connection header when rejecting an HTTP/2 upload", %{conn: conn} do
+      too_large_data = String.duplicate("a", @max_paste_bytes + 1)
+      {adapter, payload} = conn.adapter
+      conn = %{conn | adapter: {adapter, %{payload | http_protocol: :"HTTP/2"}}}
+
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/pastes", too_large_data)
+
+      assert json_response(conn, 413)
+      assert get_resp_header(conn, "connection") == []
+    end
+
+    test "reports an unavailable upload directory as a server failure", %{conn: conn} do
+      blocked_path =
+        Path.join(System.tmp_dir!(), "textbin-upload-blocked-#{Ecto.UUID.generate()}")
+
+      File.write!(blocked_path, "not a directory")
+      put_upload_tmp_dir(blocked_path)
+      on_exit(fn -> File.rm(blocked_path) end)
+
+      capture_log(fn ->
+        conn =
+          conn
+          |> put_req_header("content-type", "text/plain")
+          |> post(~p"/api/v1/pastes", "cannot be spooled")
+
+        assert %{"errors" => %{"detail" => "Paste upload is temporarily unavailable"}} =
+                 json_response(conn, 503)
+
+        assert get_resp_header(conn, "connection") == ["close"]
+      end)
     end
 
     test "removes the upload file when storage fails", %{conn: conn} do
@@ -385,8 +424,10 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end)
   end
 
-  defp put_upload_tmp_dir do
-    upload_tmp_dir = Path.join(System.tmp_dir!(), "textbin-uploads-#{Ecto.UUID.generate()}")
+  defp put_upload_tmp_dir(upload_tmp_dir \\ nil) do
+    upload_tmp_dir =
+      upload_tmp_dir || Path.join(System.tmp_dir!(), "textbin-uploads-#{Ecto.UUID.generate()}")
+
     previous_upload_tmp_dir = Application.get_env(:textbin, :upload_tmp_dir)
     Application.put_env(:textbin, :upload_tmp_dir, upload_tmp_dir)
 
