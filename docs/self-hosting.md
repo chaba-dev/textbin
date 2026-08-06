@@ -18,13 +18,13 @@ runtime's normal `SIGTERM` and grace-period mechanism.
 
 The following configuration is required in production:
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL connection URL |
-| `SECRET_KEY_BASE` | Phoenix signing and encryption secret |
-| `PHX_HOST` | Public hostname used when generating URLs |
-| `PORT` | HTTP listener port; defaults to `4000` |
-| `POOL_SIZE` | Connections per PostgreSQL pool; defaults to `10` |
+| Variable          | Purpose                                           |
+|-------------------|---------------------------------------------------|
+| `DATABASE_URL`    | PostgreSQL connection URL                         |
+| `SECRET_KEY_BASE` | Phoenix signing and encryption secret             |
+| `PHX_HOST`        | Public hostname used when generating URLs         |
+| `PORT`            | HTTP listener port; defaults to `4000`            |
+| `POOL_SIZE`       | Connections per PostgreSQL pool; defaults to `10` |
 
 Generate `SECRET_KEY_BASE` with `mix phx.gen.secret` from a source checkout or
 another cryptographically secure secret generator. Supply secrets through the
@@ -34,9 +34,9 @@ runtime's secret mechanism rather than baking them into an image layer.
 
 The image creates these paths and grants ownership to UID/GID `1000`:
 
-| Path | Default variable | Durability requirement |
-| --- | --- | --- |
-| `/var/lib/textbin/pastes` | `TEXTBIN_STORAGE_PATH` | Persistent when using local storage |
+| Path                       | Default variable         | Durability requirement                          |
+|----------------------------|--------------------------|-------------------------------------------------|
+| `/var/lib/textbin/pastes`  | `TEXTBIN_STORAGE_PATH`   | Persistent when using local storage             |
 | `/var/lib/textbin/uploads` | `TEXTBIN_UPLOAD_TMP_DIR` | Writable staging space; persistence is optional |
 
 The Dockerfile deliberately does not declare either path as a `VOLUME`.
