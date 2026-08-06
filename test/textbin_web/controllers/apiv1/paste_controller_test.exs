@@ -155,6 +155,43 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       paste = Pastes.get_paste!(scope, id)
       assert paste.data == data
       assert paste.storage_key == "pastes/#{paste.id}"
+      assert paste.content_type == "application/octet-stream"
+
+      conn = get(conn, ~p"/api/v1/pastes/#{paste.id}")
+
+      assert %{
+               "content_type" => "application/octet-stream",
+               "data" => nil,
+               "data_base64" => encoded,
+               "data_encoding" => "base64"
+             } = json_response(conn, 200)["data"]
+
+      assert Base.decode64!(encoded) == data
+    end
+
+    test "normalizes and stores the raw request content type", %{conn: conn, scope: scope} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/html; charset=iso-8859-1")
+        |> post(~p"/api/v1/pastes", "<strong>source</strong>")
+
+      assert %{"id" => id, "content_type" => "text/html"} =
+               json_response(conn, 201)["data"]
+
+      assert Pastes.get_paste!(scope, id).content_type == "text/html"
+    end
+
+    test "accepts an explicit content type in JSON", %{conn: conn, scope: scope} do
+      conn =
+        post(conn, ~p"/api/v1/pastes", %{
+          data: "fn main() {}",
+          content_type: "text/x-rust"
+        })
+
+      assert %{"id" => id, "content_type" => "text/x-rust"} =
+               json_response(conn, 201)["data"]
+
+      assert Pastes.get_paste!(scope, id).content_type == "text/x-rust"
     end
 
     test "stores and returns every registered-user visibility", %{conn: conn, scope: scope} do

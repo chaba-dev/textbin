@@ -43,7 +43,7 @@ pub fn handle(args: &ShowArgs, settings: &Settings) -> Result<()> {
     let client = settings.client()?;
     let paste = client.get_paste(&args.id)?;
 
-    if args.raw {
+    if args.raw || paste.text().is_none() {
         write_raw(io::stdout().lock(), &paste.data)?;
         return Ok(());
     }
@@ -56,8 +56,8 @@ pub fn handle(args: &ShowArgs, settings: &Settings) -> Result<()> {
     Ok(())
 }
 
-fn write_raw(mut writer: impl Write, data: &str) -> io::Result<()> {
-    writer.write_all(data.as_bytes())
+fn write_raw(mut writer: impl Write, data: &[u8]) -> io::Result<()> {
+    writer.write_all(data)
 }
 
 fn print_code_area(content: &str) {
@@ -73,15 +73,19 @@ fn format_code_area(content: &str) -> String {
 }
 
 fn render_paste(paste: &Paste, use_color: bool) -> Result<String> {
+    let data = paste
+        .text()
+        .context("binary paste cannot be rendered as text")?;
+
     if use_color {
-        highlight_paste(paste)
+        highlight_paste(paste, data)
     } else {
-        Ok(paste.data.clone())
+        Ok(data.to_string())
     }
 }
 
-fn highlight_paste(paste: &Paste) -> Result<String> {
-    let language = Language::guess(Some(&paste.syntax_highlight), &paste.data);
+fn highlight_paste(paste: &Paste, data: &str) -> Result<String> {
+    let language = Language::guess(Some(&paste.syntax_highlight), data);
     let theme = themes::get("onedark").context("failed to load Lumis theme: onedark")?;
     let formatter = TerminalBuilder::new()
         .language(language)
@@ -89,7 +93,7 @@ fn highlight_paste(paste: &Paste) -> Result<String> {
         .build()
         .context("failed to build terminal syntax highlighter")?;
 
-    Ok(lumis::highlight(&paste.data, formatter))
+    Ok(lumis::highlight(data, formatter))
 }
 
 #[cfg(test)]
@@ -98,9 +102,11 @@ mod tests {
 
     fn paste(data: &str, syntax_highlight: &str) -> Paste {
         Paste {
-            data: data.to_string(),
+            data: data.as_bytes().to_vec(),
+            content_type: "text/plain".to_string(),
             syntax_highlight: syntax_highlight.to_string(),
             visibility: "private".to_string(),
+            is_text: true,
         }
     }
 
@@ -118,7 +124,7 @@ mod tests {
     fn write_raw_preserves_content_without_adding_a_newline() {
         let mut output = Vec::new();
 
-        write_raw(&mut output, "paste without newline").unwrap();
+        write_raw(&mut output, b"paste without newline").unwrap();
 
         assert_eq!(output, b"paste without newline");
     }
@@ -127,9 +133,18 @@ mod tests {
     fn write_raw_preserves_trailing_newlines() {
         let mut output = Vec::new();
 
-        write_raw(&mut output, "paste\n\n").unwrap();
+        write_raw(&mut output, b"paste\n\n").unwrap();
 
         assert_eq!(output, b"paste\n\n");
+    }
+
+    #[test]
+    fn write_raw_preserves_arbitrary_binary_data() {
+        let mut output = Vec::new();
+
+        write_raw(&mut output, &[255, 0, 1]).unwrap();
+
+        assert_eq!(output, [255, 0, 1]);
     }
 
     #[test]

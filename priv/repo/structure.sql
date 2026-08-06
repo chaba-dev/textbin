@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Hw1fC0CZGC6kPpwCiQew1wxB3bV342xBmYJ5Q874gE69MZ2JJHJ7c5CRfKo4tSK
+\restrict jqT5QmdmWOByW2hdr1SUo69iPNMgMF5KzgUpDj7HW9h3KB2GtpKaXeHQIja9RDI
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -53,6 +53,7 @@ CREATE TABLE public.pastes (
     storage_key character varying(255),
     size_bytes bigint,
     sha256 bytea,
+    content_type character varying(255) DEFAULT 'text/plain'::character varying NOT NULL,
     CONSTRAINT pastes_content_location_check CHECK (((data IS NOT NULL) OR (storage_key IS NOT NULL))),
     CONSTRAINT pastes_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['private'::character varying, 'unlisted'::character varying, 'public'::character varying])::text[])))
 );
@@ -210,7 +211,7 @@ ALTER TABLE ONLY public.users_tokens
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Hw1fC0CZGC6kPpwCiQew1wxB3bV342xBmYJ5Q874gE69MZ2JJHJ7c5CRfKo4tSK
+\unrestrict jqT5QmdmWOByW2hdr1SUo69iPNMgMF5KzgUpDj7HW9h3KB2GtpKaXeHQIja9RDI
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -223,3 +224,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260716100000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260717070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260718070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260805090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260806090000);

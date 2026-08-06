@@ -1,7 +1,10 @@
+use base64::Engine as _;
 use reqwest::StatusCode;
 use reqwest::blocking::Body;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::Deserialize;
+use serde::Deserializer;
+use serde::de::Error as _;
 use std::collections::BTreeMap;
 use std::error;
 use std::fmt;
@@ -309,16 +312,74 @@ pub struct ApiTokenMetadata {
     pub inserted_at: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Paste {
-    pub data: String,
+    pub data: Vec<u8>,
+    pub content_type: String,
     pub syntax_highlight: String,
     pub visibility: String,
+    pub is_text: bool,
+}
+
+impl Paste {
+    pub fn text(&self) -> Option<&str> {
+        if self.is_text && !self.data.contains(&0) {
+            std::str::from_utf8(&self.data).ok()
+        } else {
+            None
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Paste {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let paste = PasteResponse::deserialize(deserializer)?;
+        let (data, is_text) = match (
+            paste.data,
+            paste.data_base64,
+            paste.data_encoding.as_deref(),
+        ) {
+            (Some(data), None, None) => (data.into_bytes(), true),
+            (None, Some(data), Some("base64")) => base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .map(|data| (data, false))
+                .map_err(D::Error::custom)?,
+            _ => return Err(D::Error::custom("invalid paste data representation")),
+        };
+
+        Ok(Self {
+            data,
+            content_type: paste.content_type,
+            syntax_highlight: paste.syntax_highlight,
+            visibility: paste.visibility,
+            is_text,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct PasteResponse {
+    data: Option<String>,
+    data_base64: Option<String>,
+    data_encoding: Option<String>,
+    #[serde(default = "default_content_type")]
+    content_type: String,
+    syntax_highlight: String,
+    visibility: String,
+}
+
+fn default_content_type() -> String {
+    "text/plain".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreatedPaste {
     pub id: String,
+    #[serde(default = "default_content_type")]
+    pub content_type: String,
     pub syntax_highlight: String,
     pub visibility: String,
     pub expires_at: Option<String>,
@@ -557,6 +618,48 @@ mod tests {
         assert_eq!(created.api_token, "txb_secret");
         assert_eq!(created.user.email, "user@example.com");
         assert_eq!(created.token.name, "Laptop");
+    }
+
+    #[test]
+    fn decodes_text_and_binary_paste_representations() {
+        let text = decode_json::<ShowResponse>(
+            r#"{"data":{"data":"hello","content_type":"text/plain","syntax_highlight":"plain","visibility":"public"}}"#,
+        )
+        .unwrap()
+        .data;
+        let binary = decode_json::<ShowResponse>(
+            r#"{"data":{"data":null,"data_base64":"/wAB","data_encoding":"base64","content_type":"application/octet-stream","syntax_highlight":"plain","visibility":"public"}}"#,
+        )
+        .unwrap()
+        .data;
+
+        assert_eq!(text.data, b"hello");
+        assert_eq!(text.text(), Some("hello"));
+        assert_eq!(binary.data, [255, 0, 1]);
+        assert_eq!(binary.text(), None);
+    }
+
+    #[test]
+    fn base64_representation_remains_binary_for_utf8_shaped_bytes() {
+        for encoded in ["aGVsbG8=", "AA=="] {
+            let body = format!(
+                r#"{{"data":{{"data":null,"data_base64":"{encoded}","data_encoding":"base64","content_type":"application/octet-stream","syntax_highlight":"plain","visibility":"public"}}}}"#
+            );
+            let paste = decode_json::<ShowResponse>(&body).unwrap().data;
+
+            assert_eq!(paste.text(), None);
+        }
+    }
+
+    #[test]
+    fn defaults_content_type_for_older_server_responses() {
+        let paste = decode_json::<ShowResponse>(
+            r#"{"data":{"data":"hello","syntax_highlight":"plain","visibility":"public"}}"#,
+        )
+        .unwrap()
+        .data;
+
+        assert_eq!(paste.content_type, "text/plain");
     }
 
     #[test]

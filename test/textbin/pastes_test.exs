@@ -104,6 +104,7 @@ defmodule Textbin.PastesTest do
       assert paste.sha256 == :crypto.hash(:sha256, "some data")
       assert paste.storage_key == nil
       assert Repo.get!(Paste, paste.id).data == "some data"
+      assert paste.content_type == "text/plain"
       assert paste.syntax_highlight == "plain"
       assert paste.visibility == "private"
       assert paste.user_id == scope.user.id
@@ -138,9 +139,39 @@ defmodule Textbin.PastesTest do
       for data <- ["contains\0null", <<255, 254, 253>>] do
         assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, %{data: data})
         assert paste.storage_key == "pastes/#{paste.id}"
+        assert paste.content_type == "application/octet-stream"
         assert Storage.get(paste.storage_key) == {:ok, data}
         assert Repo.get!(Paste, paste.id).data == nil
       end
+    end
+
+    test "create_paste/2 normalizes a textual content type and stores it inline", %{scope: scope} do
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste(scope, %{
+                 data: "<strong>safe source</strong>",
+                 content_type: "TEXT/HTML; charset=iso-8859-1"
+               })
+
+      assert paste.content_type == "text/html"
+      assert paste.storage_key == nil
+    end
+
+    test "create_paste/2 keeps explicitly binary content in blob storage", %{scope: scope} do
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste(scope, %{
+                 data: "valid UTF-8 bytes",
+                 content_type: "application/octet-stream"
+               })
+
+      assert paste.content_type == "application/octet-stream"
+      assert paste.storage_key == "pastes/#{paste.id}"
+    end
+
+    test "create_paste/2 rejects an invalid content type", %{scope: scope} do
+      assert {:error, changeset} =
+               Pastes.create_paste(scope, %{data: "content", content_type: "not a media type"})
+
+      assert %{content_type: ["is invalid"]} = errors_on(changeset)
     end
 
     test "create_paste/2 stores the syntax highlight", %{scope: scope} do

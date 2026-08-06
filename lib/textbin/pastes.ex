@@ -6,6 +6,7 @@ defmodule Textbin.Pastes do
   import Ecto.Query, warn: false
 
   alias Textbin.Accounts.{Scope, User}
+  alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
   alias Textbin.Repo
   alias Textbin.Storage
@@ -38,6 +39,7 @@ defmodule Textbin.Pastes do
             :storage_key,
             :size_bytes,
             :sha256,
+            :content_type,
             :syntax_highlight,
             :visibility,
             :expires_at,
@@ -93,7 +95,7 @@ defmodule Textbin.Pastes do
   def get_shared_paste(_current_scope, _id), do: nil
 
   def create_paste(%Scope{user: %User{} = user}, attrs \\ %{}) do
-    attrs = attrs_with_defaults(attrs, user)
+    attrs = attrs_with_defaults(attrs, user, ContentType.text_safe?(attr_data(attrs)))
     paste = %Paste{id: Ecto.UUID.generate(), user_id: user.id}
     changeset = paste |> Paste.changeset(attrs) |> validate_data_size()
 
@@ -111,7 +113,8 @@ defmodule Textbin.Pastes do
         attrs \\ %{}
       )
       when is_binary(path) and is_integer(size_bytes) and is_binary(sha256) do
-    attrs = attrs_with_defaults(attrs, user)
+    text_safe? = match?({:ok, true}, ContentType.text_safe_file(path))
+    attrs = attrs_with_defaults(attrs, user, text_safe?)
     paste = %Paste{id: Ecto.UUID.generate(), user_id: user.id}
     storage_key = "pastes/#{paste.id}"
 
@@ -186,7 +189,7 @@ defmodule Textbin.Pastes do
     data = Ecto.Changeset.get_field(changeset, :data)
     metadata = content_metadata(data)
 
-    if inline_data?(data) do
+    if inline_data?(changeset, data) do
       insert_inline_paste(changeset, metadata, data)
     else
       store_blob_paste(changeset, data)
@@ -219,7 +222,7 @@ defmodule Textbin.Pastes do
     with {:ok, data} <- File.read(path),
          metadata = content_metadata(data),
          true <- metadata == expected_metadata do
-      if inline_data?(data) do
+      if inline_data?(changeset, data) do
         insert_inline_paste(changeset, metadata, data)
       else
         store_blob_file(changeset, path, metadata)
@@ -375,9 +378,9 @@ defmodule Textbin.Pastes do
 
   defp inline_size?(metadata), do: metadata.size_bytes <= inline_paste_bytes()
 
-  defp inline_data?(data) do
-    byte_size(data) <= inline_paste_bytes() and String.valid?(data) and
-      :binary.match(data, <<0>>) == :nomatch
+  defp inline_data?(changeset, data) do
+    byte_size(data) <= inline_paste_bytes() and ContentType.text_safe?(data) and
+      changeset |> Ecto.Changeset.get_field(:content_type) |> ContentType.textual?()
   end
 
   defp inline_paste_bytes do
@@ -388,11 +391,24 @@ defmodule Textbin.Pastes do
     %{size_bytes: byte_size(data), sha256: :crypto.hash(:sha256, data)}
   end
 
-  defp attrs_with_defaults(attrs, user) do
+  defp attrs_with_defaults(attrs, user, text_safe?) do
     attrs
     |> attrs_with_default_ttl(user)
     |> attrs_with_visibility(user)
+    |> attrs_with_content_type(text_safe?)
   end
+
+  defp attrs_with_content_type(attrs, text_safe?) do
+    content_type = Map.get(attrs, "content_type") || Map.get(attrs, :content_type)
+
+    Map.put(
+      attrs,
+      attr_key(attrs, "content_type", :content_type),
+      ContentType.normalize(content_type, text_safe?)
+    )
+  end
+
+  defp attr_data(attrs), do: Map.get(attrs, "data") || Map.get(attrs, :data)
 
   defp attrs_with_default_ttl(attrs, user) do
     if ttl_provided?(attrs) do

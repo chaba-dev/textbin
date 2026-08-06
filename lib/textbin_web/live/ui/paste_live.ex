@@ -3,6 +3,7 @@ defmodule TextbinWeb.UI.PasteLive do
 
   alias Textbin.Accounts.{Scope, User}
   alias Textbin.Pastes
+  alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
 
   embed_templates "paste_live/*"
@@ -34,6 +35,7 @@ defmodule TextbinWeb.UI.PasteLive do
          socket
          |> assign(:page_title, "Paste #{paste.id}")
          |> assign(:paste, paste)
+         |> assign(:text_content?, text_content?(paste))
          |> assign(:owner?, owner?(socket.assigns.current_scope, paste))
          |> assign(:highlighted_paste_data, highlighted_paste_data(paste))}
 
@@ -106,9 +108,15 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   defp highlighted_paste_data(%Paste{} = paste) do
-    paste.data
-    |> Lumis.highlight!(formatter: {:html_inline, language: highlight_language(paste)})
-    |> then(&{:safe, &1})
+    if text_content?(paste) do
+      paste.data
+      |> Lumis.highlight!(formatter: {:html_inline, language: highlight_language(paste)})
+      |> then(&{:safe, &1})
+    end
+  end
+
+  defp text_content?(paste) do
+    ContentType.textual?(paste.content_type) and ContentType.text_safe?(paste.data)
   end
 
   defp highlight_language(%Paste{syntax_highlight: syntax_highlight})
