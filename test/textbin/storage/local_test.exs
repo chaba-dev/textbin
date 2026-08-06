@@ -59,6 +59,14 @@ defmodule Textbin.Storage.LocalTest do
     assert Bitwise.band(mode, 0o777) == 0o600
   end
 
+  test "removes temporary files when finalizing a direct write fails", %{opts: opts, root: root} do
+    destination = Path.join(root, "pastes/destination")
+    File.mkdir_p!(destination)
+
+    assert Local.put("pastes/destination", "data", opts) == {:error, :eisdir}
+    assert Path.wildcard(destination <> ".tmp-*") == []
+  end
+
   test "rejects storage keys that could escape the configured root", %{opts: opts, root: root} do
     assert Local.put("../outside", "unsafe", opts) == {:error, :invalid_storage_key}
     refute File.exists?(Path.join(Path.dirname(root), "outside"))

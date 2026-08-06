@@ -62,14 +62,15 @@ defmodule Textbin.Storage.Local do
   end
 
   defp finalize_put(destination, data) do
-    temporary =
-      destination <> ".tmp-" <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+    temporary = temporary_path(destination)
 
-    with :ok <- write_temporary(temporary, data),
-         :ok <- File.rename(temporary, destination) do
-      {:ok, metadata(data)}
-    else
-      {:error, reason} -> cleanup_error(temporary, reason)
+    try do
+      with :ok <- write_temporary(temporary, data),
+           :ok <- File.rename(temporary, destination) do
+        {:ok, metadata(data)}
+      end
+    after
+      File.rm(temporary)
     end
   end
 
@@ -111,8 +112,9 @@ defmodule Textbin.Storage.Local do
   end
 
   defp write_and_sync(file, data) do
-    IO.binwrite(file, data)
-    :file.sync(file)
+    with :ok <- :file.write(file, data) do
+      :file.sync(file)
+    end
   end
 
   defp sync_file(path) do
@@ -120,11 +122,6 @@ defmodule Textbin.Storage.Local do
       {:ok, result} -> result
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  defp cleanup_error(temporary, reason) do
-    File.rm(temporary)
-    {:error, reason}
   end
 
   defp prepare_directory(path) do
