@@ -61,6 +61,11 @@ unprivileged target port avoids granting the container permission to bind port
 corresponding key. Verify client-address preservation for the load balancer's
 target mode before relying on source addresses for logs or abuse controls.
 
+`HTTPS_PORT` is the internal application listener, not the public URL port.
+Textbin generates public URLs as `https://PHX_HOST` on port `443`, so a direct
+deployment must publish or forward public port `443` to `HTTPS_PORT`. Public
+HTTPS deployments on a non-standard port are not currently supported.
+
 Certificate renewal is the operator's responsibility. Replace the mounted
 files atomically and restart or roll the application instances so Erlang/OTP
 loads the renewed certificate. When a proxy or ingress already manages ACME and

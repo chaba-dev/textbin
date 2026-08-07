@@ -271,6 +271,7 @@ jobs:
           ready=false
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error \
+              --resolve localhost:4443:127.0.0.1 \
               --cacert "$tls_dir/cert.pem" \
               --output /dev/null https://localhost:4443/; then
               ready=true
@@ -281,4 +282,4 @@ jobs:
           done
 
           test "$ready" = "true"
-          curl --fail --silent --show-error --output /dev/null http://localhost:4100/
+          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:4100/

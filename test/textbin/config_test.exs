@@ -56,7 +56,7 @@ defmodule Textbin.ConfigTest do
     endpoint = production_endpoint_config()
 
     assert endpoint[:https] == [
-             ip: {0, 0, 0, 0, 0, 0, 0, 0},
+             ip: {0, 0, 0, 0},
              port: 4443,
              cipher_suite: :strong,
              certfile: certfile,

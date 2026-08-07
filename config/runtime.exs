@@ -130,7 +130,7 @@ if config_env() == :prod do
         end
 
         [
-          ip: {0, 0, 0, 0, 0, 0, 0, 0},
+          ip: {0, 0, 0, 0},
           port: https_port,
           cipher_suite: :strong,
           certfile: certfile,
@@ -153,9 +153,9 @@ if config_env() == :prod do
   endpoint_config = [
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Bind on all IPv4 and IPv6 interfaces. Operators control external
-      # exposure through their container runtime and network policy.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      # Bind on all IPv4 interfaces. Operators control external exposure
+      # through their container runtime and network policy.
+      ip: {0, 0, 0, 0},
       port: port
     ],
     secret_key_base: secret_key_base
