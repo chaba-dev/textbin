@@ -60,6 +60,13 @@ case storage_backend do
 end
 
 if config_env() == :prod do
+  parse_port = fn name, default ->
+    case Integer.parse(System.get_env(name) || default) do
+      {value, ""} when value in 1..65_535 -> value
+      _result -> raise "#{name} must be an integer from 1 to 65535"
+    end
+  end
+
   database_url =
     System.get_env("DATABASE_URL") ||
       raise """
@@ -69,10 +76,16 @@ if config_env() == :prod do
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
+  pool_size =
+    case Integer.parse(System.get_env("POOL_SIZE") || "10") do
+      {value, ""} when value > 0 -> value
+      _result -> raise "POOL_SIZE must be a positive integer"
+    end
+
   config :textbin, Textbin.Repo,
     # ssl: true,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    pool_size: pool_size,
     # For machines with several cores, consider starting multiple pools of `pool_size`
     # pool_count: 4,
     socket_options: maybe_ipv6
@@ -96,7 +109,37 @@ if config_env() == :prod do
       Set it to the public hostname used to access Textbin.
       """
 
-  port = String.to_integer(System.get_env("PORT") || "4000")
+  port = parse_port.("PORT", "4000")
+  https_port = parse_port.("HTTPS_PORT", "4443")
+
+  https =
+    case {System.get_env("TLS_CERT_PATH"), System.get_env("TLS_KEY_PATH")} do
+      {nil, nil} ->
+        nil
+
+      {certfile, keyfile} when is_binary(certfile) and is_binary(keyfile) ->
+        for {name, path} <- [{"TLS_CERT_PATH", certfile}, {"TLS_KEY_PATH", keyfile}] do
+          unless File.regular?(path) do
+            raise "#{name} must point to a readable regular file: #{path}"
+          end
+
+          case File.open(path, [:read]) do
+            {:ok, file} -> File.close(file)
+            {:error, reason} -> raise "#{name} is not readable: #{path} (#{reason})"
+          end
+        end
+
+        [
+          ip: {0, 0, 0, 0},
+          port: https_port,
+          cipher_suite: :strong,
+          certfile: certfile,
+          keyfile: keyfile
+        ]
+
+      _incomplete ->
+        raise "TLS_CERT_PATH and TLS_KEY_PATH must be set together"
+    end
 
   config :textbin, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
@@ -107,49 +150,21 @@ if config_env() == :prod do
         {:replace, [root: System.get_env("TEXTBIN_STORAGE_PATH") || "/var/lib/textbin/pastes"]}
   end
 
-  config :textbin, TextbinWeb.Endpoint,
+  endpoint_config = [
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      # Bind on all IPv4 interfaces. Operators control external exposure
+      # through their container runtime and network policy.
+      ip: {0, 0, 0, 0},
       port: port
     ],
     secret_key_base: secret_key_base
+  ]
 
-  # ## SSL Support
-  #
-  # To get SSL working, you will need to add the `https` key
-  # to your endpoint configuration:
-  #
-  #     config :textbin, TextbinWeb.Endpoint,
-  #       https: [
-  #         ...,
-  #         port: 443,
-  #         cipher_suite: :strong,
-  #         keyfile: System.get_env("SOME_APP_SSL_KEY_PATH"),
-  #         certfile: System.get_env("SOME_APP_SSL_CERT_PATH")
-  #       ]
-  #
-  # The `cipher_suite` is set to `:strong` to support only the
-  # latest and more secure SSL ciphers. This means old browsers
-  # and clients may not be supported. You can set it to
-  # `:compatible` for wider support.
-  #
-  # `:keyfile` and `:certfile` expect an absolute path to the key
-  # and cert in disk or a relative path inside priv, for example
-  # "priv/ssl/server.key". For all supported SSL configuration
-  # options, see https://hexdocs.pm/plug/Plug.SSL.html#configure/1
-  #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :textbin, TextbinWeb.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
+  endpoint_config =
+    if https, do: Keyword.put(endpoint_config, :https, https), else: endpoint_config
+
+  config :textbin, TextbinWeb.Endpoint, endpoint_config
 
   # ## Configuring the mailer
   #

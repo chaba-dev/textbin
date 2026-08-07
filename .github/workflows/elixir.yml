@@ -183,3 +183,103 @@ jobs:
           fi
 
           mix test
+
+  container:
+    name: Production container
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ env.DATABASE_PASSWORD }}
+          POSTGRES_DB: textbin_container_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d textbin_container_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build --tag textbin:ci .
+
+      - name: Verify runtime contract
+        run: |
+          test "$(docker image inspect textbin:ci --format '{{.Config.User}}')" = "textbin"
+          test "$(docker image inspect textbin:ci --format '{{json .Config.Volumes}}')" = "null"
+
+          docker run --rm --entrypoint sh textbin:ci -c '
+            test "$(id -u)" = "1000"
+            test "$(id -g)" = "1000"
+            test -x /app/bin/textbin
+            test -x /app/bin/migrate
+            touch /var/lib/textbin/pastes/.write-test
+            touch /var/lib/textbin/uploads/.write-test
+          '
+
+      - name: Run release migrations
+        run: |
+          secret_key_base=$(openssl rand -hex 64)
+
+          docker run --rm --network host \
+            -e DATABASE_URL="ecto://${DATABASE_USER}:${DATABASE_PASSWORD}@localhost:5432/textbin_container_test" \
+            -e SECRET_KEY_BASE="$secret_key_base" \
+            -e PHX_HOST=localhost \
+            textbin:ci /app/bin/migrate
+
+      - name: Smoke test HTTP and direct TLS
+        run: |
+          tls_dir="${RUNNER_TEMP}/textbin-tls"
+          mkdir -p "$tls_dir"
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost' \
+            -keyout "$tls_dir/key.pem" \
+            -out "$tls_dir/cert.pem"
+
+          # The ephemeral test key must be readable by the image's UID 1000.
+          chmod 755 "$tls_dir"
+          chmod 644 "$tls_dir/cert.pem" "$tls_dir/key.pem"
+
+          secret_key_base=$(openssl rand -hex 64)
+          container_name=textbin-container-smoke
+
+          cleanup() {
+            docker logs "$container_name" || true
+            docker rm --force "$container_name" || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach --name "$container_name" --network host \
+            --mount "type=bind,src=$tls_dir,dst=/run/secrets/textbin,readonly" \
+            -e DATABASE_URL="ecto://${DATABASE_USER}:${DATABASE_PASSWORD}@localhost:5432/textbin_container_test" \
+            -e SECRET_KEY_BASE="$secret_key_base" \
+            -e PHX_HOST=localhost \
+            -e PORT=4100 \
+            -e HTTPS_PORT=4443 \
+            -e TLS_CERT_PATH=/run/secrets/textbin/cert.pem \
+            -e TLS_KEY_PATH=/run/secrets/textbin/key.pem \
+            textbin:ci
+
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              --resolve localhost:4443:127.0.0.1 \
+              --cacert "$tls_dir/cert.pem" \
+              --output /dev/null https://localhost:4443/; then
+              ready=true
+              break
+            fi
+
+            sleep 1
+          done
+
+          test "$ready" = "true"
+          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:4100/
