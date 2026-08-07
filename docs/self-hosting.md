@@ -13,7 +13,8 @@ The server runs as the unprivileged `textbin` user with numeric UID and GID
 /app/bin/textbin start
 ```
 
-The process listens on `PORT` (`4000` by default). Terminate it using the
+The process listens for HTTP on `PORT` (`4000` by default) and can optionally
+terminate TLS on `HTTPS_PORT` (`4443` by default). Terminate it using the
 runtime's normal `SIGTERM` and grace-period mechanism.
 
 The following configuration is required in production:
@@ -29,6 +30,41 @@ The following configuration is required in production:
 Generate `SECRET_KEY_BASE` with `mix phx.gen.secret` from a source checkout or
 another cryptographically secure secret generator. Supply secrets through the
 runtime's secret mechanism rather than baking them into an image layer.
+
+`PORT` and `HTTPS_PORT` must be valid TCP ports. `POOL_SIZE` must be a positive
+integer. Textbin rejects invalid values during startup instead of booting with a
+partial configuration.
+
+## TLS termination
+
+By default, Textbin serves HTTP and expects a reverse proxy, ingress, or load
+balancer to terminate public TLS. It can instead terminate TLS directly through
+Bandit and Erlang/OTP's TLS stack:
+
+```text
+TLS_CERT_PATH=/run/secrets/textbin/tls.crt
+TLS_KEY_PATH=/run/secrets/textbin/tls.key
+HTTPS_PORT=4443
+```
+
+`TLS_CERT_PATH` and `TLS_KEY_PATH` must be supplied together and must name
+readable regular files. Mount both files read-only and make them readable by
+UID/GID `1000`; never place the private key in the image. The HTTP listener
+remains enabled on `PORT`, which allows a separately protected health endpoint
+or internal traffic. Control access to both listeners with the runtime's network
+policy.
+
+Direct TLS works with a layer-4 load balancer. For example, an NLB can accept
+TCP port `443` and pass the encrypted connection to `HTTPS_PORT=4443`. Using an
+unprivileged target port avoids granting the container permission to bind port
+`443`. Every replica must receive a certificate valid for `PHX_HOST` and its
+corresponding key. Verify client-address preservation for the load balancer's
+target mode before relying on source addresses for logs or abuse controls.
+
+Certificate renewal is the operator's responsibility. Replace the mounted
+files atomically and restart or roll the application instances so Erlang/OTP
+loads the renewed certificate. When a proxy or ingress already manages ACME and
+certificate rotation, leave direct TLS unset and forward HTTP to `PORT`.
 
 ## Writable paths
 
