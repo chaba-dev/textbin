@@ -40,6 +40,14 @@ down:
 migrate:
 	mix ecto.migration
 
+.PHONY: changelog
+changelog:
+	git cliff -o CHANGELOG.md
+
+.PHONY: bump
+bump:
+	git cliff --bump -o CHANGELOG.md
+
 .PHONY: db
 db:
 	psql -h 127.0.0.1 -U postgres -d textbin_dev -W

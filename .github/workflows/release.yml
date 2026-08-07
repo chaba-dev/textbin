@@ -1,0 +1,91 @@
+---
+name: Create GitHub release
+
+"on":
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: create-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create GitHub release
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    steps:
+      - name: Create release app token
+        id: release-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout tagged release
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Validate tagged version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mix_version=$(sed -nE 's/^[[:space:]]*version:[[:space:]]*"([^"]+)",?[[:space:]]*$/\1/p' mix.exs)
+          cargo_version=$(sed -nE 's/^version[[:space:]]*=[[:space:]]*"([^"]+)"[[:space:]]*$/\1/p' Cargo.toml)
+
+          if [ -z "$mix_version" ] || [ "$mix_version" != "$cargo_version" ]; then
+            echo "::error::mix.exs and Cargo.toml versions do not match"
+            exit 1
+          fi
+
+          if [ "$RELEASE_TAG" != "v$mix_version" ]; then
+            echo "::error::Tag $RELEASE_TAG does not match project version $mix_version"
+            exit 1
+          fi
+
+          if [[ "$mix_version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate conventional release notes
+        id: release-notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Add tag comparison to release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          previous_tag=$(git describe --tags --abbrev=0 --match 'v*' "$RELEASE_TAG^" 2>/dev/null || true)
+
+          cat RELEASE_NOTES.md > RELEASE_BODY.md
+          printf '\n## Compare\n\n' >> RELEASE_BODY.md
+
+          if [ -n "$previous_tag" ]; then
+            compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${previous_tag}...${RELEASE_TAG}"
+            printf '[`%s...%s`](%s)\n' "$previous_tag" "$RELEASE_TAG" "$compare_url" >> RELEASE_BODY.md
+          else
+            printf 'This is the first tagged release; no previous tag is available.\n' >> RELEASE_BODY.md
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ steps.release-token.outputs.token }}
+          tag_name: ${{ github.ref_name }}
+          body_path: RELEASE_BODY.md
+          prerelease: ${{ steps.version.outputs.prerelease }}
