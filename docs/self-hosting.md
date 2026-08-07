@@ -9,7 +9,7 @@ persistent storage are provided.
 The server runs as the unprivileged `textbin` user with numeric UID and GID
 `1000`. Its default command is:
 
-```text
+```bash
 /app/bin/textbin start
 ```
 
