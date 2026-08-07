@@ -1,0 +1,115 @@
+---
+name: Publish container
+
+"on":
+  release:
+    types: [published]
+
+permissions:
+  attestations: write
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  # Stable releases update shared major, minor, and latest aliases.
+  group: publish-container
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish GHCR image
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout release
+        uses: actions/checkout@v4
+
+      - name: Validate release version
+        env:
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mapfile -t versions < <(
+            sed -nE 's/^[[:space:]]*version:[[:space:]]*"([^"]+)",?[[:space:]]*$/\1/p' mix.exs
+          )
+
+          if [ "${#versions[@]}" -ne 1 ]; then
+            echo "::error::mix.exs must contain exactly one project version"
+            exit 1
+          fi
+
+          app_version=${versions[0]}
+
+          if [[ ! "$app_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::mix.exs version must be strict SemVer without build metadata"
+            exit 1
+          fi
+
+          if [ "$RELEASE_TAG" != "v$app_version" ]; then
+            echo "::error::release tag $RELEASE_TAG does not match mix.exs version $app_version"
+            exit 1
+          fi
+
+          app_prerelease=false
+          if [[ "$app_version" == *-* ]]; then
+            app_prerelease=true
+
+            IFS='.' read -ra prerelease_identifiers <<< "${app_version#*-}"
+            for identifier in "${prerelease_identifiers[@]}"; do
+              if [[ "$identifier" =~ ^[0-9]+$ && "$identifier" != "0" && "$identifier" == 0* ]]; then
+                echo "::error::numeric prerelease identifiers must not contain leading zeroes"
+                exit 1
+              fi
+            done
+          fi
+
+          if [ "$RELEASE_PRERELEASE" != "$app_prerelease" ]; then
+            echo "::error::GitHub prerelease setting does not match version $app_version"
+            exit 1
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ github.event.release.tag_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == false }}
+            type=semver,pattern={{major}},value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == false }}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
+
+      - name: Build and publish image
+        id: publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest image provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
