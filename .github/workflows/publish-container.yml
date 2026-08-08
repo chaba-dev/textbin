@@ -23,7 +23,24 @@ jobs:
 
     steps:
       - name: Checkout release
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Require release on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch --no-tags origin \
+            "refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+
+          if ! git merge-base --is-ancestor \
+            "$GITHUB_SHA" "refs/remotes/origin/${DEFAULT_BRANCH}"; then
+            echo "::error::Published release is not reachable from $DEFAULT_BRANCH"
+            exit 1
+          fi
 
       - name: Validate release version
         env:
@@ -75,14 +92,82 @@ jobs:
             exit 1
           fi
 
+      - name: Determine whether this is the newest stable release
+        id: aliases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then
+            {
+              echo "latest=false"
+              echo "major=false"
+              echo "minor=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          current_version=${RELEASE_TAG#v}
+          current_major=${current_version%%.*}
+          current_remainder=${current_version#*.}
+          current_minor=${current_remainder%%.*}
+          stable_versions=("$current_version")
+          major_versions=("$current_version")
+          minor_versions=("$current_version")
+
+          if ! release_tags=$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name'
+          ); then
+            echo "::error::Unable to determine existing stable releases"
+            exit 1
+          fi
+
+          while IFS= read -r tag; do
+            version=${tag#v}
+            if [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              stable_versions+=("$version")
+
+              major=${version%%.*}
+              remainder=${version#*.}
+              minor=${remainder%%.*}
+              if [ "$major" = "$current_major" ]; then
+                major_versions+=("$version")
+              fi
+              if [ "$major" = "$current_major" ] && [ "$minor" = "$current_minor" ]; then
+                minor_versions+=("$version")
+              fi
+            fi
+          done <<< "$release_tags"
+
+          latest_version=$(printf '%s\n' "${stable_versions[@]}" | sort -Vu | tail -n 1)
+          latest_major_version=$(printf '%s\n' "${major_versions[@]}" | sort -Vu | tail -n 1)
+          latest_minor_version=$(printf '%s\n' "${minor_versions[@]}" | sort -Vu | tail -n 1)
+
+          [ "$current_version" = "$latest_version" ] && latest=true || latest=false
+          [ "$current_version" = "$latest_major_version" ] && major=true || major=false
+          [ "$current_version" = "$latest_minor_version" ] && minor=true || minor=false
+
+          {
+            echo "latest=$latest"
+            echo "major=$major"
+            echo "minor=$minor"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$latest" != "true" ] || [ "$major" != "true" ] || [ "$minor" != "true" ]; then
+            echo "::notice::Preserving floating aliases that already point to newer stable releases"
+          fi
+
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -90,20 +175,20 @@ jobs:
 
       - name: Generate image metadata
         id: metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository }}
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}},value=${{ github.event.release.tag_name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == false }}
-            type=semver,pattern={{major}},value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == false }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.release.tag_name }},enable=${{ steps.aliases.outputs.minor == 'true' }}
+            type=semver,pattern={{major}},value=${{ github.event.release.tag_name }},enable=${{ steps.aliases.outputs.major == 'true' }}
             type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
+            type=raw,value=latest,enable=${{ steps.aliases.outputs.latest == 'true' }}
 
       - name: Build and publish image
         id: publish
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -114,7 +199,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Attest image provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.publish.outputs.digest }}

@@ -30,12 +30,23 @@ The automation intentionally uses an installation token instead of
 downstream workflows required to tag, create a GitHub Release, and publish the
 container.
 
-Protect `main` and require the Conventional Commits title check. If tag or
-branch rules restrict automation, allow the installed release App to update
-`release/next` and create `v*` tags.
+Protect `main`, require pull requests, allow only squash merges (disable merge
+commits and rebase merges), and configure the squash commit subject to use the
+PR title. Require the stable **Validate title** check. The Conventional Commits
+title check only drives release calculation correctly when that validated title
+becomes the commit subject on `main`.
+
+Protect `release/next` so only the installed release App can force-push it. If
+the release PR falls behind `main`, refresh it by running **Prepare release PR**
+before merging rather than bypassing the required checks.
 
 Configure the `v*` tag rules as immutable: only the release App may create
 release tags, and existing release tags must not be updated or deleted.
+
+Require the stable aggregate checks **CLI release gate** and **Server release
+gate** on `main`. Review and update pinned action commit SHAs deliberately when
+upgrading release dependencies. The version comments beside each SHA are
+informational; the SHA is the security boundary.
 
 After the first container publication, make the `chaba2/textbin` package public
 in GitHub's package settings as described in the self-hosting guide.
@@ -86,6 +97,14 @@ Conventional Commit notes, adds a link comparing the previous and current tags,
 and creates the GitHub Release with those artifacts. Creating the Release
 triggers the GHCR workflow, which publishes the multi-architecture image and
 provenance attestation.
+
+The image publisher always publishes full-version and commit-SHA tags. Floating
+aliases advance independently: `latest` only for the newest stable version
+overall, the major alias only for the newest stable release in that major line,
+and the minor alias only for the newest stable patch in that minor line.
+Rerunning an older release therefore cannot move an alias backward, while a
+maintained older major line can still advance. Prereleases never update
+floating aliases.
 
 ```text
 main changes
