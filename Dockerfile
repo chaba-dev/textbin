@@ -1,5 +1,5 @@
-ARG ELIXIR_IMAGE=elixir:1.20.2-otp-28-slim
-ARG RUNTIME_IMAGE=debian:trixie-slim
+ARG ELIXIR_IMAGE=elixir:1.20.2-otp-28-slim@sha256:b5503ad58b44f202200fafd33405d904e7ad16ea68df2b1f60998dead3240e87
+ARG RUNTIME_IMAGE=debian:trixie-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258
 
 FROM ${ELIXIR_IMAGE} AS builder
 

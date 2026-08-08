@@ -31,6 +31,19 @@ defmodule Textbin.ConfigTest do
     assert docker_compose =~ ~s(- "#{test_port}:5432")
   end
 
+  test "Phoenix and Cargo release versions stay synchronized" do
+    mix_project = File.read!("mix.exs")
+    cargo_workspace = File.read!("Cargo.toml")
+
+    assert [mix_version] =
+             Regex.run(~r/^\s*version:\s*"([^"]+)"/m, mix_project, capture: :all_but_first)
+
+    assert [cargo_version] =
+             Regex.run(~r/^version\s*=\s*"([^"]+)"/m, cargo_workspace, capture: :all_but_first)
+
+    assert mix_version == cargo_version
+  end
+
   test "production uses only HTTP when direct TLS is not configured" do
     endpoint = production_endpoint_config()
 

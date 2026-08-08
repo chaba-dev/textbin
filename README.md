@@ -26,6 +26,9 @@ command plus writable locations for local paste storage and staged uploads. See
 the [self-hosting guide](docs/self-hosting.md) for the image contract, storage
 configuration, backup boundaries, and upgrade procedure.
 
+Maintainers can find the automated release PR, tagging, release-note, and
+container publication process in the [release guide](docs/releasing.md).
+
 ## API binary content
 
 API v1 returns UTF-8 textual paste bodies in `data`. Arbitrary binary bodies use

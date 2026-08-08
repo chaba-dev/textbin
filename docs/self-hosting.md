@@ -4,6 +4,22 @@ Textbin ships as a portable OCI image. The image does not assume Docker
 Compose, a particular orchestrator, an ingress controller, or how secrets and
 persistent storage are provided.
 
+Stable and prerelease images are published from GitHub Releases as:
+
+```text
+ghcr.io/chaba2/textbin:<version>
+```
+
+Images support `linux/amd64` and `linux/arm64`. Pin an exact semantic-version
+tag or, for reproducible deployments, the published manifest digest. Stable
+releases also update the matching major and minor tags plus `latest`;
+prereleases update only their complete version and commit-SHA tags.
+
+GitHub creates a new GHCR package as private. Before announcing the first public
+release, the repository owner must change the `chaba2/textbin` package visibility
+to public in GitHub's package settings. Until that one-time step is complete,
+pulling the image requires GHCR authentication.
+
 ## Runtime contract
 
 The server runs as the unprivileged `textbin` user with numeric UID and GID
