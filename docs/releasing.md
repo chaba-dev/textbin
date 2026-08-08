@@ -34,6 +34,9 @@ Protect `main` and require the Conventional Commits title check. If tag or
 branch rules restrict automation, allow the installed release App to update
 `release/next` and create `v*` tags.
 
+Configure the `v*` tag rules as immutable: only the release App may create
+release tags, and existing release tags must not be updated or deleted.
+
 After the first container publication, make the `chaba2/textbin` package public
 in GitHub's package settings as described in the self-hosting guide.
 
@@ -57,11 +60,14 @@ also be refreshed manually with the **Prepare release PR** workflow.
 Review the generated version, changelog, notes, and comparison. Do not manually
 edit the generated release branch; the next `main` push replaces it.
 
-The release PR also builds the production CLI and OTP release. Its release smoke
-test reads the version embedded in each artifact and requires both versions to
-match the version in the release PR title. Require the **Verify CLI and server
-release versions** check in the `main` branch ruleset so a failed artifact check
-cannot be bypassed accidentally.
+The release PR uses `dist` to build and execute the packaged CLI for Linux
+x86-64 and ARM64, macOS Intel and Apple Silicon, and Windows x86-64. Separate
+container checks build and execute the production server image for
+`linux/amd64` and `linux/arm64`. Every artifact must report the version in the
+release PR title. Require the stable aggregate checks **CLI release gate** and
+**Server release gate** in the `main` branch ruleset; they cover every dynamic
+platform job plus installer and checksum generation without making the ruleset
+depend on matrix-generated check names.
 
 Merging the internal `release/next` PR starts a privileged but narrowly gated
 workflow. It verifies that:
@@ -74,18 +80,37 @@ workflow. It verifies that:
 It then creates the tag at the actual PR merge commit. An existing tag is a
 clean no-op.
 
-The App-authenticated tag push generates the final Conventional Commit notes,
-adds a link comparing the previous and current tags, and creates the GitHub
-Release. Creating the Release triggers the GHCR workflow, which publishes the
-multi-architecture image and provenance attestation.
+The App-authenticated tag push rebuilds the complete CLI matrix, produces shell
+and PowerShell installers and SHA-256 checksums, generates the final
+Conventional Commit notes, adds a link comparing the previous and current tags,
+and creates the GitHub Release with those artifacts. Creating the Release
+triggers the GHCR workflow, which publishes the multi-architecture image and
+provenance attestation.
 
 ```text
 main changes
     -> release/next PR
     -> vMAJOR.MINOR.PATCH tag
-    -> GitHub Release with notes and tag comparison
-    -> ghcr.io/chaba2/textbin
+    -> GitHub Release with CLI artifacts, notes, and tag comparison
+    -> ghcr.io/chaba2/textbin (linux/amd64 and linux/arm64)
 ```
+
+## Published CLI platforms
+
+`dist` is pinned in `Cargo.toml` and treats that target list as the source of
+truth for both release-PR dry runs and tagged releases:
+
+| Platform | Rust target | Archive |
+|----------|-------------|---------|
+| Linux x86-64 | `x86_64-unknown-linux-gnu` | `.tar.xz` |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` | `.tar.xz` |
+| macOS Intel | `x86_64-apple-darwin` | `.tar.xz` |
+| macOS Apple Silicon | `aarch64-apple-darwin` | `.tar.xz` |
+| Windows x86-64 | `x86_64-pc-windows-msvc` | `.zip` |
+
+The GitHub Release also contains per-archive checksums, a combined checksum
+file, and shell and PowerShell installers. Windows ARM64 and 32-bit platforms
+are not currently release targets.
 
 ## Local preview
 

@@ -1,42 +1,51 @@
 ---
-name: Create GitHub release
+name: Release artifacts
 
 "on":
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     tags:
       - "v*.*.*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: create-release-${{ github.ref }}
+  group: release-artifacts-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Create GitHub release
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    environment: RELEASE
+  plan:
+    name: Plan CLI artifacts
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      github.event.pull_request.head.ref == 'release/next' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-22.04
+    outputs:
+      manifest: ${{ steps.plan.outputs.manifest }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      publishing: ${{ github.event_name == 'push' }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
-      - name: Create release app token
-        id: release-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
-      - name: Checkout tagged release
-        uses: actions/checkout@v4
+      - name: Checkout release candidate
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.ref }}
+          persist-credentials: false
+          ref: ${{ github.sha }}
 
-      - name: Validate tagged version
+      - name: Validate release version
         id: version
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
         run: |
           mix_version=$(sed -nE 's/^[[:space:]]*version:[[:space:]]*"([^"]+)",?[[:space:]]*$/\1/p' mix.exs)
           cargo_version=$(sed -nE 's/^version[[:space:]]*=[[:space:]]*"([^"]+)"[[:space:]]*$/\1/p' Cargo.toml)
@@ -46,8 +55,23 @@ jobs:
             exit 1
           fi
 
-          if [ "$RELEASE_TAG" != "v$mix_version" ]; then
-            echo "::error::Tag $RELEASE_TAG does not match project version $mix_version"
+          if [[ ! "$mix_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::Project version is not strict SemVer: $mix_version"
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [[ ! "$PR_TITLE" =~ ^chore\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              echo "::error::Invalid release PR title: $PR_TITLE"
+              exit 1
+            fi
+            release_tag="v${BASH_REMATCH[1]}"
+          else
+            release_tag=$REF_NAME
+          fi
+
+          if [ "$release_tag" != "v$mix_version" ]; then
+            echo "::error::$release_tag does not match project version $mix_version"
             exit 1
           fi
 
@@ -57,8 +81,253 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$mix_version" >> "$GITHUB_OUTPUT"
+
+      - name: Install dist
+        shell: bash
+        run: >-
+          curl --proto '=https' --tlsv1.2 -LsSf
+          https://github.com/axodotdev/cargo-dist/releases/download/v0.31.0/cargo-dist-installer.sh
+          | sh
+
+      - name: Cache dist executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: cargo-dist-cache
+          path: ~/.cargo/bin/dist
+
+      - name: Plan artifacts
+        id: plan
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          dist plan --tag="$RELEASE_TAG" --output-format=json > plan-dist-manifest.json
+          echo "manifest=$(jq -c '.' plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact plan
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-plan-dist-manifest
+          path: plan-dist-manifest.json
+
+  build-cli:
+    name: CLI (${{ join(matrix.targets, ', ') }})
+    needs: plan
+    if: fromJson(needs.plan.outputs.manifest).ci.github.artifacts_matrix.include != null
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.manifest).ci.github.artifacts_matrix }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container && matrix.container.image || null }}
+    env:
+      BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+
+    steps:
+      - name: Enable Windows long paths
+        run: git config --global core.longpaths true
+
+      - name: Checkout release candidate
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Install Rust in build container
+        if: matrix.container
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ join(matrix.targets, '-') }}
+          cache-provider: ${{ matrix.cache_provider }}
+
+      - name: Install dist
+        run: ${{ matrix.install_dist.run }}
+
+      - name: Install platform dependencies
+        run: |
+          ${{ matrix.packages_install }}
+
+      - name: Build CLI archive
+        run: >-
+          dist build --tag=${{ needs.plan.outputs.tag }} --print=linkage --output-format=json
+          ${{ matrix.dist_args }} > dist-manifest.json
+
+      - name: Smoke test packaged CLI version
+        env:
+          EXPECTED_VERSION: ${{ needs.plan.outputs.version }}
+          TARGETS: ${{ join(matrix.targets, ' ') }}
+        shell: bash
+        run: |
+          read -ra targets <<< "$TARGETS"
+          if [ "${#targets[@]}" -ne 1 ]; then
+            echo "::error::Version smoke tests require one target per dist build job"
+            exit 1
+          fi
+          target=${targets[0]}
+
+          executable="target/distrib/textbin-${target}/textbin"
+          if [[ "$target" == *-windows-* ]]; then
+            executable="${executable}.exe"
+          fi
+
+          reported_version=$("$executable" --version)
+          echo "$target: $reported_version"
+
+          if [ "$reported_version" != "textbin $EXPECTED_VERSION" ]; then
+            echo "::error::$target reports an unexpected version: $reported_version"
+            exit 1
+          fi
+
+      - name: Collect CLI artifact paths
+        id: dist
+        env:
+          BUILD_MANIFEST_NAME: ${{ env.BUILD_MANIFEST_NAME }}
+        shell: bash
+        run: |
+          {
+            echo "paths<<EOF"
+            dist print-upload-files-from-manifest --manifest dist-manifest.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-build-cli-${{ join(matrix.targets, '_') }}
+          path: |
+            ${{ steps.dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+
+  build-installers:
+    name: Build CLI installers and checksums
+    needs: [plan, build-cli]
+    runs-on: ubuntu-22.04
+    env:
+      BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
+
+    steps:
+      - name: Checkout release candidate
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Install cached dist
+        uses: actions/download-artifact@v7
+        with:
+          name: cargo-dist-cache
+          path: ~/.cargo/bin
+
+      - name: Make dist executable
+        run: chmod +x ~/.cargo/bin/dist
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: target/distrib
+          merge-multiple: true
+
+      - name: Build global artifacts
+        id: dist
+        shell: bash
+        run: |
+          dist build --tag=${{ needs.plan.outputs.tag }} --artifacts=global --output-format=json > dist-manifest.json
+          {
+            echo "paths<<EOF"
+            jq --raw-output '.upload_files[]' dist-manifest.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+
+      - name: Upload global CLI artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-build-global
+          path: |
+            ${{ steps.dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+
+  cli-gate:
+    name: CLI release gate
+    needs: [plan, build-cli, build-installers]
+    if: always()
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Require the complete release matrix
+        env:
+          APPLICABLE: >-
+            ${{ github.event_name == 'push' ||
+            (github.event.pull_request.base.ref == github.event.repository.default_branch &&
+            github.event.pull_request.head.ref == 'release/next' &&
+            github.event.pull_request.head.repo.full_name == github.repository) }}
+          INSTALLERS_RESULT: ${{ needs.build-installers.result }}
+          MATRIX_RESULT: ${{ needs.build-cli.result }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+        run: |
+          if [ "$APPLICABLE" != "true" ]; then
+            echo "CLI release checks do not apply to this pull request"
+            exit 0
+          fi
+
+          if [ "$PLAN_RESULT" != "success" ] || \
+             [ "$MATRIX_RESULT" != "success" ] || \
+             [ "$INSTALLERS_RESULT" != "success" ]; then
+            echo "::error::CLI release checks did not all succeed"
+            printf 'Plan: %s\nMatrix: %s\nInstallers: %s\n' \
+              "$PLAN_RESULT" "$MATRIX_RESULT" "$INSTALLERS_RESULT"
+            exit 1
+          fi
+
+  release:
+    name: Create GitHub release
+    needs: [plan, build-cli, build-installers, cli-gate]
+    if: github.event_name == 'push'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: RELEASE
+
+    steps:
+      - name: Checkout tagged release
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Verify release tag target
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          actual_sha=$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")
+
+          if [ "$actual_sha" != "$EXPECTED_SHA" ]; then
+            echo "::error::$RELEASE_TAG points to $actual_sha, expected $EXPECTED_SHA"
+            exit 1
+          fi
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Remove internal dist manifests
+        run: rm -f artifacts/*-dist-manifest.json
+
       - name: Generate conventional release notes
-        id: release-notes
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
@@ -69,10 +338,9 @@ jobs:
 
       - name: Add tag comparison to release notes
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
           previous_tag=$(git describe --tags --abbrev=0 --match 'v*' "$RELEASE_TAG^" 2>/dev/null || true)
-
           cat RELEASE_NOTES.md > RELEASE_BODY.md
           printf '\n## Compare\n\n' >> RELEASE_BODY.md
 
@@ -83,10 +351,29 @@ jobs:
             printf 'This is the first tagged release; no previous tag is available.\n' >> RELEASE_BODY.md
           fi
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+      - name: Create release app token
+        id: release-token
+        uses: actions/create-github-app-token@v2
         with:
-          token: ${{ steps.release-token.outputs.token }}
-          tag_name: ${{ github.ref_name }}
-          body_path: RELEASE_BODY.md
-          prerelease: ${{ steps.version.outputs.prerelease }}
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+          PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          args=(
+            "$RELEASE_TAG"
+            artifacts/*
+            --verify-tag
+            --title "Textbin $RELEASE_TAG"
+            --notes-file RELEASE_BODY.md
+          )
+
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "${args[@]}"

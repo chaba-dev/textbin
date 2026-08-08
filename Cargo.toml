@@ -6,6 +6,28 @@ resolver = "3"
 version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
+repository = "https://github.com/chaba2/textbin"
+
+[workspace.metadata.dist]
+allow-dirty = ["ci"]
+cargo-dist-version = "0.31.0"
+ci = "github"
+github-release = "announce"
+hosting = "github"
+installers = ["shell", "powershell"]
+packages = ["textbin"]
+pr-run-mode = "upload"
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 [workspace.dependencies]
 anyhow = "1.0.100"
