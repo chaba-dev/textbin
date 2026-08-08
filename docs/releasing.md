@@ -57,6 +57,12 @@ also be refreshed manually with the **Prepare release PR** workflow.
 Review the generated version, changelog, notes, and comparison. Do not manually
 edit the generated release branch; the next `main` push replaces it.
 
+The release PR also builds the production CLI and OTP release. Its release smoke
+test reads the version embedded in each artifact and requires both versions to
+match the version in the release PR title. Require the **Verify CLI and server
+release versions** check in the `main` branch ruleset so a failed artifact check
+cannot be bypassed accidentally.
+
 Merging the internal `release/next` PR starts a privileged but narrowly gated
 workflow. It verifies that:
 
