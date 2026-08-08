@@ -24,6 +24,7 @@ jobs:
   preflight:
     name: Check release credentials
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: RELEASE
     outputs:
       available: ${{ steps.credentials.outputs.available }}
     steps:
@@ -52,6 +53,7 @@ jobs:
     needs: preflight
     if: needs.preflight.outputs.available == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: RELEASE
 
     steps:
       - name: Checkout main with complete history

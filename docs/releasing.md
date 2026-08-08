@@ -12,12 +12,18 @@ permissions:
 - Contents: read and write
 - Pull requests: read and write
 
-Store its credentials as repository Actions secrets:
+Create a GitHub Actions environment named `RELEASE`, then store the App
+credentials as secrets in that environment:
 
 ```text
 RELEASE_APP_ID
 RELEASE_APP_PRIVATE_KEY
 ```
+
+The release workflows explicitly target the `RELEASE` environment so GitHub
+makes these environment-scoped secrets available to their jobs. Environment
+protection rules, if configured, also apply to release preparation and
+publication.
 
 The automation intentionally uses an installation token instead of
 `GITHUB_TOKEN`. Branch and tag pushes made with `GITHUB_TOKEN` do not trigger the
