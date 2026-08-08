@@ -10,6 +10,7 @@ name: Release artifacts
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: release-artifacts-${{ github.event.pull_request.number || github.ref }}
