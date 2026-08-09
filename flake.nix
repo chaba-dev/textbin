@@ -54,6 +54,7 @@
             yaml-language-server
 
             # Tools
+            inotify-tools
             watchman
             docker-compose
             yamllint
