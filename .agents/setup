@@ -21,26 +21,48 @@ if ((${#missing_packages[@]})); then
 fi
 
 step "Installing Nix"
-if ! command -v nix >/dev/null 2>&1 && [ ! -x "$HOME/.nix-profile/bin/nix" ]; then
+if [ ! -x "$HOME/.nix-profile/bin/nix" ] && ! command -v nix >/dev/null 2>&1; then
   curl --proto '=https' --tlsv1.2 --silent --show-error --location \
     https://nixos.org/nix/install | sh -s -- --no-daemon --yes
 fi
 
 # The installer cannot update this script's environment.
-# shellcheck disable=SC1091
-source "$HOME/.nix-profile/etc/profile.d/nix.sh"
-nix_bin="$HOME/.nix-profile/bin/nix"
+if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+  # shellcheck disable=SC1091
+  source "$HOME/.nix-profile/etc/profile.d/nix.sh"
+fi
+
+if [ -x "$HOME/.nix-profile/bin/nix" ]; then
+  nix_bin="$HOME/.nix-profile/bin/nix"
+else
+  nix_bin="$(command -v nix)"
+fi
+
 nix_args=(--extra-experimental-features "nix-command flakes")
 
 step "Persisting the Nix development shell for Amp login shells"
 profile_marker="# textbin Nix development shell"
-if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+profile_end_marker="# end textbin Nix development shell"
+
+if grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null &&
+     ! grep -Fqx "$profile_end_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  sed -i "/^${profile_marker//\//\\/}$/,+4d" "$HOME/.bash_profile"
+fi
+
+if ! grep -Fqx "$profile_end_marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >> "$HOME/.bash_profile" <<EOF
 
 $profile_marker
 if [[ -z "\${IN_NIX_SHELL:-}" && "\${PWD}" == "$repo_root" ]]; then
   eval "\$("$nix_bin" --extra-experimental-features 'nix-command flakes' print-dev-env "$repo_root")"
+  export MIX_ENV=dev
+  export DATABASE_HOST=127.0.0.1
+  export DATABASE_PORT=5433
+  export DATABASE_USER=postgres
+  export DATABASE_PASSWORD=postgres
+  export DATABASE_NAME=textbin_dev
 fi
+$profile_end_marker
 EOF
 fi
 
@@ -66,13 +88,16 @@ if ! "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command \
 fi
 
 step "Installing application dependencies and preparing the database"
-"$nix_bin" "${nix_args[@]}" develop "$repo_root" --command bash -c '
+"$nix_bin" "${nix_args[@]}" develop "$repo_root" --command env \
+  MIX_ENV=dev DATABASE_HOST=127.0.0.1 DATABASE_PORT=5433 DATABASE_USER=postgres \
+  DATABASE_PASSWORD=postgres DATABASE_NAME=textbin_dev bash -euc '
   mix local.hex --force
   mix local.rebar --force
   mix setup
 '
 
 step "Verifying the persisted development environment"
+# shellcheck disable=SC2016 # $1 is intentionally expanded by the clean login shell.
 env -i HOME="$HOME" LANG=C.UTF-8 LC_ALL=C.UTF-8 PATH="/usr/bin:/bin" TERM="${TERM:-dumb}" \
   /bin/bash -lc 'cd "$1" && command -v mix && command -v cargo && mix --version >/dev/null && cargo --version >/dev/null' \
   bash "$repo_root"

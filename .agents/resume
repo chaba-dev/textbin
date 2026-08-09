@@ -4,9 +4,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 postgres_data_dir="$repo_root/.nix/postgres"
 postgres_socket_dir="$repo_root/.nix/postgres-socket"
-nix_bin="$HOME/.nix-profile/bin/nix"
 
-if [ ! -x "$nix_bin" ] || [ ! -s "$postgres_data_dir/PG_VERSION" ]; then
+if [ -x "$HOME/.nix-profile/bin/nix" ]; then
+  nix_bin="$HOME/.nix-profile/bin/nix"
+elif command -v nix >/dev/null 2>&1; then
+  nix_bin="$(command -v nix)"
+else
+  exit 0
+fi
+
+if [ ! -s "$postgres_data_dir/PG_VERSION" ]; then
   exit 0
 fi
 
