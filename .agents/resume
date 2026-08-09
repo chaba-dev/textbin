@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+postgres_data_dir="$repo_root/.nix/postgres"
+postgres_socket_dir="$repo_root/.nix/postgres-socket"
+nix_bin="$HOME/.nix-profile/bin/nix"
+
+if [ ! -x "$nix_bin" ] || [ ! -s "$postgres_data_dir/PG_VERSION" ]; then
+  exit 0
+fi
+
+mkdir -p "$postgres_socket_dir"
+
+if ! "$nix_bin" --extra-experimental-features "nix-command flakes" develop "$repo_root" --command \
+  pg_ctl --pgdata="$postgres_data_dir" status >/dev/null 2>&1; then
+  "$nix_bin" --extra-experimental-features "nix-command flakes" develop "$repo_root" --command \
+    pg_ctl --pgdata="$postgres_data_dir" --wait start \
+      --options="-p 5433 -h 127.0.0.1 -k $postgres_socket_dir"
+fi

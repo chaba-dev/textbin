@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+  printf '\n==> %s\n' "$1"
+}
+
+step "Installing Nix prerequisites"
+missing_packages=()
+for package in ca-certificates curl git xz-utils; do
+  dpkg-query --show --showformat='${db:Status-Status}' "$package" 2>/dev/null | grep -qx installed ||
+    missing_packages+=("$package")
+done
+
+if ((${#missing_packages[@]})); then
+  sudo apt-get update
+  sudo apt-get install --yes "${missing_packages[@]}"
+fi
+
+step "Installing Nix"
+if ! command -v nix >/dev/null 2>&1 && [ ! -x "$HOME/.nix-profile/bin/nix" ]; then
+  curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+    https://nixos.org/nix/install | sh -s -- --no-daemon --yes
+fi
+
+# The installer cannot update this script's environment.
+# shellcheck disable=SC1091
+source "$HOME/.nix-profile/etc/profile.d/nix.sh"
+nix_bin="$HOME/.nix-profile/bin/nix"
+nix_args=(--extra-experimental-features "nix-command flakes")
+
+step "Persisting the Nix development shell for Amp login shells"
+profile_marker="# textbin Nix development shell"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<EOF
+
+$profile_marker
+if [[ -z "\${IN_NIX_SHELL:-}" && "\${PWD}" == "$repo_root" ]]; then
+  eval "\$("$nix_bin" --extra-experimental-features 'nix-command flakes' print-dev-env "$repo_root")"
+fi
+EOF
+fi
+
+step "Building the Nix development shell"
+"$nix_bin" "${nix_args[@]}" develop "$repo_root" --command true
+
+step "Starting PostgreSQL"
+postgres_data_dir="$repo_root/.nix/postgres"
+postgres_socket_dir="$repo_root/.nix/postgres-socket"
+mkdir -p "$repo_root/.nix"
+mkdir -p "$postgres_socket_dir"
+
+if [ ! -s "$postgres_data_dir/PG_VERSION" ]; then
+  "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command \
+    initdb --pgdata="$postgres_data_dir" --username=postgres --auth=trust
+fi
+
+if ! "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command \
+  pg_ctl --pgdata="$postgres_data_dir" status >/dev/null 2>&1; then
+  "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command \
+    pg_ctl --pgdata="$postgres_data_dir" --wait start \
+      --options="-p 5433 -h 127.0.0.1 -k $postgres_socket_dir"
+fi
+
+step "Installing application dependencies and preparing the database"
+"$nix_bin" "${nix_args[@]}" develop "$repo_root" --command bash -c '
+  mix local.hex --force
+  mix local.rebar --force
+  mix setup
+'
+
+step "Verifying the persisted development environment"
+env -i HOME="$HOME" LANG=C.UTF-8 LC_ALL=C.UTF-8 PATH="/usr/bin:/bin" TERM="${TERM:-dumb}" \
+  /bin/bash -lc 'cd "$1" && command -v mix && command -v cargo && mix --version >/dev/null && cargo --version >/dev/null' \
+  bash "$repo_root"
