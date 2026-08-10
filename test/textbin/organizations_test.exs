@@ -2,6 +2,7 @@ defmodule Textbin.OrganizationsTest do
   use Textbin.DataCase
 
   alias Textbin.Accounts.User
+  alias Textbin.Accounts.Scope
   alias Textbin.Organizations
   alias Textbin.Organizations.OrganizationMembership
   alias Textbin.Organizations.Workspace
@@ -25,6 +26,28 @@ defmodule Textbin.OrganizationsTest do
       assert workspace_membership.user_id == user.id
       assert workspace_membership.role == "owner"
     end
+
+    test "migration locks user writes before backfill and trigger installation" do
+      migration =
+        File.read!(
+          Path.expand(
+            "../../priv/repo/migrations/20260810090000_create_organizations_and_workspaces.exs",
+            __DIR__
+          )
+        )
+
+      {lock_position, _length} =
+        :binary.match(migration, "LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+
+      [{backfill_position, _length} | _rest] =
+        :binary.matches(migration, "backfill_personal_organizations()")
+
+      [{trigger_position, _length} | _rest] =
+        :binary.matches(migration, "create_user_provisioning_trigger()")
+
+      assert lock_position < backfill_position
+      assert backfill_position < trigger_position
+    end
   end
 
   describe "create_organization/2" do
@@ -32,7 +55,7 @@ defmodule Textbin.OrganizationsTest do
       creator = user_fixture()
 
       assert {:ok, organization} =
-               Organizations.create_organization(creator, %{
+               Organizations.create_organization(Scope.for_user(creator), %{
                  name: "Acme",
                  slug: "acme"
                })
@@ -61,7 +84,10 @@ defmodule Textbin.OrganizationsTest do
       creator = user_fixture()
 
       assert {:error, changeset} =
-               Organizations.create_organization(creator, %{name: "Acme", slug: "Not Valid"})
+               Organizations.create_organization(Scope.for_user(creator), %{
+                 name: "Acme",
+                 slug: "Not Valid"
+               })
 
       assert %{slug: ["has invalid format"]} = errors_on(changeset)
       assert Repo.aggregate(OrganizationMembership, :count) == 1
@@ -74,7 +100,10 @@ defmodule Textbin.OrganizationsTest do
       Repo.delete!(creator)
 
       assert {:error, changeset} =
-               Organizations.create_organization(creator, %{name: "Acme", slug: "acme"})
+               Organizations.create_organization(Scope.for_user(creator), %{
+                 name: "Acme",
+                 slug: "acme"
+               })
 
       assert %{user_id: ["does not exist"]} = errors_on(changeset)
       assert Repo.aggregate(OrganizationMembership, :count) == 0
@@ -88,12 +117,17 @@ defmodule Textbin.OrganizationsTest do
       member = user_fixture()
 
       {:ok, organization} =
-        Organizations.create_organization(creator, %{name: "Acme", slug: "acme"})
+        Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
 
       [workspace] = organization.workspaces
 
       assert {:ok, memberships} =
-               Organizations.add_organization_member(organization, member, "admin")
+               Organizations.add_organization_member(
+                 Scope.for_user(creator),
+                 organization,
+                 member,
+                 "admin"
+               )
 
       assert memberships.organization.organization_id == organization.id
       assert memberships.organization.user_id == member.id
@@ -101,6 +135,7 @@ defmodule Textbin.OrganizationsTest do
       assert memberships.workspace.workspace_id == workspace.id
       assert memberships.workspace.user_id == member.id
       assert memberships.workspace.role == "member"
+      assert memberships.workspace.created_by_id == creator.id
     end
 
     test "rejects duplicate membership without duplicating the workspace membership" do
@@ -108,12 +143,18 @@ defmodule Textbin.OrganizationsTest do
       member = user_fixture()
 
       {:ok, organization} =
-        Organizations.create_organization(creator, %{name: "Acme", slug: "acme"})
+        Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
 
       [workspace] = organization.workspaces
 
-      assert {:ok, _memberships} = Organizations.add_organization_member(organization, member)
-      assert {:error, changeset} = Organizations.add_organization_member(organization, member)
+      scope = Scope.for_user(creator)
+
+      assert {:ok, _memberships} =
+               Organizations.add_organization_member(scope, organization, member)
+
+      assert {:error, changeset} =
+               Organizations.add_organization_member(scope, organization, member)
+
       assert %{organization_id: ["has already been taken"]} = errors_on(changeset)
 
       assert Repo.aggregate(
@@ -130,17 +171,97 @@ defmodule Textbin.OrganizationsTest do
       member = user_fixture()
 
       {:ok, organization} =
-        Organizations.create_organization(creator, %{name: "Acme", slug: "acme"})
+        Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
 
       Repo.delete!(organization)
 
-      assert {:error, changeset} = Organizations.add_organization_member(organization, member)
-      assert %{organization_id: ["does not exist"]} = errors_on(changeset)
+      assert {:error, :not_found} =
+               Organizations.add_organization_member(
+                 Scope.for_user(creator),
+                 organization,
+                 member
+               )
 
       refute Repo.get_by(OrganizationMembership,
                organization_id: organization.id,
                user_id: member.id
              )
+    end
+
+    test "rejects an ordinary organization member" do
+      creator = user_fixture()
+      ordinary_member = user_fixture()
+      target = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
+
+      assert {:ok, _memberships} =
+               Organizations.add_organization_member(
+                 Scope.for_user(creator),
+                 organization,
+                 ordinary_member
+               )
+
+      assert {:error, :unauthorized} =
+               Organizations.add_organization_member(
+                 Scope.for_user(ordinary_member),
+                 organization,
+                 target
+               )
+
+      refute Repo.get_by(OrganizationMembership,
+               organization_id: organization.id,
+               user_id: target.id
+             )
+    end
+
+    test "does not reveal an organization to a non-member" do
+      creator = user_fixture()
+      non_member = user_fixture()
+      target = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
+
+      assert {:error, :not_found} =
+               Organizations.add_organization_member(
+                 Scope.for_user(non_member),
+                 organization,
+                 target
+               )
+
+      refute Repo.get_by(OrganizationMembership,
+               organization_id: organization.id,
+               user_id: target.id
+             )
+    end
+
+    test "allows an organization admin to add a member" do
+      creator = user_fixture()
+      admin = user_fixture()
+      target = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
+
+      assert {:ok, _memberships} =
+               Organizations.add_organization_member(
+                 Scope.for_user(creator),
+                 organization,
+                 admin,
+                 "admin"
+               )
+
+      assert {:ok, memberships} =
+               Organizations.add_organization_member(
+                 Scope.for_user(admin),
+                 organization,
+                 target
+               )
+
+      assert memberships.organization.user_id == target.id
+      assert memberships.workspace.created_by_id == admin.id
     end
   end
 end

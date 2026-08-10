@@ -100,6 +100,11 @@ defmodule Textbin.Repo.Migrations.CreateOrganizationsAndWorkspaces do
              check: "role IN ('owner', 'member')"
            )
 
+    # Block legacy instances from inserting a user between the backfill snapshot
+    # and trigger installation. Waiting inserts resume with the trigger active
+    # after this transactional migration commits.
+    execute "LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE"
+
     backfill_personal_organizations()
     create_user_provisioning_trigger()
   end

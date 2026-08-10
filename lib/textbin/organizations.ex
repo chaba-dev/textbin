@@ -9,7 +9,7 @@ defmodule Textbin.Organizations do
 
   import Ecto.Query, warn: false
 
-  alias Textbin.Accounts.User
+  alias Textbin.Accounts.{Scope, User}
   alias Textbin.Organizations.Organization
   alias Textbin.Organizations.OrganizationMembership
   alias Textbin.Organizations.Workspace
@@ -19,7 +19,7 @@ defmodule Textbin.Organizations do
   @doc """
   Creates a team organization and its default workspace for the creator.
   """
-  def create_organization(%User{} = creator, attrs) do
+  def create_organization(%Scope{user: %User{} = creator}, attrs) do
     organization_changeset =
       %Organization{kind: "team"}
       |> Organization.changeset(attrs)
@@ -60,22 +60,41 @@ defmodule Textbin.Organizations do
   Adds a user to an organization and its default workspace atomically.
   """
   def add_organization_member(
+        %Scope{user: %User{id: actor_id}},
         %Organization{id: organization_id},
         %User{} = user,
         role \\ "member"
       ) do
     Repo.transact(fn ->
-      with {:ok, organization_membership} <-
+      with :ok <- authorize_membership_management(organization_id, actor_id),
+           {:ok, organization_membership} <-
              insert_organization_membership(organization_id, user.id, role),
            %Workspace{} = workspace <- get_default_workspace(organization_id),
            {:ok, workspace_membership} <-
-             insert_workspace_membership(workspace.id, user.id, "member", nil) do
+             insert_workspace_membership(workspace.id, user.id, "member", actor_id) do
         {:ok, %{organization: organization_membership, workspace: workspace_membership}}
       else
         nil -> {:error, :default_workspace_not_found}
         {:error, reason} -> {:error, reason}
       end
     end)
+  end
+
+  defp authorize_membership_management(organization_id, actor_id) do
+    membership =
+      Repo.one(
+        from membership in OrganizationMembership,
+          where:
+            membership.organization_id == ^organization_id and
+              membership.user_id == ^actor_id,
+          lock: "FOR SHARE"
+      )
+
+    case membership do
+      %OrganizationMembership{role: role} when role in ["owner", "admin"] -> :ok
+      %OrganizationMembership{} -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
   end
 
   defp create_with_default_workspace(organization_changeset, creator) do
