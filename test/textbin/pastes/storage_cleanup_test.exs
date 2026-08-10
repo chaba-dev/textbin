@@ -6,6 +6,7 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
+  alias Textbin.Organizations
   alias Textbin.Repo
   alias Textbin.Storage
 
@@ -74,6 +75,16 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     assert_raise Textbin.Storage.IntegrityError, ~r/integrity check failed/, fn ->
       Pastes.get_paste!(context.scope, paste.id)
     end
+  end
+
+  test "workspace deletion cannot bypass blob cleanup", context do
+    {:ok, paste} = Pastes.create_paste(context.scope, %{data: "retained blob"})
+    organization = Organizations.get_personal_organization!(context.scope.user)
+
+    assert_raise Ecto.ConstraintError, fn -> Repo.delete!(organization) end
+
+    assert Repo.get(Paste, paste.id)
+    assert Storage.get(paste.storage_key) == {:ok, "retained blob"}
   end
 
   defp expire!(paste) do

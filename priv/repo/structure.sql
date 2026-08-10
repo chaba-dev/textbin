@@ -70,6 +70,30 @@ END;
 $$;
 
 
+--
+-- Name: sync_paste_workspace_ownership(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_paste_workspace_ownership() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.created_by_user_id := COALESCE(NEW.created_by_user_id, NEW.user_id);
+  NEW.user_id := COALESCE(NEW.user_id, NEW.created_by_user_id);
+
+  IF NEW.workspace_id IS NULL THEN
+    SELECT workspace.id INTO NEW.workspace_id
+    FROM organizations AS organization
+    JOIN workspaces AS workspace
+      ON workspace.organization_id = organization.id AND workspace.is_default
+    WHERE organization.personal_owner_id = NEW.created_by_user_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -116,13 +140,15 @@ CREATE TABLE public.pastes (
     inserted_at timestamp(3) without time zone NOT NULL,
     updated_at timestamp(3) without time zone NOT NULL,
     syntax_highlight text DEFAULT 'plain'::text NOT NULL,
-    user_id uuid NOT NULL,
+    user_id uuid,
     expires_at timestamp(3) without time zone DEFAULT NULL::timestamp without time zone,
     visibility character varying(255) DEFAULT 'private'::character varying NOT NULL,
     storage_key character varying(255),
     size_bytes bigint,
     sha256 bytea,
     content_type character varying(255) DEFAULT 'text/plain'::character varying NOT NULL,
+    workspace_id uuid NOT NULL,
+    created_by_user_id uuid,
     CONSTRAINT pastes_content_location_check CHECK (((data IS NOT NULL) OR (storage_key IS NOT NULL))),
     CONSTRAINT pastes_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['private'::character varying, 'unlisted'::character varying, 'public'::character varying])::text[])))
 );
@@ -319,6 +345,13 @@ CREATE UNIQUE INDEX organizations_slug_index ON public.organizations USING btree
 
 
 --
+-- Name: pastes_created_by_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_created_by_user_id_index ON public.pastes USING btree (created_by_user_id);
+
+
+--
 -- Name: pastes_expires_at_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -344,6 +377,13 @@ CREATE INDEX pastes_user_id_index ON public.pastes USING btree (user_id);
 --
 
 CREATE INDEX pastes_visibility_index ON public.pastes USING btree (visibility);
+
+
+--
+-- Name: pastes_workspace_id_inserted_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_workspace_id_inserted_at_index ON public.pastes USING btree (workspace_id, inserted_at);
 
 
 --
@@ -417,6 +457,13 @@ CREATE UNIQUE INDEX workspaces_organization_id_slug_index ON public.workspaces U
 
 
 --
+-- Name: pastes pastes_sync_workspace_ownership; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER pastes_sync_workspace_ownership BEFORE INSERT ON public.pastes FOR EACH ROW EXECUTE FUNCTION public.sync_paste_workspace_ownership();
+
+
+--
 -- Name: users users_provision_personal_organization; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -448,11 +495,27 @@ ALTER TABLE ONLY public.organizations
 
 
 --
+-- Name: pastes pastes_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pastes
+    ADD CONSTRAINT pastes_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: pastes pastes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pastes
-    ADD CONSTRAINT pastes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+    ADD CONSTRAINT pastes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pastes pastes_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pastes
+    ADD CONSTRAINT pastes_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE RESTRICT;
 
 
 --
@@ -523,3 +586,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260805090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260806090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260806100000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260810090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260810120000);

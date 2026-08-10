@@ -1,7 +1,6 @@
 defmodule TextbinWeb.UI.PasteLive do
   use TextbinWeb, :live_view
 
-  alias Textbin.Accounts.{Scope, User}
   alias Textbin.Pastes
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
@@ -36,7 +35,7 @@ defmodule TextbinWeb.UI.PasteLive do
          |> assign(:page_title, "Paste #{paste.id}")
          |> assign(:paste, paste)
          |> assign(:text_content?, text_content?(paste))
-         |> assign(:owner?, owner?(socket.assigns.current_scope, paste))
+         |> assign(:owner?, Pastes.manage_paste?(socket.assigns.current_scope, paste))
          |> assign(:highlighted_paste_data, highlighted_paste_data(paste))}
 
       nil ->
@@ -45,10 +44,8 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :index}} = socket) do
-    paste = Pastes.get_paste!(socket.assigns.current_scope, id)
-
-    case Pastes.delete_paste(socket.assigns.current_scope, paste) do
-      {:ok, _paste} ->
+    case Pastes.delete_paste(socket.assigns.current_scope, %Paste{id: id}) do
+      {:ok, paste} ->
         {:noreply, stream_delete(socket, :pastes, paste)}
 
       {:error, _reason} ->
@@ -57,9 +54,7 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :show}} = socket) do
-    paste = Pastes.get_paste!(socket.assigns.current_scope, id)
-
-    case Pastes.delete_paste(socket.assigns.current_scope, paste) do
+    case Pastes.delete_paste(socket.assigns.current_scope, %Paste{id: id}) do
       {:ok, _paste} ->
         {:noreply,
          socket
@@ -128,9 +123,6 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   defp highlight_language(_paste), do: "plain"
-
-  defp owner?(%Scope{user: %User{id: user_id}}, %Paste{user_id: user_id}), do: true
-  defp owner?(_current_scope, _paste), do: false
 
   defp paste_ttl_options do
     [

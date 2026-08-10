@@ -8,6 +8,7 @@ defmodule Textbin.AccountsFixtures do
 
   alias Textbin.Accounts
   alias Textbin.Accounts.Scope
+  alias Textbin.Organizations
 
   def unique_user_email, do: "user#{System.unique_integer()}@example.com"
   def valid_user_password, do: "hello world!"
@@ -48,6 +49,10 @@ defmodule Textbin.AccountsFixtures do
 
   def user_scope_fixture(user) do
     Scope.for_user(user)
+  end
+
+  def personal_workspace_fixture(user) do
+    Organizations.get_personal_default_workspace!(user)
   end
 
   def set_password(user) do

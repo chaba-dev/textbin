@@ -8,13 +8,15 @@ defmodule Textbin.Pastes.ExpirationCleanerTest do
 
   test "run_now/1 deletes one batch and emits telemetry" do
     user = user_fixture()
+    workspace = personal_workspace_fixture(user)
 
     expired_paste =
       Repo.insert!(%Paste{
         data: "expired",
         syntax_highlight: "plain",
         visibility: "private",
-        user_id: user.id,
+        workspace_id: workspace.id,
+        created_by_user_id: user.id,
         expires_at: DateTime.add(Paste.utc_now_ms(), -1, :second)
       })
 

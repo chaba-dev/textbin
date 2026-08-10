@@ -33,7 +33,8 @@ defmodule Textbin.Pastes.Paste do
     field :expires_at, :utc_datetime_usec
     field :expires_in, :string, virtual: true
 
-    belongs_to :user, Textbin.Accounts.User
+    belongs_to :workspace, Textbin.Organizations.Workspace
+    belongs_to :created_by_user, Textbin.Accounts.User
 
     timestamps()
   end
@@ -42,12 +43,14 @@ defmodule Textbin.Pastes.Paste do
     paste
     |> cast(attrs, [:data, :content_type, :syntax_highlight, :visibility, :expires_in])
     |> put_expires_at(attrs)
-    |> validate_required([:content_type, :syntax_highlight, :visibility, :user_id])
+    |> validate_required([:content_type, :syntax_highlight, :visibility, :workspace_id])
     |> validate_content_location()
     |> validate_length(:content_type, max: 255)
     |> validate_change(:content_type, &validate_content_type/2)
     |> validate_inclusion(:visibility, @visibility_values)
     |> validate_expiration()
+    |> foreign_key_constraint(:workspace_id)
+    |> foreign_key_constraint(:created_by_user_id)
   end
 
   defp validate_content_location(changeset) do

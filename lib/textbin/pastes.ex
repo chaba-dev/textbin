@@ -12,29 +12,33 @@ defmodule Textbin.Pastes do
   alias Textbin.Repo
   alias Textbin.Storage
   alias Textbin.Storage.IntegrityError
+  alias Textbin.Organizations
+  alias Textbin.Organizations.WorkspaceMembership
 
   require Logger
 
   @default_inline_paste_bytes 8_192
   @default_max_paste_bytes 1_048_576
 
-  def list_pastes(%Scope{user: %User{id: user_id}}) do
+  def list_pastes(%Scope{user: %User{} = user}) do
     now = Paste.utc_now_ms()
+    workspace_id = personal_workspace_id(user)
 
     Repo.all(
       from p in Paste,
-        where: p.user_id == ^user_id and (is_nil(p.expires_at) or p.expires_at > ^now),
+        where: p.workspace_id == ^workspace_id and (is_nil(p.expires_at) or p.expires_at > ^now),
         order_by: [desc: p.inserted_at]
     )
     |> Enum.map(&load_data/1)
   end
 
-  def list_paste_metadata(%Scope{user: %User{id: user_id}}) do
+  def list_paste_metadata(%Scope{user: %User{} = user}) do
     now = Paste.utc_now_ms()
+    workspace_id = personal_workspace_id(user)
 
     Repo.all(
       from p in Paste,
-        where: p.user_id == ^user_id and (is_nil(p.expires_at) or p.expires_at > ^now),
+        where: p.workspace_id == ^workspace_id and (is_nil(p.expires_at) or p.expires_at > ^now),
         select:
           struct(p, [
             :id,
@@ -45,7 +49,8 @@ defmodule Textbin.Pastes do
             :syntax_highlight,
             :visibility,
             :expires_at,
-            :user_id,
+            :workspace_id,
+            :created_by_user_id,
             :inserted_at,
             :updated_at
           ]),
@@ -53,25 +58,27 @@ defmodule Textbin.Pastes do
     )
   end
 
-  def get_paste(%Scope{user: %User{id: user_id}}, id) do
+  def get_paste(%Scope{user: %User{} = user}, id) do
     now = Paste.utc_now_ms()
+    workspace_id = personal_workspace_id(user)
 
     Repo.one(
       from p in Paste,
         where:
-          p.id == ^id and p.user_id == ^user_id and
+          p.id == ^id and p.workspace_id == ^workspace_id and
             (is_nil(p.expires_at) or p.expires_at > ^now)
     )
     |> load_data()
   end
 
-  def get_paste!(%Scope{user: %User{id: user_id}}, id) do
+  def get_paste!(%Scope{user: %User{} = user}, id) do
     now = Paste.utc_now_ms()
+    workspace_id = personal_workspace_id(user)
 
     Repo.one!(
       from p in Paste,
         where:
-          p.id == ^id and p.user_id == ^user_id and
+          p.id == ^id and p.workspace_id == ^workspace_id and
             (is_nil(p.expires_at) or p.expires_at > ^now)
     )
     |> load_data()
@@ -98,7 +105,7 @@ defmodule Textbin.Pastes do
 
   def create_paste(%Scope{user: %User{} = user}, attrs \\ %{}) do
     attrs = attrs_with_defaults(attrs, user, ContentType.text_safe?(attr_data(attrs)))
-    paste = %Paste{id: Ecto.UUID.generate(), user_id: user.id}
+    paste = new_paste(user)
     changeset = paste |> Paste.changeset(attrs) |> validate_data_size()
 
     if changeset.valid? do
@@ -117,7 +124,7 @@ defmodule Textbin.Pastes do
       when is_binary(path) and is_integer(size_bytes) and is_binary(sha256) do
     text_safe? = match?({:ok, true}, ContentType.text_safe_file(path))
     attrs = attrs_with_defaults(attrs, user, text_safe?)
-    paste = %Paste{id: Ecto.UUID.generate(), user_id: user.id}
+    paste = new_paste(user)
     storage_key = "pastes/#{paste.id}"
 
     changeset =
@@ -132,16 +139,48 @@ defmodule Textbin.Pastes do
     end
   end
 
-  def delete_paste(%Scope{user: %User{id: user_id}}, %Paste{user_id: user_id} = paste) do
+  def delete_paste(%Scope{user: %User{}} = scope, %Paste{} = paste) do
     # Expired rows are invisible to normal reads and give cleanup a durable key
     # to retry if storage is temporarily unavailable.
-    with {:ok, expired_paste} <- expire_paste(paste),
+    with {:ok, expired_paste} <- expire_manageable_paste(scope, paste.id),
          :ok <- delete_stored_data(expired_paste) do
       Repo.delete(expired_paste)
     end
   end
 
-  def delete_paste(%Scope{}, %Paste{}), do: {:error, :not_found}
+  def delete_paste(_scope, %Paste{}), do: {:error, :not_found}
+
+  def manage_paste?(%Scope{user: %User{id: user_id}}, %Paste{id: paste_id}) do
+    paste_id
+    |> manageable_paste_query(user_id)
+    |> Repo.exists?()
+  end
+
+  def manage_paste?(_scope, _paste), do: false
+
+  defp expire_manageable_paste(%Scope{user: %User{id: user_id}}, paste_id) do
+    Repo.transact(fn ->
+      paste =
+        paste_id
+        |> manageable_paste_query(user_id)
+        |> lock("FOR UPDATE")
+        |> Repo.one()
+
+      case paste do
+        %Paste{} -> expire_paste(paste)
+        nil -> {:error, :not_found}
+      end
+    end)
+  end
+
+  defp manageable_paste_query(paste_id, user_id) do
+    from paste in Paste,
+      join: membership in WorkspaceMembership,
+      on: membership.workspace_id == paste.workspace_id,
+      where:
+        paste.id == ^paste_id and membership.user_id == ^user_id and
+          (membership.role == "owner" or paste.created_by_user_id == ^user_id)
+  end
 
   @doc """
   Hard-deletes one bounded batch of expired pastes and returns the number deleted.
@@ -198,9 +237,25 @@ defmodule Textbin.Pastes do
   end
 
   def change_paste(%Scope{user: %User{} = user}, %Paste{} = paste, attrs \\ %{}) do
-    paste = %{paste | user_id: paste.user_id || user.id}
+    paste = %{
+      paste
+      | workspace_id: paste.workspace_id || personal_workspace_id(user),
+        created_by_user_id: paste.created_by_user_id || user.id
+    }
 
     Paste.changeset(paste, attrs_with_visibility(attrs, user))
+  end
+
+  defp new_paste(user) do
+    %Paste{
+      id: Ecto.UUID.generate(),
+      workspace_id: personal_workspace_id(user),
+      created_by_user_id: user.id
+    }
+  end
+
+  defp personal_workspace_id(user) do
+    Organizations.get_personal_default_workspace!(user).id
   end
 
   defp store_paste(changeset) do
@@ -500,10 +555,16 @@ defmodule Textbin.Pastes do
   end
 
   defp allow_shared_access(query, %Scope{user: %User{id: user_id}}) do
+    workspace_ids =
+      from membership in WorkspaceMembership,
+        where: membership.user_id == ^user_id,
+        select: membership.workspace_id
+
     where(
       query,
       [paste],
-      paste.user_id == ^user_id or paste.visibility in ["unlisted", "public"]
+      paste.workspace_id in subquery(workspace_ids) or
+        paste.visibility in ["unlisted", "public"]
     )
   end
 

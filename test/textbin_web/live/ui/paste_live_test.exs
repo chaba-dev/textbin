@@ -4,6 +4,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   import Phoenix.LiveViewTest
   import Textbin.AccountsFixtures
 
+  alias Textbin.Organizations
   alias Textbin.Pastes.Paste
   alias Textbin.Pastes
   alias Textbin.Repo
@@ -41,10 +42,10 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       Paste
       |> Repo.one!()
       |> Pastes.load_data()
-      |> Repo.preload(:user)
+      |> Repo.preload(:created_by_user)
 
     assert paste.data == "guest paste"
-    assert paste.user.kind == "guest"
+    assert paste.created_by_user.kind == "guest"
     assert paste.visibility == "unlisted"
     assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 21_590..21_600
     assert has_element?(view, "##{stream_id(paste)}", "plain")
@@ -275,6 +276,115 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert_redirect(view, ~p"/pastes")
     assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
+  end
+
+  test "workspace owner deletes a member's paste from the detail page", %{
+    conn: conn,
+    scope: owner_scope
+  } do
+    member = user_fixture()
+    organization = Organizations.get_personal_organization!(owner_scope.user)
+    workspace = personal_workspace_fixture(owner_scope.user)
+
+    assert {:ok, _memberships} =
+             Organizations.add_organization_member(owner_scope, organization, member)
+
+    paste =
+      Repo.insert!(%Paste{
+        data: "member paste",
+        workspace_id: workspace.id,
+        created_by_user_id: member.id
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+    assert has_element?(view, "#delete-paste-#{paste.id}")
+
+    view
+    |> element("#delete-paste-#{paste.id}")
+    |> render_click()
+
+    assert_redirect(view, ~p"/pastes")
+    refute Repo.get(Paste, paste.id)
+  end
+
+  test "workspace member deletes their own paste from the detail page", %{scope: owner_scope} do
+    member = user_fixture()
+    member_scope = user_scope_fixture(member)
+    organization = Organizations.get_personal_organization!(owner_scope.user)
+    workspace = personal_workspace_fixture(owner_scope.user)
+
+    assert {:ok, _memberships} =
+             Organizations.add_organization_member(owner_scope, organization, member)
+
+    paste =
+      Repo.insert!(%Paste{
+        data: "member paste",
+        workspace_id: workspace.id,
+        created_by_user_id: member.id
+      })
+
+    conn = log_in_user(build_conn(), member)
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+    assert Pastes.manage_paste?(member_scope, paste)
+    assert has_element?(view, "#delete-paste-#{paste.id}")
+
+    view
+    |> element("#delete-paste-#{paste.id}")
+    |> render_click()
+
+    assert_redirect(view, ~p"/pastes")
+    refute Repo.get(Paste, paste.id)
+  end
+
+  test "workspace member cannot delete another member's paste", %{scope: owner_scope} do
+    member = user_fixture()
+    organization = Organizations.get_personal_organization!(owner_scope.user)
+    workspace = personal_workspace_fixture(owner_scope.user)
+
+    assert {:ok, _memberships} =
+             Organizations.add_organization_member(owner_scope, organization, member)
+
+    paste =
+      Repo.insert!(%Paste{
+        data: "owner paste",
+        workspace_id: workspace.id,
+        created_by_user_id: owner_scope.user.id
+      })
+
+    conn = log_in_user(build_conn(), member)
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+    refute has_element?(view, "#delete-paste-#{paste.id}")
+
+    render_click(view, "delete", %{"id" => paste.id})
+    assert Repo.get(Paste, paste.id)
+  end
+
+  test "revoked workspace membership prevents deletion", %{scope: owner_scope} do
+    member = user_fixture()
+    organization = Organizations.get_personal_organization!(owner_scope.user)
+    workspace = personal_workspace_fixture(owner_scope.user)
+
+    assert {:ok, _memberships} =
+             Organizations.add_organization_member(owner_scope, organization, member)
+
+    paste =
+      Repo.insert!(%Paste{
+        data: "member paste",
+        workspace_id: workspace.id,
+        created_by_user_id: member.id
+      })
+
+    conn = log_in_user(build_conn(), member)
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+    assert has_element?(view, "#delete-paste-#{paste.id}")
+
+    workspace
+    |> Ecto.assoc(:memberships)
+    |> Repo.get_by!(user_id: member.id)
+    |> Repo.delete!()
+
+    render_click(view, "delete", %{"id" => paste.id})
+    assert Repo.get(Paste, paste.id)
   end
 
   defp stream_id(paste), do: "pastes-#{paste.id}"
