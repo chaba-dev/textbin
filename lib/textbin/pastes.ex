@@ -144,7 +144,7 @@ defmodule Textbin.Pastes do
     # to retry if storage is temporarily unavailable.
     with {:ok, expired_paste} <- expire_manageable_paste(scope, paste.id),
          :ok <- delete_stored_data(expired_paste) do
-      Repo.delete(expired_paste)
+      Repo.delete(expired_paste, allow_stale: true)
     end
   end
 

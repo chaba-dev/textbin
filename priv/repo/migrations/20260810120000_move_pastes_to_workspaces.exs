@@ -48,12 +48,27 @@ defmodule Textbin.Repo.Migrations.MovePastesToWorkspaces do
   end
 
   def down do
+    execute "LOCK TABLE pastes IN SHARE ROW EXCLUSIVE MODE"
+
     execute """
     DO $$
     BEGIN
-      IF EXISTS (SELECT 1 FROM pastes WHERE user_id IS NULL) THEN
+      IF EXISTS (
+        SELECT 1
+        FROM pastes AS paste
+        WHERE paste.user_id IS NULL
+           OR NOT EXISTS (
+             SELECT 1
+             FROM workspaces AS workspace
+             JOIN organizations AS organization
+               ON organization.id = workspace.organization_id
+             WHERE workspace.id = paste.workspace_id
+               AND workspace.is_default
+               AND organization.personal_owner_id = paste.user_id
+           )
+      ) THEN
         RAISE EXCEPTION
-          'cannot roll back workspace paste ownership after creator attribution has been removed';
+          'cannot roll back workspace paste ownership with non-personal workspace pastes';
       END IF;
     END;
     $$

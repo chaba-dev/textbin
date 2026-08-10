@@ -23,6 +23,22 @@ defmodule Textbin.PastesTest do
       }
     end
 
+    test "rollback locks writes and rejects non-personal workspace ownership" do
+      migration =
+        File.read!(
+          Path.expand(
+            "../../priv/repo/migrations/20260810120000_move_pastes_to_workspaces.exs",
+            __DIR__
+          )
+        )
+
+      [_up, down] = String.split(migration, "  def down do", parts: 2)
+
+      assert down =~ "LOCK TABLE pastes IN SHARE ROW EXCLUSIVE MODE"
+      assert down =~ "workspace.id = paste.workspace_id"
+      assert down =~ "organization.personal_owner_id = paste.user_id"
+    end
+
     test "list_pastes/1 returns scoped pastes", %{scope: scope, other_scope: other_scope} do
       {:ok, older_paste} = Pastes.create_paste(scope, @valid_attrs)
       {:ok, newer_paste} = Pastes.create_paste(scope, %{data: "newer data"})
