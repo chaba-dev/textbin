@@ -2,6 +2,7 @@ defmodule Textbin.AccountsTest do
   use Textbin.DataCase
 
   alias Textbin.Accounts
+  alias Textbin.Organizations
 
   import Textbin.AccountsFixtures
   alias Textbin.Accounts.{User, UserToken}
@@ -84,6 +85,17 @@ defmodule Textbin.AccountsTest do
       assert is_nil(user.hashed_password)
       assert is_nil(user.confirmed_at)
       assert is_nil(user.password)
+
+      organization = Organizations.get_personal_organization!(user)
+      assert organization.kind == "personal"
+      assert [%{user_id: user_id, role: "owner"}] = organization.memberships
+      assert user_id == user.id
+
+      assert [%{is_default: true, visibility: "open", memberships: [membership]}] =
+               organization.workspaces
+
+      assert membership.user_id == user.id
+      assert membership.role == "owner"
     end
   end
 
@@ -286,6 +298,14 @@ defmodule Textbin.AccountsTest do
       assert user.default_paste_ttl == "6h"
       assert user.email =~ ~r/^guest-.+@guest\.textbin\.local$/
       assert User.guest?(user)
+
+      organization = Organizations.get_personal_organization!(user)
+      assert organization.personal_owner_id == user.id
+
+      assert [%{is_default: true, memberships: [%{user_id: user_id, role: "owner"}]}] =
+               organization.workspaces
+
+      assert user_id == user.id
     end
 
     test "create_guest_user/1 preserves atom-key overrides" do
