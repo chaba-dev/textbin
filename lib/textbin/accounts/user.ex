@@ -3,6 +3,7 @@ defmodule Textbin.Accounts.User do
   import Ecto.Changeset
 
   @primary_key {:id, :binary_id, autogenerate: true}
+  @foreign_key_type :binary_id
   @paste_ttl_values ["never", "10m", "1h", "6h", "12h", "1d", "7d", "30d"]
   @user_kinds ["registered", "guest"]
 
@@ -14,6 +15,12 @@ defmodule Textbin.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
     field :default_paste_ttl, :string, default: "never"
+
+    has_one :personal_organization, Textbin.Organizations.Organization,
+      foreign_key: :personal_owner_id
+
+    has_many :organization_memberships, Textbin.Organizations.OrganizationMembership
+    has_many :workspace_memberships, Textbin.Organizations.WorkspaceMembership
 
     timestamps(type: :utc_datetime)
   end

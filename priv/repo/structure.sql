@@ -33,9 +33,78 @@ CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 COMMENT ON EXTENSION citext IS 'data type for case-insensitive character strings';
 
 
+--
+-- Name: provision_personal_organization(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.provision_personal_organization() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  default_workspace_id uuid := md5(NEW.id::text || ':default-workspace')::uuid;
+BEGIN
+  INSERT INTO organizations
+    (id, name, slug, kind, personal_owner_id, inserted_at, updated_at)
+  VALUES
+    (NEW.id, 'Personal', 'personal-' || NEW.id::text, 'personal', NEW.id, NOW(), NOW());
+
+  INSERT INTO organization_memberships
+    (id, organization_id, user_id, role, inserted_at, updated_at)
+  VALUES
+    (md5(NEW.id::text || ':organization-membership')::uuid,
+     NEW.id, NEW.id, 'owner', NOW(), NOW());
+
+  INSERT INTO workspaces
+    (id, organization_id, created_by_id, name, slug, visibility, is_default, inserted_at, updated_at)
+  VALUES
+    (default_workspace_id, NEW.id, NEW.id, 'Default', 'default', 'open', TRUE, NOW(), NOW());
+
+  INSERT INTO workspace_memberships
+    (id, workspace_id, user_id, created_by_id, role, inserted_at, updated_at)
+  VALUES
+    (md5(NEW.id::text || ':workspace-membership')::uuid,
+     default_workspace_id, NEW.id, NEW.id, 'owner', NOW(), NOW());
+
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: organization_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organization_memberships (
+    id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    role character varying(255) NOT NULL,
+    inserted_at timestamp(0) without time zone NOT NULL,
+    updated_at timestamp(0) without time zone NOT NULL,
+    CONSTRAINT organization_memberships_role_check CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'member'::character varying])::text[])))
+);
+
+
+--
+-- Name: organizations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organizations (
+    id uuid NOT NULL,
+    name character varying(255) NOT NULL,
+    slug character varying(255) NOT NULL,
+    kind character varying(255) NOT NULL,
+    personal_owner_id uuid,
+    inserted_at timestamp(0) without time zone NOT NULL,
+    updated_at timestamp(0) without time zone NOT NULL,
+    CONSTRAINT organizations_kind_check CHECK (((kind)::text = ANY ((ARRAY['personal'::character varying, 'team'::character varying])::text[]))),
+    CONSTRAINT organizations_personal_owner_check CHECK (((((kind)::text = 'personal'::text) AND (personal_owner_id IS NOT NULL)) OR (((kind)::text = 'team'::text) AND (personal_owner_id IS NULL))))
+);
+
 
 --
 -- Name: pastes; Type: TABLE; Schema: public; Owner: -
@@ -115,6 +184,57 @@ CREATE TABLE public.users_tokens (
 
 
 --
+-- Name: workspace_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_memberships (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    created_by_id uuid,
+    role character varying(255) NOT NULL,
+    inserted_at timestamp(0) without time zone NOT NULL,
+    updated_at timestamp(0) without time zone NOT NULL,
+    CONSTRAINT workspace_memberships_role_check CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'member'::character varying])::text[])))
+);
+
+
+--
+-- Name: workspaces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspaces (
+    id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    created_by_id uuid,
+    name character varying(255) NOT NULL,
+    slug character varying(255) NOT NULL,
+    visibility character varying(255) DEFAULT 'open'::character varying NOT NULL,
+    is_default boolean DEFAULT false NOT NULL,
+    inserted_at timestamp(0) without time zone NOT NULL,
+    updated_at timestamp(0) without time zone NOT NULL,
+    CONSTRAINT workspaces_default_visibility_check CHECK (((NOT is_default) OR ((visibility)::text = 'open'::text))),
+    CONSTRAINT workspaces_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['open'::character varying, 'private'::character varying])::text[])))
+);
+
+
+--
+-- Name: organization_memberships organization_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_memberships
+    ADD CONSTRAINT organization_memberships_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pastes pastes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -152,6 +272,50 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.users_tokens
     ADD CONSTRAINT users_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_memberships workspace_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_memberships
+    ADD CONSTRAINT workspace_memberships_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspaces workspaces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organization_memberships_organization_id_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX organization_memberships_organization_id_user_id_index ON public.organization_memberships USING btree (organization_id, user_id);
+
+
+--
+-- Name: organization_memberships_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX organization_memberships_user_id_index ON public.organization_memberships USING btree (user_id);
+
+
+--
+-- Name: organizations_personal_owner_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX organizations_personal_owner_id_index ON public.organizations USING btree (personal_owner_id);
+
+
+--
+-- Name: organizations_slug_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX organizations_slug_index ON public.organizations USING btree (slug);
 
 
 --
@@ -218,6 +382,72 @@ CREATE INDEX users_tokens_user_id_index ON public.users_tokens USING btree (user
 
 
 --
+-- Name: workspace_memberships_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_memberships_user_id_index ON public.workspace_memberships USING btree (user_id);
+
+
+--
+-- Name: workspace_memberships_workspace_id_role_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspace_memberships_workspace_id_role_index ON public.workspace_memberships USING btree (workspace_id, role);
+
+
+--
+-- Name: workspace_memberships_workspace_id_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX workspace_memberships_workspace_id_user_id_index ON public.workspace_memberships USING btree (workspace_id, user_id);
+
+
+--
+-- Name: workspaces_one_default_per_organization; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX workspaces_one_default_per_organization ON public.workspaces USING btree (organization_id) WHERE is_default;
+
+
+--
+-- Name: workspaces_organization_id_slug_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX workspaces_organization_id_slug_index ON public.workspaces USING btree (organization_id, slug);
+
+
+--
+-- Name: users users_provision_personal_organization; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER users_provision_personal_organization AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.provision_personal_organization();
+
+
+--
+-- Name: organization_memberships organization_memberships_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_memberships
+    ADD CONSTRAINT organization_memberships_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organization_memberships organization_memberships_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_memberships
+    ADD CONSTRAINT organization_memberships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organizations organizations_personal_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_personal_owner_id_fkey FOREIGN KEY (personal_owner_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: pastes pastes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -231,6 +461,46 @@ ALTER TABLE ONLY public.pastes
 
 ALTER TABLE ONLY public.users_tokens
     ADD CONSTRAINT users_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_memberships workspace_memberships_created_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_memberships
+    ADD CONSTRAINT workspace_memberships_created_by_id_fkey FOREIGN KEY (created_by_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspace_memberships workspace_memberships_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_memberships
+    ADD CONSTRAINT workspace_memberships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_memberships workspace_memberships_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_memberships
+    ADD CONSTRAINT workspace_memberships_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspaces workspaces_created_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_created_by_id_fkey FOREIGN KEY (created_by_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspaces workspaces_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
@@ -252,3 +522,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260718070000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260805090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260806090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260806100000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260810090000);

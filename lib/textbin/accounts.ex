@@ -7,6 +7,7 @@ defmodule Textbin.Accounts do
   alias Textbin.Repo
 
   alias Textbin.Accounts.{User, UserToken, UserNotifier}
+  alias Textbin.Organizations
 
   ## Database getters
 
@@ -86,7 +87,7 @@ defmodule Textbin.Accounts do
   def register_user(attrs) do
     %User{}
     |> User.email_changeset(attrs)
-    |> Repo.insert()
+    |> create_user_with_personal_organization()
   end
 
   def create_guest_user(attrs \\ %{}) do
@@ -98,7 +99,16 @@ defmodule Textbin.Accounts do
 
     %User{}
     |> User.guest_changeset(attrs)
-    |> Repo.insert()
+    |> create_user_with_personal_organization()
+  end
+
+  defp create_user_with_personal_organization(changeset) do
+    Repo.transact(fn ->
+      with {:ok, user} <- Repo.insert(changeset),
+           {:ok, _organization} <- Organizations.create_personal_organization(user) do
+        {:ok, user}
+      end
+    end)
   end
 
   defp normalize_guest_attrs(attrs) do
