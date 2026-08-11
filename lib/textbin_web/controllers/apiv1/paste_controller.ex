@@ -3,6 +3,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   alias Textbin.Accounts.Scope
   alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
   alias Textbin.Pastes.UploadCleaner
 
   require Logger
@@ -291,12 +292,14 @@ defmodule TextbinWeb.ApiV1.PasteController do
   def delete(conn, %{"id" => id}) do
     with_api_scope(conn, fn current_scope ->
       result =
-        with {:ok, paste_id} <- Ecto.UUID.cast(id),
-             %{} = paste <- Pastes.get_paste(current_scope, paste_id) do
-          Pastes.delete_paste(current_scope, paste)
+        with {:ok, paste_id} <- Ecto.UUID.cast(id) do
+          Pastes.delete_personal_paste(current_scope, %Paste{id: paste_id})
         end
 
       case result do
+        {:error, :not_found} ->
+          send_resp(conn, :no_content, "")
+
         {:error, _reason} ->
           conn
           |> put_status(:service_unavailable)

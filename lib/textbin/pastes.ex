@@ -150,6 +150,21 @@ defmodule Textbin.Pastes do
 
   def delete_paste(_scope, %Paste{}), do: {:error, :not_found}
 
+  def delete_personal_paste(%Scope{user: %User{} = user}, %Paste{} = paste) do
+    workspace_id = personal_workspace_id(user)
+
+    query =
+      from candidate in Paste,
+        where: candidate.id == ^paste.id and candidate.workspace_id == ^workspace_id
+
+    with {:ok, expired_paste} <- expire_paste_matching(query),
+         :ok <- delete_stored_data(expired_paste) do
+      Repo.delete(expired_paste, allow_stale: true)
+    end
+  end
+
+  def delete_personal_paste(_scope, %Paste{}), do: {:error, :not_found}
+
   def manage_paste?(%Scope{user: %User{id: user_id}}, %Paste{id: paste_id}) do
     paste_id
     |> manageable_paste_query(user_id)
@@ -159,10 +174,15 @@ defmodule Textbin.Pastes do
   def manage_paste?(_scope, _paste), do: false
 
   defp expire_manageable_paste(%Scope{user: %User{id: user_id}}, paste_id) do
+    paste_id
+    |> manageable_paste_query(user_id)
+    |> expire_paste_matching()
+  end
+
+  defp expire_paste_matching(query) do
     Repo.transact(fn ->
       paste =
-        paste_id
-        |> manageable_paste_query(user_id)
+        query
         |> lock("FOR UPDATE")
         |> Repo.one()
 
@@ -245,6 +265,8 @@ defmodule Textbin.Pastes do
 
     Paste.changeset(paste, attrs_with_visibility(attrs, user))
   end
+
+  def prepare_paste(%Scope{user: %User{} = user}), do: new_paste(user)
 
   defp new_paste(user) do
     %Paste{

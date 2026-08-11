@@ -105,6 +105,32 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-visibility-#{paste.id}", "Public")
   end
 
+  test "form validation reuses the workspace resolved at mount", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/pastes")
+    handler_id = "paste-form-query-test-#{System.unique_integer([:positive])}"
+
+    :telemetry.attach(
+      handler_id,
+      [:textbin, :repo, :query],
+      fn _event, _measurements, metadata, test_pid ->
+        send(test_pid, {:repo_query, metadata})
+      end,
+      self()
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    for data <- ["a", "ab"] do
+      view
+      |> form("#paste-form", %{
+        "paste" => %{"data" => data, "syntax_highlight" => "plain", "expires_in" => ""}
+      })
+      |> render_change()
+    end
+
+    refute_receive {:repo_query, _metadata}, 100
+  end
+
   test "creates a paste with the user's default expiration", %{scope: scope} do
     {:ok, user} =
       Textbin.Accounts.update_user_paste_defaults(scope.user, %{default_paste_ttl: "1h"})

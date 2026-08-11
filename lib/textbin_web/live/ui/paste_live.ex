@@ -69,7 +69,7 @@ defmodule TextbinWeb.UI.PasteLive do
   def handle_event("validate", %{"paste" => paste_params}, socket) do
     form =
       socket.assigns.current_scope
-      |> Pastes.change_paste(%Paste{}, paste_params)
+      |> Pastes.change_paste(socket.assigns.new_paste, paste_params)
       |> Map.put(:action, :validate)
       |> to_form()
 
@@ -94,12 +94,16 @@ defmodule TextbinWeb.UI.PasteLive do
   def render(assigns), do: index(assigns)
 
   defp assign_paste_form(socket) do
+    new_paste = Pastes.prepare_paste(socket.assigns.current_scope)
+
     form =
       socket.assigns.current_scope
-      |> Pastes.change_paste(%Paste{})
+      |> Pastes.change_paste(new_paste)
       |> to_form()
 
-    assign(socket, :paste_form, form)
+    socket
+    |> assign(:new_paste, new_paste)
+    |> assign(:paste_form, form)
   end
 
   defp highlighted_paste_data(%Paste{} = paste) do

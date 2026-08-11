@@ -26,6 +26,9 @@ defmodule Textbin.BlockingStorage do
 
       receive do
         {:continue_storage_delete, ^storage_key} -> :ok
+      after
+        1_000 ->
+          raise "timed out waiting to continue blocked storage delete for #{storage_key}"
       end
     end
 

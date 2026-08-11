@@ -107,7 +107,7 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     Ecto.Adapters.SQL.Sandbox.allow(Textbin.Repo, self(), deletion.pid)
     send(deletion.pid, :delete)
 
-    assert_receive {:storage_delete_blocked, deleting_pid, storage_key}
+    assert_receive {:storage_delete_blocked, deleting_pid, storage_key}, 1_000
     assert storage_key == paste.storage_key
     assert Pastes.delete_expired_pastes(limit: 1) == 1
 
