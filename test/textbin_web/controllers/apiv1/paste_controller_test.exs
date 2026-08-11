@@ -456,7 +456,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       Application.put_env(:textbin, Storage,
         adapter: Textbin.DeleteOnlyStorage,
-        opts: [test_pid: self()]
+        opts: [test_pid: self(), delegate: original_storage]
       )
 
       Application.put_env(:textbin, :inline_paste_bytes, 0)

@@ -89,10 +89,11 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
   test "manual deletion succeeds when expiration cleanup wins the hard-delete race", context do
     {:ok, gate} = Agent.start_link(fn -> true end)
+    delegate = Application.fetch_env!(:textbin, Storage)
 
     Application.put_env(:textbin, Storage,
       adapter: Textbin.BlockingStorage,
-      opts: [gate: gate, test_pid: self()]
+      opts: [gate: gate, test_pid: self(), delegate: delegate]
     )
 
     {:ok, paste} = Pastes.create_paste(context.scope, %{data: "concurrent cleanup"})
