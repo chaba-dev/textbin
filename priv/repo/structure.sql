@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 3Yb1xP0MtCXCW9iE3O4rLCdoBZAx27dW51FvoBSaDKiR2DTH9ocbJiFIQZgjv60
+\restrict yRP5uiwmpNsaIzzSBvERZeQaEjY2Xzf4el9f0OuYdk4WFCKNvj4XuRZ6MJQVd1c
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -11,7 +11,7 @@ SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
 SET transaction_timeout = 0;
-SET client_encoding = 'SQL_ASCII';
+SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
 SET check_function_bodies = false;
@@ -98,8 +98,8 @@ CREATE TABLE public.pastes (
 
 CREATE TABLE public.pending_uploads (
     storage_key character varying(255) NOT NULL,
-    claimed_at timestamp without time zone,
-    inserted_at timestamp without time zone NOT NULL
+    inserted_at timestamp without time zone NOT NULL,
+    claimed_at timestamp(6) without time zone
 );
 
 
@@ -479,7 +479,7 @@ ALTER TABLE ONLY public.workspaces
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3Yb1xP0MtCXCW9iE3O4rLCdoBZAx27dW51FvoBSaDKiR2DTH9ocbJiFIQZgjv60
+\unrestrict yRP5uiwmpNsaIzzSBvERZeQaEjY2Xzf4el9f0OuYdk4WFCKNvj4XuRZ6MJQVd1c
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
