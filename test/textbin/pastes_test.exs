@@ -418,26 +418,6 @@ defmodule Textbin.PastesTest do
       assert paste.id in Enum.map(Pastes.list_pastes(scope), & &1.id)
     end
 
-    test "legacy inserts are assigned to the creator's default workspace", %{scope: scope} do
-      paste_id = Ecto.UUID.generate()
-
-      Repo.query!(
-        """
-        INSERT INTO pastes
-          (id, data, syntax_highlight, user_id, inserted_at, updated_at)
-        VALUES
-          ($1, $2, 'plain', $3, NOW(), NOW())
-        """,
-        [Ecto.UUID.dump!(paste_id), "legacy insert", Ecto.UUID.dump!(scope.user.id)]
-      )
-
-      paste = Repo.get!(Paste, paste_id)
-
-      assert paste.workspace_id == personal_workspace_fixture(scope.user).id
-      assert paste.created_by_user_id == scope.user.id
-      assert Pastes.get_paste!(scope, paste.id).data == "legacy insert"
-    end
-
     test "deleting a creator retains pastes owned by a team workspace" do
       creator = user_fixture()
       scope = user_scope_fixture(creator)

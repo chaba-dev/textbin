@@ -100,19 +100,10 @@ defmodule Textbin.Repo.Migrations.CreateOrganizationsAndWorkspaces do
              check: "role IN ('owner', 'member')"
            )
 
-    # Block legacy instances from inserting a user between the backfill snapshot
-    # and trigger installation. Waiting inserts resume with the trigger active
-    # after this transactional migration commits.
-    execute "LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE"
-
     backfill_personal_organizations()
-    create_user_provisioning_trigger()
   end
 
   def down do
-    execute "DROP TRIGGER users_provision_personal_organization ON users"
-    execute "DROP FUNCTION provision_personal_organization()"
-
     drop table(:workspace_memberships)
     drop table(:workspaces)
     drop table(:organization_memberships)
@@ -175,49 +166,6 @@ defmodule Textbin.Repo.Migrations.CreateOrganizationsAndWorkspaces do
       NOW(),
       NOW()
     FROM users
-    """
-  end
-
-  # The trigger keeps this migration forward-compatible with old application
-  # instances that may create users while a rolling deployment is in progress.
-  defp create_user_provisioning_trigger do
-    execute """
-    CREATE FUNCTION provision_personal_organization()
-    RETURNS TRIGGER AS $$
-    DECLARE
-      default_workspace_id uuid := md5(NEW.id::text || ':default-workspace')::uuid;
-    BEGIN
-      INSERT INTO organizations
-        (id, name, slug, kind, personal_owner_id, inserted_at, updated_at)
-      VALUES
-        (NEW.id, 'Personal', 'personal-' || NEW.id::text, 'personal', NEW.id, NOW(), NOW());
-
-      INSERT INTO organization_memberships
-        (id, organization_id, user_id, role, inserted_at, updated_at)
-      VALUES
-        (md5(NEW.id::text || ':organization-membership')::uuid,
-         NEW.id, NEW.id, 'owner', NOW(), NOW());
-
-      INSERT INTO workspaces
-        (id, organization_id, created_by_id, name, slug, visibility, is_default, inserted_at, updated_at)
-      VALUES
-        (default_workspace_id, NEW.id, NEW.id, 'Default', 'default', 'open', TRUE, NOW(), NOW());
-
-      INSERT INTO workspace_memberships
-        (id, workspace_id, user_id, created_by_id, role, inserted_at, updated_at)
-      VALUES
-        (md5(NEW.id::text || ':workspace-membership')::uuid,
-         default_workspace_id, NEW.id, NEW.id, 'owner', NOW(), NOW());
-
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql
-    """
-
-    execute """
-    CREATE TRIGGER users_provision_personal_organization
-    AFTER INSERT ON users
-    FOR EACH ROW EXECUTE FUNCTION provision_personal_organization()
     """
   end
 end

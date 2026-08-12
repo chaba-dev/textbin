@@ -3,10 +3,11 @@ defmodule Textbin.Pastes.WorkspaceOwnershipMigrationTest do
 
   alias Textbin.MigrationRepo
 
+  @before_organizations_version 20_260_806_100_000
   @organizations_version 20_260_810_090_000
   @ownership_version 20_260_810_120_000
 
-  test "migrates both writer generations, rolls back personal pastes, and rejects team pastes" do
+  test "backfills workspace ownership, restores personal ownership, and rejects team rollback" do
     database = "textbin_migration_#{Ecto.UUID.generate()}"
     {:ok, admin} = Postgrex.start_link(admin_config())
     Process.unlink(admin)
@@ -22,7 +23,7 @@ defmodule Textbin.Pastes.WorkspaceOwnershipMigrationTest do
     on_exit(fn -> if Process.alive?(repo), do: GenServer.stop(repo) end)
 
     migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
-    Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @organizations_version)
+    Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @before_organizations_version)
 
     user_id = Ecto.UUID.generate()
     insert_user(user_id, "migration@example.com")
@@ -31,30 +32,31 @@ defmodule Textbin.Pastes.WorkspaceOwnershipMigrationTest do
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @ownership_version)
     workspace_id = personal_workspace_id(user_id)
 
-    assert ownership(legacy_paste_id) == {workspace_id, user_id, user_id}
+    assert ownership(legacy_paste_id) == {workspace_id, user_id}
+    refute column_exists?("pastes", "user_id")
 
-    old_writer_id = insert_legacy_paste(user_id, "old writer")
-    new_writer_id = insert_workspace_paste(workspace_id, user_id, "new writer")
-    assert ownership(old_writer_id) == {workspace_id, user_id, user_id}
-    assert ownership(new_writer_id) == {workspace_id, user_id, user_id}
+    workspace_paste_id = insert_workspace_paste(workspace_id, user_id, "workspace paste")
+    assert ownership(workspace_paste_id) == {workspace_id, user_id}
 
     Ecto.Migrator.run(MigrationRepo, migrations, :down, to: @organizations_version)
 
     assert %{rows: rows} =
              MigrationRepo.query!(
-               "SELECT id::text, data, user_id::text FROM pastes WHERE id IN ($1::uuid, $2::uuid, $3::uuid) ORDER BY data",
-               [uuid(legacy_paste_id), uuid(old_writer_id), uuid(new_writer_id)]
+               "SELECT id::text, data, user_id::text FROM pastes WHERE id IN ($1::uuid, $2::uuid) ORDER BY data",
+               [uuid(legacy_paste_id), uuid(workspace_paste_id)]
              )
 
     assert rows == [
              [legacy_paste_id, "before ownership migration", user_id],
-             [new_writer_id, "new writer", user_id],
-             [old_writer_id, "old writer", user_id]
+             [workspace_paste_id, "workspace paste", user_id]
            ]
 
-    insert_legacy_paste(user_id, "old writer after rollback")
+    rollback_paste_id = insert_legacy_paste(user_id, "after rollback")
 
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @ownership_version)
+    assert ownership(rollback_paste_id) == {workspace_id, user_id}
+    refute column_exists?("pastes", "user_id")
+
     team_workspace_id = insert_team_workspace(user_id)
     insert_workspace_paste(team_workspace_id, user_id, "team paste")
 
@@ -95,13 +97,23 @@ defmodule Textbin.Pastes.WorkspaceOwnershipMigrationTest do
   end
 
   defp ownership(paste_id) do
-    %{rows: [[workspace_id, creator_id, legacy_user_id]]} =
+    %{rows: [[workspace_id, creator_id]]} =
       MigrationRepo.query!(
-        "SELECT workspace_id::text, created_by_user_id::text, user_id::text FROM pastes WHERE id = $1::uuid",
+        "SELECT workspace_id::text, created_by_user_id::text FROM pastes WHERE id = $1::uuid",
         [uuid(paste_id)]
       )
 
-    {workspace_id, creator_id, legacy_user_id}
+    {workspace_id, creator_id}
+  end
+
+  defp column_exists?(table, column) do
+    %{rows: [[exists?]]} =
+      MigrationRepo.query!(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2)",
+        [table, column]
+      )
+
+    exists?
   end
 
   defp personal_workspace_id(user_id) do

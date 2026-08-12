@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict pBrhubflvQFSAQmw9Y79H195OScSjK8sjuilkYsrsEP1DvqhuFtyrR9z2yp0qMb
+\restrict dJVOKoMBuJRYL7ewkaq6exQNQWvnGPgRkQj3yXGVea6LJjwJkqJLZT2PJ3KUBps
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -11,7 +11,7 @@ SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
 SET transaction_timeout = 0;
-SET client_encoding = 'UTF8';
+SET client_encoding = 'SQL_ASCII';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
 SET check_function_bodies = false;
@@ -31,67 +31,6 @@ CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 --
 
 COMMENT ON EXTENSION citext IS 'data type for case-insensitive character strings';
-
-
---
--- Name: provision_personal_organization(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.provision_personal_organization() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-  default_workspace_id uuid := md5(NEW.id::text || ':default-workspace')::uuid;
-BEGIN
-  INSERT INTO organizations
-    (id, name, slug, kind, personal_owner_id, inserted_at, updated_at)
-  VALUES
-    (NEW.id, 'Personal', 'personal-' || NEW.id::text, 'personal', NEW.id, NOW(), NOW());
-
-  INSERT INTO organization_memberships
-    (id, organization_id, user_id, role, inserted_at, updated_at)
-  VALUES
-    (md5(NEW.id::text || ':organization-membership')::uuid,
-     NEW.id, NEW.id, 'owner', NOW(), NOW());
-
-  INSERT INTO workspaces
-    (id, organization_id, created_by_id, name, slug, visibility, is_default, inserted_at, updated_at)
-  VALUES
-    (default_workspace_id, NEW.id, NEW.id, 'Default', 'default', 'open', TRUE, NOW(), NOW());
-
-  INSERT INTO workspace_memberships
-    (id, workspace_id, user_id, created_by_id, role, inserted_at, updated_at)
-  VALUES
-    (md5(NEW.id::text || ':workspace-membership')::uuid,
-     default_workspace_id, NEW.id, NEW.id, 'owner', NOW(), NOW());
-
-  RETURN NEW;
-END;
-$$;
-
-
---
--- Name: sync_paste_workspace_ownership(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.sync_paste_workspace_ownership() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  NEW.created_by_user_id := COALESCE(NEW.created_by_user_id, NEW.user_id);
-  NEW.user_id := COALESCE(NEW.user_id, NEW.created_by_user_id);
-
-  IF NEW.workspace_id IS NULL THEN
-    SELECT workspace.id INTO NEW.workspace_id
-    FROM organizations AS organization
-    JOIN workspaces AS workspace
-      ON workspace.organization_id = organization.id AND workspace.is_default
-    WHERE organization.personal_owner_id = NEW.created_by_user_id;
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
 
 
 SET default_tablespace = '';
@@ -140,7 +79,6 @@ CREATE TABLE public.pastes (
     inserted_at timestamp(3) without time zone NOT NULL,
     updated_at timestamp(3) without time zone NOT NULL,
     syntax_highlight text DEFAULT 'plain'::text NOT NULL,
-    user_id uuid,
     expires_at timestamp(3) without time zone DEFAULT NULL::timestamp without time zone,
     visibility character varying(255) DEFAULT 'private'::character varying NOT NULL,
     storage_key character varying(255),
@@ -160,8 +98,8 @@ CREATE TABLE public.pastes (
 
 CREATE TABLE public.pending_uploads (
     storage_key character varying(255) NOT NULL,
-    inserted_at timestamp without time zone NOT NULL,
-    claimed_at timestamp(6) without time zone
+    claimed_at timestamp without time zone,
+    inserted_at timestamp without time zone NOT NULL
 );
 
 
@@ -366,13 +304,6 @@ CREATE UNIQUE INDEX pastes_storage_key_index ON public.pastes USING btree (stora
 
 
 --
--- Name: pastes_user_id_index; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX pastes_user_id_index ON public.pastes USING btree (user_id);
-
-
---
 -- Name: pastes_visibility_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -457,20 +388,6 @@ CREATE UNIQUE INDEX workspaces_organization_id_slug_index ON public.workspaces U
 
 
 --
--- Name: pastes pastes_sync_workspace_ownership; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER pastes_sync_workspace_ownership BEFORE INSERT ON public.pastes FOR EACH ROW EXECUTE FUNCTION public.sync_paste_workspace_ownership();
-
-
---
--- Name: users users_provision_personal_organization; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER users_provision_personal_organization AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.provision_personal_organization();
-
-
---
 -- Name: organization_memberships organization_memberships_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -500,14 +417,6 @@ ALTER TABLE ONLY public.organizations
 
 ALTER TABLE ONLY public.pastes
     ADD CONSTRAINT pastes_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
-
-
---
--- Name: pastes pastes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.pastes
-    ADD CONSTRAINT pastes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -570,7 +479,7 @@ ALTER TABLE ONLY public.workspaces
 -- PostgreSQL database dump complete
 --
 
-\unrestrict pBrhubflvQFSAQmw9Y79H195OScSjK8sjuilkYsrsEP1DvqhuFtyrR9z2yp0qMb
+\unrestrict dJVOKoMBuJRYL7ewkaq6exQNQWvnGPgRkQj3yXGVea6LJjwJkqJLZT2PJ3KUBps
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);

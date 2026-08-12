@@ -9,24 +9,6 @@ defmodule Textbin.Repo.Migrations.MovePastesToWorkspaces do
           references(:users, type: :binary_id, on_delete: :nilify_all)
     end
 
-    # Keep the legacy column writable for old instances during rollout, but it
-    # is no longer an ownership boundary and must not cascade shared paste data.
-    drop constraint(:pastes, "pastes_user_id_fkey")
-
-    alter table(:pastes) do
-      modify :user_id, :binary_id, null: true
-    end
-
-    execute """
-    ALTER TABLE pastes
-    ADD CONSTRAINT pastes_user_id_fkey
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-    """
-
-    # Prevent old instances from inserting between the backfill snapshot and
-    # compatibility-trigger installation.
-    execute "LOCK TABLE pastes IN SHARE ROW EXCLUSIVE MODE"
-
     execute """
     UPDATE pastes AS paste
     SET workspace_id = workspace.id,
@@ -44,11 +26,15 @@ defmodule Textbin.Repo.Migrations.MovePastesToWorkspaces do
     create index(:pastes, [:workspace_id, :inserted_at])
     create index(:pastes, [:created_by_user_id])
 
-    create_compatibility_trigger()
+    alter table(:pastes) do
+      remove :user_id
+    end
   end
 
   def down do
-    execute "LOCK TABLE pastes IN SHARE ROW EXCLUSIVE MODE"
+    alter table(:pastes) do
+      add :user_id, references(:users, type: :binary_id, on_delete: :delete_all)
+    end
 
     execute """
     DO $$
@@ -56,7 +42,7 @@ defmodule Textbin.Repo.Migrations.MovePastesToWorkspaces do
       IF EXISTS (
         SELECT 1
         FROM pastes AS paste
-        WHERE paste.user_id IS NULL
+        WHERE paste.created_by_user_id IS NULL
            OR NOT EXISTS (
              SELECT 1
              FROM workspaces AS workspace
@@ -64,7 +50,7 @@ defmodule Textbin.Repo.Migrations.MovePastesToWorkspaces do
                ON organization.id = workspace.organization_id
              WHERE workspace.id = paste.workspace_id
                AND workspace.is_default
-               AND organization.personal_owner_id = paste.user_id
+               AND organization.personal_owner_id = paste.created_by_user_id
            )
       ) THEN
         RAISE EXCEPTION
@@ -74,8 +60,14 @@ defmodule Textbin.Repo.Migrations.MovePastesToWorkspaces do
     $$
     """
 
-    execute "DROP TRIGGER pastes_sync_workspace_ownership ON pastes"
-    execute "DROP FUNCTION sync_paste_workspace_ownership()"
+    execute """
+    UPDATE pastes
+    SET user_id = created_by_user_id
+    """
+
+    alter table(:pastes) do
+      modify :user_id, :binary_id, null: false
+    end
 
     drop index(:pastes, [:created_by_user_id])
     drop index(:pastes, [:workspace_id, :inserted_at])
@@ -84,45 +76,5 @@ defmodule Textbin.Repo.Migrations.MovePastesToWorkspaces do
       remove :created_by_user_id
       remove :workspace_id
     end
-
-    drop constraint(:pastes, "pastes_user_id_fkey")
-
-    alter table(:pastes) do
-      modify :user_id, :binary_id, null: false
-    end
-
-    execute """
-    ALTER TABLE pastes
-    ADD CONSTRAINT pastes_user_id_fkey
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    """
-  end
-
-  defp create_compatibility_trigger do
-    execute """
-    CREATE FUNCTION sync_paste_workspace_ownership()
-    RETURNS TRIGGER AS $$
-    BEGIN
-      NEW.created_by_user_id := COALESCE(NEW.created_by_user_id, NEW.user_id);
-      NEW.user_id := COALESCE(NEW.user_id, NEW.created_by_user_id);
-
-      IF NEW.workspace_id IS NULL THEN
-        SELECT workspace.id INTO NEW.workspace_id
-        FROM organizations AS organization
-        JOIN workspaces AS workspace
-          ON workspace.organization_id = organization.id AND workspace.is_default
-        WHERE organization.personal_owner_id = NEW.created_by_user_id;
-      END IF;
-
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql
-    """
-
-    execute """
-    CREATE TRIGGER pastes_sync_workspace_ownership
-    BEFORE INSERT ON pastes
-    FOR EACH ROW EXECUTE FUNCTION sync_paste_workspace_ownership()
-    """
   end
 end
