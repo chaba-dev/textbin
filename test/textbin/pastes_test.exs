@@ -4,6 +4,7 @@ defmodule Textbin.PastesTest do
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
   alias Textbin.Storage
+  alias Textbin.Organizations
 
   import Textbin.AccountsFixtures
 
@@ -13,7 +14,13 @@ defmodule Textbin.PastesTest do
 
     setup do
       user = user_fixture()
-      %{scope: user_scope_fixture(user), other_scope: user_scope_fixture()}
+      scope = user_scope_fixture(user)
+
+      %{
+        scope: scope,
+        workspace: personal_workspace_fixture(user),
+        other_scope: user_scope_fixture()
+      }
     end
 
     test "list_pastes/1 returns scoped pastes", %{scope: scope, other_scope: other_scope} do
@@ -68,6 +75,19 @@ defmodule Textbin.PastesTest do
       assert Pastes.get_shared_paste(scope, paste.id).id == paste.id
     end
 
+    test "get_shared_paste/2 allows a workspace member to access a private paste", %{
+      scope: scope,
+      other_scope: other_scope
+    } do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "private", visibility: "private"})
+      organization = Organizations.get_personal_organization!(scope.user)
+
+      assert {:ok, _memberships} =
+               Organizations.add_organization_member(scope, organization, other_scope.user)
+
+      assert Pastes.get_shared_paste(other_scope, paste.id).id == paste.id
+    end
+
     test "get_shared_paste/2 hides private pastes from other viewers", %{
       scope: scope,
       other_scope: other_scope
@@ -78,13 +98,14 @@ defmodule Textbin.PastesTest do
       refute Pastes.get_shared_paste(other_scope, paste.id)
     end
 
-    test "get_shared_paste/2 hides expired shared pastes", %{scope: scope} do
+    test "get_shared_paste/2 hides expired shared pastes", %{scope: scope, workspace: workspace} do
       expired_paste =
         Repo.insert!(%Paste{
           data: "expired shared data",
           syntax_highlight: "plain",
           visibility: "public",
-          user_id: scope.user.id,
+          workspace_id: workspace.id,
+          created_by_user_id: scope.user.id,
           expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
         })
 
@@ -107,7 +128,8 @@ defmodule Textbin.PastesTest do
       assert paste.content_type == "text/plain"
       assert paste.syntax_highlight == "plain"
       assert paste.visibility == "private"
-      assert paste.user_id == scope.user.id
+      assert paste.workspace_id == personal_workspace_fixture(scope.user).id
+      assert paste.created_by_user_id == scope.user.id
       assert {microsecond, 6} = paste.inserted_at.microsecond
       assert rem(microsecond, 1000) == 0
       assert is_nil(paste.expires_at)
@@ -342,12 +364,13 @@ defmodule Textbin.PastesTest do
       assert %{visibility: ["is invalid"]} = errors_on(changeset)
     end
 
-    test "expired pastes are excluded from scoped reads", %{scope: scope} do
+    test "expired pastes are excluded from scoped reads", %{scope: scope, workspace: workspace} do
       expired_paste =
         Repo.insert!(%Paste{
           data: "expired data",
           syntax_highlight: "plain",
-          user_id: scope.user.id,
+          workspace_id: workspace.id,
+          created_by_user_id: scope.user.id,
           expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
         })
 
@@ -364,16 +387,58 @@ defmodule Textbin.PastesTest do
       assert paste.storage_key == nil
     end
 
-    test "reads legacy database-backed paste content", %{scope: scope} do
+    test "delete_paste/2 denies callers without a user", %{scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, @valid_attrs)
+
+      assert {:error, :not_found} = Pastes.delete_paste(nil, paste)
+      assert Repo.get(Paste, paste.id)
+    end
+
+    test "reads database-backed paste content by workspace", %{scope: scope, workspace: workspace} do
       paste =
         Repo.insert!(%Paste{
           data: "legacy content",
           syntax_highlight: "plain",
           visibility: "private",
-          user_id: scope.user.id
+          workspace_id: workspace.id,
+          created_by_user_id: scope.user.id
         })
 
       assert Pastes.get_paste!(scope, paste.id).data == "legacy content"
+    end
+
+    test "workspace ownership survives removal of creator attribution", %{scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, @valid_attrs)
+
+      paste
+      |> Ecto.Changeset.change(created_by_user_id: nil)
+      |> Repo.update!()
+
+      assert Pastes.get_paste!(scope, paste.id).id == paste.id
+      assert paste.id in Enum.map(Pastes.list_pastes(scope), & &1.id)
+    end
+
+    test "deleting a creator retains pastes owned by a team workspace" do
+      creator = user_fixture()
+      scope = user_scope_fixture(creator)
+
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Acme", slug: "acme"})
+
+      [workspace] = organization.workspaces
+
+      paste =
+        Repo.insert!(%Paste{
+          data: "team data",
+          workspace_id: workspace.id,
+          created_by_user_id: creator.id
+        })
+
+      Repo.delete!(creator)
+
+      retained_paste = Repo.get!(Paste, paste.id)
+      assert retained_paste.workspace_id == workspace.id
+      assert retained_paste.created_by_user_id == nil
     end
 
     test "delete_paste/2 does not delete another user's paste", %{
@@ -384,6 +449,58 @@ defmodule Textbin.PastesTest do
 
       assert Pastes.delete_paste(scope, paste) == {:error, :not_found}
       assert Pastes.get_paste!(other_scope, paste.id)
+    end
+
+    test "delete_paste/2 ignores ownership fields from a tampered struct", %{
+      scope: scope,
+      workspace: workspace,
+      other_scope: other_scope
+    } do
+      {:ok, other_paste} = Pastes.create_paste(other_scope, @valid_attrs)
+
+      tampered_paste = %{
+        other_paste
+        | workspace_id: workspace.id,
+          created_by_user_id: scope.user.id,
+          storage_key: nil
+      }
+
+      assert {:error, :not_found} = Pastes.delete_paste(scope, tampered_paste)
+      assert Repo.get(Paste, other_paste.id)
+    end
+
+    test "workspace owners manage all pastes while members manage only their own", %{
+      scope: owner_scope,
+      other_scope: member_scope,
+      workspace: workspace
+    } do
+      organization = Organizations.get_personal_organization!(owner_scope.user)
+
+      assert {:ok, _memberships} =
+               Organizations.add_organization_member(owner_scope, organization, member_scope.user)
+
+      owner_paste =
+        Repo.insert!(%Paste{
+          data: "owner paste",
+          workspace_id: workspace.id,
+          created_by_user_id: owner_scope.user.id
+        })
+
+      member_paste =
+        Repo.insert!(%Paste{
+          data: "member paste",
+          workspace_id: workspace.id,
+          created_by_user_id: member_scope.user.id
+        })
+
+      assert Pastes.manage_paste?(owner_scope, member_paste)
+      assert Pastes.manage_paste?(member_scope, member_paste)
+      refute Pastes.manage_paste?(member_scope, owner_paste)
+
+      assert {:error, :not_found} = Pastes.delete_paste(member_scope, owner_paste)
+      assert {:ok, _paste} = Pastes.delete_paste(owner_scope, member_paste)
+      assert Repo.get(Paste, owner_paste.id)
+      refute Repo.get(Paste, member_paste.id)
     end
 
     test "delete_expired_pastes/1 deletes the oldest expired rows in bounded batches", %{
@@ -421,11 +538,14 @@ defmodule Textbin.PastesTest do
     end
 
     defp insert_paste!(scope, data, expires_at) do
+      workspace = personal_workspace_fixture(scope.user)
+
       Repo.insert!(%Paste{
         data: data,
         syntax_highlight: "plain",
         visibility: "private",
-        user_id: scope.user.id,
+        workspace_id: workspace.id,
+        created_by_user_id: scope.user.id,
         expires_at: expires_at
       })
     end

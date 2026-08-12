@@ -3,7 +3,10 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
   alias Textbin.Accounts
   alias Textbin.Accounts.UserToken
+  alias Textbin.Organizations
   alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
+  alias Textbin.Repo
   alias Textbin.Storage
 
   import ExUnit.CaptureLog
@@ -447,6 +450,33 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
     end
 
+    test "deletes a blob without reading it", %{conn: conn, scope: scope} do
+      original_storage = Application.fetch_env!(:textbin, Storage)
+      original_inline_bytes = Application.fetch_env!(:textbin, :inline_paste_bytes)
+
+      Application.put_env(:textbin, Storage,
+        adapter: Textbin.DeleteOnlyStorage,
+        opts: [test_pid: self(), delegate: original_storage]
+      )
+
+      Application.put_env(:textbin, :inline_paste_bytes, 0)
+
+      on_exit(fn ->
+        Application.put_env(:textbin, Storage, original_storage)
+        Application.put_env(:textbin, :inline_paste_bytes, original_inline_bytes)
+      end)
+
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "delete without read"})
+
+      conn = delete(conn, ~p"/api/v1/pastes/#{paste.id}")
+
+      assert response(conn, 204)
+      assert_receive {:storage_deleted, storage_key}
+      assert storage_key == paste.storage_key
+      refute_received {:unexpected_storage_get, _storage_key}
+      refute Textbin.Repo.get(Textbin.Pastes.Paste, paste.id)
+    end
+
     test "does not delete another user's paste", %{conn: conn} do
       other_scope = user_scope_fixture()
       {:ok, paste} = Pastes.create_paste(other_scope, %{data: "other user data"})
@@ -455,6 +485,25 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert response(conn, 204)
       assert Pastes.get_paste!(other_scope, paste.id)
+    end
+
+    test "does not delete a paste from a team workspace", %{conn: conn, scope: scope} do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "API team", slug: "api-team"})
+
+      [workspace] = organization.workspaces
+
+      paste =
+        Repo.insert!(%Paste{
+          data: "team paste",
+          workspace_id: workspace.id,
+          created_by_user_id: scope.user.id
+        })
+
+      conn = delete(conn, ~p"/api/v1/pastes/#{paste.id}")
+
+      assert response(conn, 204)
+      assert Repo.get(Paste, paste.id)
     end
 
     test "returns no content when id is not a UUID", %{conn: conn} do
@@ -469,6 +518,13 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       conn = delete(conn, ~p"/api/v1/pastes/#{missing_id}")
 
       assert response(conn, 204) == ""
+    end
+
+    test "returns no content when the paste was already deleted", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "delete twice"})
+
+      assert response(delete(conn, ~p"/api/v1/pastes/#{paste.id}"), 204) == ""
+      assert response(delete(conn, ~p"/api/v1/pastes/#{paste.id}"), 204) == ""
     end
   end
 

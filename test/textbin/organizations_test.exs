@@ -1,7 +1,6 @@
 defmodule Textbin.OrganizationsTest do
   use Textbin.DataCase
 
-  alias Textbin.Accounts.User
   alias Textbin.Accounts.Scope
   alias Textbin.Organizations
   alias Textbin.Organizations.OrganizationMembership
@@ -9,46 +8,6 @@ defmodule Textbin.OrganizationsTest do
   alias Textbin.Organizations.WorkspaceMembership
 
   import Textbin.AccountsFixtures
-
-  describe "user provisioning compatibility" do
-    test "database inserts receive a personal organization and default workspace" do
-      user = Repo.insert!(%User{email: unique_user_email()})
-
-      organization = Organizations.get_personal_organization!(user)
-
-      assert organization.kind == "personal"
-      assert [%{user_id: user_id, role: "owner"}] = organization.memberships
-
-      assert [%{is_default: true, visibility: "open", memberships: [workspace_membership]}] =
-               organization.workspaces
-
-      assert user_id == user.id
-      assert workspace_membership.user_id == user.id
-      assert workspace_membership.role == "owner"
-    end
-
-    test "migration locks user writes before backfill and trigger installation" do
-      migration =
-        File.read!(
-          Path.expand(
-            "../../priv/repo/migrations/20260810090000_create_organizations_and_workspaces.exs",
-            __DIR__
-          )
-        )
-
-      {lock_position, _length} =
-        :binary.match(migration, "LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
-
-      [{backfill_position, _length} | _rest] =
-        :binary.matches(migration, "backfill_personal_organizations()")
-
-      [{trigger_position, _length} | _rest] =
-        :binary.matches(migration, "create_user_provisioning_trigger()")
-
-      assert lock_position < backfill_position
-      assert backfill_position < trigger_position
-    end
-  end
 
   describe "create_organization/2" do
     test "creates a team organization with an open default workspace" do

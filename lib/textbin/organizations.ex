@@ -56,6 +56,15 @@ defmodule Textbin.Organizations do
     |> preload_organization()
   end
 
+  def get_personal_default_workspace!(%User{id: user_id}) do
+    Repo.one!(
+      from workspace in Workspace,
+        join: organization in Organization,
+        on: organization.id == workspace.organization_id,
+        where: organization.personal_owner_id == ^user_id and workspace.is_default
+    )
+  end
+
   @doc """
   Adds a user to an organization and its default workspace atomically.
   """

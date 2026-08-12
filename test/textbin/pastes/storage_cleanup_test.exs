@@ -6,6 +6,7 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
+  alias Textbin.Organizations
   alias Textbin.Repo
   alias Textbin.Storage
 
@@ -74,6 +75,48 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     assert_raise Textbin.Storage.IntegrityError, ~r/integrity check failed/, fn ->
       Pastes.get_paste!(context.scope, paste.id)
     end
+  end
+
+  test "workspace deletion cannot bypass blob cleanup", context do
+    {:ok, paste} = Pastes.create_paste(context.scope, %{data: "retained blob"})
+    organization = Organizations.get_personal_organization!(context.scope.user)
+
+    assert_raise Ecto.ConstraintError, fn -> Repo.delete!(organization) end
+
+    assert Repo.get(Paste, paste.id)
+    assert Storage.get(paste.storage_key) == {:ok, "retained blob"}
+  end
+
+  test "manual deletion succeeds when expiration cleanup wins the hard-delete race", context do
+    {:ok, gate} = Agent.start_link(fn -> true end)
+    delegate = Application.fetch_env!(:textbin, Storage)
+
+    Application.put_env(:textbin, Storage,
+      adapter: Textbin.BlockingStorage,
+      opts: [gate: gate, test_pid: self(), delegate: delegate]
+    )
+
+    {:ok, paste} = Pastes.create_paste(context.scope, %{data: "concurrent cleanup"})
+
+    deletion =
+      Task.async(fn ->
+        receive do
+          :delete -> Pastes.delete_paste(context.scope, paste)
+        end
+      end)
+
+    Ecto.Adapters.SQL.Sandbox.allow(Textbin.Repo, self(), deletion.pid)
+    send(deletion.pid, :delete)
+
+    assert_receive {:storage_delete_blocked, deleting_pid, storage_key}, 1_000
+    assert storage_key == paste.storage_key
+    assert Pastes.delete_expired_pastes(limit: 1) == 1
+
+    send(deleting_pid, {:continue_storage_delete, storage_key})
+
+    assert {:ok, %Paste{id: paste_id}} = Task.await(deletion)
+    assert paste_id == paste.id
+    refute Repo.get(Paste, paste.id)
   end
 
   defp expire!(paste) do

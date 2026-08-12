@@ -116,12 +116,15 @@ defmodule TextbinWeb.PasteControllerTest do
   end
 
   test "raw hides expired pastes", %{scope: scope} do
+    workspace = personal_workspace_fixture(scope.user)
+
     paste =
       Repo.insert!(%Paste{
         data: "expired raw",
         syntax_highlight: "plain",
         visibility: "public",
-        user_id: scope.user.id,
+        workspace_id: workspace.id,
+        created_by_user_id: scope.user.id,
         expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
       })
 
