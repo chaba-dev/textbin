@@ -18,7 +18,11 @@ defmodule Textbin.Accounts.Scope do
 
   alias Textbin.Accounts.User
 
-  defstruct user: nil
+  defstruct user: nil,
+            organization: nil,
+            organization_membership: nil,
+            workspace: nil,
+            workspace_membership: nil
 
   @doc """
   Creates a scope for the given user.

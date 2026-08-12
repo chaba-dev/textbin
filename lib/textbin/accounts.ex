@@ -105,7 +105,7 @@ defmodule Textbin.Accounts do
   defp create_user_with_personal_organization(changeset) do
     Repo.transact(fn ->
       with {:ok, user} <- Repo.insert(changeset),
-           {:ok, _organization} <- Organizations.create_personal_organization(user) do
+           {:ok, _organization} <- Organizations.create_personal_organization_in_transaction(user) do
         {:ok, user}
       end
     end)

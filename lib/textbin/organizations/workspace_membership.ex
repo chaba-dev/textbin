@@ -27,4 +27,11 @@ defmodule Textbin.Organizations.WorkspaceMembership do
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:created_by_id)
   end
+
+  def role_changeset(membership, attrs) do
+    membership
+    |> cast(attrs, [:role])
+    |> validate_required([:role])
+    |> validate_inclusion(:role, @roles)
+  end
 end

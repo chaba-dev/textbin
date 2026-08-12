@@ -14,6 +14,7 @@ defmodule Textbin.Pastes do
   alias Textbin.Storage.IntegrityError
   alias Textbin.Organizations
   alias Textbin.Organizations.WorkspaceMembership
+  alias Textbin.Organizations.Policy
 
   require Logger
 
@@ -194,12 +195,14 @@ defmodule Textbin.Pastes do
   end
 
   defp manageable_paste_query(paste_id, user_id) do
+    owner_role = Policy.workspace_owner_role()
+
     from paste in Paste,
       join: membership in WorkspaceMembership,
       on: membership.workspace_id == paste.workspace_id,
       where:
         paste.id == ^paste_id and membership.user_id == ^user_id and
-          (membership.role == "owner" or paste.created_by_user_id == ^user_id)
+          (membership.role == ^owner_role or paste.created_by_user_id == ^user_id)
   end
 
   @doc """
