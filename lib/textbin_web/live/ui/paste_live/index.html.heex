@@ -10,7 +10,33 @@
             Recently created snippets.
           </p>
         </div>
+        <.form
+          for={@workspace_switcher_form}
+          id="workspace-switcher"
+          phx-change="switch_workspace"
+          class="w-full sm:w-72"
+        >
+          <.input
+            field={@workspace_switcher_form[:id]}
+            type="select"
+            label="Workspace"
+            options={@workspace_options}
+          />
+        </.form>
       </div>
+      <nav
+        :if={!guest_user?(@current_scope.user)}
+        id="workspace-navigation"
+        class="flex flex-wrap gap-2"
+        aria-label="Workspace"
+      >
+        <.link navigate={workspace_members_path(@current_scope)} class="btn btn-sm btn-ghost">
+          <.icon name="hero-user-group" class="size-4" /> Members
+        </.link>
+        <.link navigate={workspace_settings_path(@current_scope)} class="btn btn-sm btn-ghost">
+          <.icon name="hero-cog-6-tooth" class="size-4" /> Settings
+        </.link>
+      </nav>
     </div>
 
     <section
@@ -75,7 +101,7 @@
       >
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <.link
-            navigate={~p"/pastes/#{paste.id}"}
+            navigate={"#{paste_index_path(@current_scope)}/#{paste.id}"}
             class="break-all font-mono text-sm font-medium text-base-content hover:underline"
           >
             {paste.id}
@@ -105,6 +131,7 @@
               </span>
             <% end %>
             <button
+              :if={workspace_paste_manageable?(@current_scope, paste)}
               id={"delete-paste-#{paste.id}"}
               type="button"
               phx-click="delete"

@@ -60,7 +60,11 @@
         >
           <.icon name="hero-code-bracket" class="size-4" /> Raw
         </.link>
-        <.link :if={@owner?} navigate={~p"/pastes"} class="btn btn-sm btn-ghost">
+        <.link
+          :if={@owner?}
+          navigate={paste_index_path(@current_scope)}
+          class="btn btn-sm btn-ghost"
+        >
           Back to pastes
         </.link>
         <button
