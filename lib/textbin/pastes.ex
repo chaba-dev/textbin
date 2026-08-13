@@ -22,14 +22,14 @@ defmodule Textbin.Pastes do
   @default_max_paste_bytes 1_048_576
 
   def list_pastes(%Scope{user: %User{}} = scope) do
-    case authorized_workspace_id(scope) do
-      {:ok, workspace_id} ->
+    case authorized_workspace(scope) do
+      {:ok, workspace} ->
         now = Paste.utc_now_ms()
 
         Repo.all(
           from p in Paste,
             where:
-              p.workspace_id == ^workspace_id and
+              p.workspace_id == ^workspace.id and
                 (is_nil(p.expires_at) or p.expires_at > ^now),
             order_by: [desc: p.inserted_at]
         )
@@ -41,14 +41,14 @@ defmodule Textbin.Pastes do
   end
 
   def list_paste_metadata(%Scope{user: %User{}} = scope) do
-    case authorized_workspace_id(scope) do
-      {:ok, workspace_id} ->
+    case authorized_workspace(scope) do
+      {:ok, workspace} ->
         now = Paste.utc_now_ms()
 
         Repo.all(
           from p in Paste,
             where:
-              p.workspace_id == ^workspace_id and
+              p.workspace_id == ^workspace.id and
                 (is_nil(p.expires_at) or p.expires_at > ^now),
             select:
               struct(p, [
@@ -58,7 +58,7 @@ defmodule Textbin.Pastes do
                 :sha256,
                 :content_type,
                 :syntax_highlight,
-                :visibility,
+                :audience,
                 :expires_at,
                 :workspace_id,
                 :created_by_user_id,
@@ -74,14 +74,14 @@ defmodule Textbin.Pastes do
   end
 
   def get_paste(%Scope{user: %User{}} = scope, id) when is_binary(id) do
-    with {:ok, workspace_id} <- authorized_workspace_id(scope),
+    with {:ok, workspace} <- authorized_workspace(scope),
          {:ok, paste_id} <- Ecto.UUID.cast(id) do
       now = Paste.utc_now_ms()
 
       Repo.one(
         from p in Paste,
           where:
-            p.id == ^paste_id and p.workspace_id == ^workspace_id and
+            p.id == ^paste_id and p.workspace_id == ^workspace.id and
               (is_nil(p.expires_at) or p.expires_at > ^now)
       )
       |> load_data()
@@ -123,10 +123,15 @@ defmodule Textbin.Pastes do
   def get_shared_paste(_current_scope, _id), do: nil
 
   def create_paste(%Scope{user: %User{} = user} = scope, attrs \\ %{}) do
-    with {:ok, workspace_id} <- authorized_workspace_id(scope) do
+    with {:ok, workspace} <- authorized_workspace(scope) do
       attrs = attrs_with_defaults(attrs, user, ContentType.text_safe?(attr_data(attrs)))
-      paste = new_paste(user, workspace_id)
-      changeset = paste |> Paste.changeset(attrs) |> validate_data_size()
+      paste = new_paste(user, workspace.id)
+
+      changeset =
+        paste
+        |> Paste.changeset(attrs)
+        |> validate_audience(workspace)
+        |> validate_data_size()
 
       if changeset.valid? do
         store_paste(changeset)
@@ -143,15 +148,16 @@ defmodule Textbin.Pastes do
         attrs \\ %{}
       )
       when is_binary(path) and is_integer(size_bytes) and is_binary(sha256) do
-    with {:ok, workspace_id} <- authorized_workspace_id(scope) do
+    with {:ok, workspace} <- authorized_workspace(scope) do
       text_safe? = match?({:ok, true}, ContentType.text_safe_file(path))
       attrs = attrs_with_defaults(attrs, user, text_safe?)
-      paste = new_paste(user, workspace_id)
+      paste = new_paste(user, workspace.id)
       storage_key = "pastes/#{paste.id}"
 
       changeset =
         %{paste | storage_key: storage_key}
         |> Paste.changeset(attrs)
+        |> validate_audience(workspace)
         |> validate_uploaded_file(path, metadata)
 
       if changeset.valid? do
@@ -303,7 +309,12 @@ defmodule Textbin.Pastes do
         created_by_user_id: paste.created_by_user_id || user.id
     }
 
-    Paste.changeset(paste, attrs_with_visibility(attrs, user))
+    changeset = Paste.changeset(paste, attrs_with_audience(attrs, user))
+
+    case authorized_workspace(scope) do
+      {:ok, workspace} -> validate_audience(changeset, workspace)
+      {:error, :not_found} -> changeset
+    end
   end
 
   def prepare_paste(%Scope{user: %User{} = user} = scope),
@@ -317,14 +328,15 @@ defmodule Textbin.Pastes do
     }
   end
 
-  defp authorized_workspace_id(%Scope{workspace: %{id: workspace_id}} = scope) do
+  defp authorized_workspace(%Scope{workspace: %{id: workspace_id}} = scope) do
     case Organizations.resolve_workspace_scope(scope, workspace_id) do
-      {:ok, _resolved_scope} -> {:ok, workspace_id}
+      {:ok, resolved_scope} -> {:ok, resolved_scope.workspace}
       {:error, :not_found} -> {:error, :not_found}
     end
   end
 
-  defp authorized_workspace_id(%Scope{user: user}), do: {:ok, personal_workspace_id(user)}
+  defp authorized_workspace(%Scope{user: user}),
+    do: {:ok, Organizations.get_personal_default_workspace!(user)}
 
   defp scope_workspace_id(%Scope{workspace: %{id: workspace_id}}), do: workspace_id
   defp scope_workspace_id(%Scope{user: user}), do: personal_workspace_id(user)
@@ -573,7 +585,7 @@ defmodule Textbin.Pastes do
   defp attrs_with_defaults(attrs, user, text_safe?) do
     attrs
     |> attrs_with_default_ttl(user)
-    |> attrs_with_visibility(user)
+    |> attrs_with_audience(user)
     |> attrs_with_content_type(text_safe?)
   end
 
@@ -601,18 +613,36 @@ defmodule Textbin.Pastes do
     if Enum.any?(Map.keys(attrs), &is_binary/1), do: "expires_in", else: :expires_in
   end
 
-  defp attrs_with_visibility(attrs, %User{} = user) when is_map(attrs) do
-    visibility = if User.guest?(user), do: "unlisted", else: visibility_value(attrs)
+  defp attrs_with_audience(attrs, %User{} = user) when is_map(attrs) do
+    audience = if User.guest?(user), do: "unlisted", else: audience_value(attrs)
 
-    Map.put(attrs, attr_key(attrs, "visibility", :visibility), visibility || "private")
+    Map.put(attrs, attr_key(attrs, "audience", :audience), audience || "workspace")
   end
 
-  defp visibility_value(attrs) do
-    case Map.get(attrs, "visibility") || Map.get(attrs, :visibility) do
+  defp audience_value(attrs) do
+    case Map.get(attrs, "audience") || Map.get(attrs, :audience) ||
+           Map.get(attrs, "visibility") || Map.get(attrs, :visibility) do
       "" -> nil
-      visibility -> visibility
+      "private" -> "workspace"
+      audience -> audience
     end
   end
+
+  defp validate_audience(changeset, workspace) do
+    audience = Ecto.Changeset.get_field(changeset, :audience)
+
+    if Keyword.has_key?(changeset.errors, :audience) or
+         audience_allowed?(audience, workspace.external_sharing_policy) do
+      changeset
+    else
+      Ecto.Changeset.add_error(changeset, :audience, "is disabled by the workspace policy")
+    end
+  end
+
+  defp audience_allowed?("workspace", _policy), do: true
+  defp audience_allowed?("unlisted", policy), do: policy in ["unlisted", "public"]
+  defp audience_allowed?("public", "public"), do: true
+  defp audience_allowed?(_audience, _policy), do: false
 
   defp attr_key(attrs, string_key, atom_key) do
     if Enum.any?(Map.keys(attrs), &is_binary/1), do: string_key, else: atom_key
@@ -639,11 +669,11 @@ defmodule Textbin.Pastes do
       query,
       [paste],
       paste.workspace_id in subquery(workspace_ids) or
-        paste.visibility in ["unlisted", "public"]
+        paste.audience in ["unlisted", "public"]
     )
   end
 
   defp allow_shared_access(query, nil) do
-    where(query, [paste], paste.visibility in ["unlisted", "public"])
+    where(query, [paste], paste.audience in ["unlisted", "public"])
   end
 end

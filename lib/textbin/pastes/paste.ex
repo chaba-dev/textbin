@@ -11,7 +11,7 @@ defmodule Textbin.Pastes.Paste do
   # Store timestamps at millisecond precision so API output and database values
   # stay stable across adapters and reloads.
   @timestamps_opts [type: :utc_datetime_usec, autogenerate: {__MODULE__, :utc_now_ms, []}]
-  @visibility_values ["private", "unlisted", "public"]
+  @audiences ["workspace", "unlisted", "public"]
   @ttl_presets %{
     "10m" => 10 * 60,
     "1h" => 60 * 60,
@@ -29,7 +29,7 @@ defmodule Textbin.Pastes.Paste do
     field :sha256, :binary
     field :content_type, :string, default: "text/plain"
     field :syntax_highlight, :string, default: "plain"
-    field :visibility, :string, default: "private"
+    field :audience, :string, source: :visibility, default: "workspace"
     field :expires_at, :utc_datetime_usec
     field :expires_in, :string, virtual: true
 
@@ -40,18 +40,40 @@ defmodule Textbin.Pastes.Paste do
   end
 
   def changeset(paste, attrs) do
+    attrs = normalize_legacy_visibility(attrs)
+
     paste
-    |> cast(attrs, [:data, :content_type, :syntax_highlight, :visibility, :expires_in])
+    |> cast(attrs, [:data, :content_type, :syntax_highlight, :audience, :expires_in])
     |> put_expires_at(attrs)
-    |> validate_required([:content_type, :syntax_highlight, :visibility, :workspace_id])
+    |> validate_required([:content_type, :syntax_highlight, :audience, :workspace_id])
     |> validate_content_location()
     |> validate_length(:content_type, max: 255)
     |> validate_change(:content_type, &validate_content_type/2)
-    |> validate_inclusion(:visibility, @visibility_values)
+    |> validate_inclusion(:audience, @audiences)
     |> validate_expiration()
     |> foreign_key_constraint(:workspace_id)
     |> foreign_key_constraint(:created_by_user_id)
   end
+
+  defp normalize_legacy_visibility(attrs) when is_map(attrs) do
+    cond do
+      Map.has_key?(attrs, "audience") or Map.has_key?(attrs, :audience) ->
+        attrs
+
+      Map.has_key?(attrs, "visibility") ->
+        Map.put(attrs, "audience", legacy_audience(Map.get(attrs, "visibility")))
+
+      Map.has_key?(attrs, :visibility) ->
+        Map.put(attrs, :audience, legacy_audience(Map.get(attrs, :visibility)))
+
+      true ->
+        attrs
+    end
+  end
+
+  defp normalize_legacy_visibility(attrs), do: attrs
+  defp legacy_audience("private"), do: "workspace"
+  defp legacy_audience(audience), do: audience
 
   defp validate_content_location(changeset) do
     if get_field(changeset, :data) || get_field(changeset, :storage_key) do

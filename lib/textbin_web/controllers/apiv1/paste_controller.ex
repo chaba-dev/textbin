@@ -72,7 +72,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
   defp paste_attrs(conn, params)
        when map_size(params) == 0 or is_map_key(params, "syntax_highlight") or
               is_map_key(params, "content_type") or
-              is_map_key(params, "visibility") or
+              is_map_key(params, "audience") or is_map_key(params, "visibility") or
               is_map_key(params, "expires_in") or is_map_key(params, "ttl") do
     case read_request_body(conn) do
       {:ok, path, metadata, conn} ->
@@ -107,6 +107,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
     attrs
     |> put_string_param(params, "content_type")
     |> put_string_param(params, "syntax_highlight")
+    |> put_string_param(params, "audience")
     |> put_string_param(params, "visibility")
     |> put_string_param(params, "expires_in")
     |> put_string_param(params, "ttl")

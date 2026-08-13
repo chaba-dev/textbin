@@ -24,7 +24,13 @@ defmodule TextbinWeb.UI.WorkspaceLive do
      |> assign(:member_form, to_form(%{"email" => ""}, as: :member))
      |> assign(
        :settings_form,
-       to_form(%{"visibility" => scope.workspace.visibility}, as: :workspace)
+       to_form(
+         %{
+           "visibility" => scope.workspace.visibility,
+           "external_sharing_policy" => scope.workspace.external_sharing_policy
+         },
+         as: :workspace
+       )
      )
      |> stream(:members, Organizations.list_workspace_members(scope), reset: true)}
   end
@@ -81,11 +87,11 @@ defmodule TextbinWeb.UI.WorkspaceLive do
     end
   end
 
-  def handle_event("update_settings", %{"workspace" => %{"visibility" => visibility}}, socket) do
-    case Organizations.change_workspace_visibility(
+  def handle_event("update_settings", %{"workspace" => workspace_params}, socket) do
+    case Organizations.change_workspace_settings(
            socket.assigns.current_scope,
            socket.assigns.current_scope.workspace,
-           visibility
+           workspace_params
          ) do
       {:ok, workspace} ->
         scope = %{socket.assigns.current_scope | workspace: workspace}
@@ -95,7 +101,13 @@ defmodule TextbinWeb.UI.WorkspaceLive do
          |> assign(:current_scope, scope)
          |> assign(
            :settings_form,
-           to_form(%{"visibility" => workspace.visibility}, as: :workspace)
+           to_form(
+             %{
+               "visibility" => workspace.visibility,
+               "external_sharing_policy" => workspace.external_sharing_policy
+             },
+             as: :workspace
+           )
          )
          |> put_flash(:info, "Workspace settings updated")}
 
@@ -187,26 +199,39 @@ defmodule TextbinWeb.UI.WorkspaceLive do
           </dl>
 
           <.form
-            :if={@workspace_owner? && !@current_scope.workspace.is_default}
+            :if={@workspace_owner?}
             for={@settings_form}
             id="workspace-settings-form"
             phx-submit="update_settings"
           >
             <.input
+              :if={!@current_scope.workspace.is_default}
               field={@settings_form[:visibility]}
               type="select"
               label="Visibility"
               options={[{"Open", "open"}, {"Private", "private"}]}
             />
+            <.input
+              field={@settings_form[:external_sharing_policy]}
+              type="select"
+              label="External sharing"
+              options={[
+                {"Disabled", "disabled"},
+                {"Unlisted links", "unlisted"},
+                {"Public", "public"}
+              ]}
+            />
             <.button variant="primary" phx-disable-with="Saving...">Save settings</.button>
           </.form>
 
           <p
-            :if={!@workspace_owner? || @current_scope.workspace.is_default}
+            :if={!@workspace_owner?}
             id="workspace-settings-readonly"
             class="text-sm text-base-content/60"
           >
-            Visibility: {String.capitalize(@current_scope.workspace.visibility)}
+            Visibility: {String.capitalize(@current_scope.workspace.visibility)} · External sharing: {String.capitalize(
+              @current_scope.workspace.external_sharing_policy
+            )}
           </p>
         </section>
       </div>

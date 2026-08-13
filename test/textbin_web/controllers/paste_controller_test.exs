@@ -122,7 +122,7 @@ defmodule TextbinWeb.PasteControllerTest do
       Repo.insert!(%Paste{
         data: "expired raw",
         syntax_highlight: "plain",
-        visibility: "public",
+        audience: "public",
         workspace_id: workspace.id,
         created_by_user_id: scope.user.id,
         expires_at: DateTime.add(DateTime.utc_now(), -1, :second)

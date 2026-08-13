@@ -216,7 +216,8 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         conn = post(conn, ~p"/api/v1/pastes", %{data: visibility, visibility: visibility})
 
         assert %{"id" => id, "visibility" => ^visibility} = json_response(conn, 201)["data"]
-        assert Pastes.get_paste!(scope, id).visibility == visibility
+        expected_audience = if visibility == "private", do: "workspace", else: visibility
+        assert Pastes.get_paste!(scope, id).audience == expected_audience
       end
     end
 
@@ -227,7 +228,19 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         |> post(~p"/api/v1/pastes?visibility=public", "public streamed data")
 
       assert %{"id" => id, "visibility" => "public"} = json_response(conn, 201)["data"]
-      assert Pastes.get_paste!(scope, id).visibility == "public"
+      assert Pastes.get_paste!(scope, id).audience == "public"
+    end
+
+    test "accepts and returns the audience concept", %{conn: conn, scope: scope} do
+      conn = post(conn, ~p"/api/v1/pastes", %{data: "members", audience: "workspace"})
+
+      assert %{
+               "id" => id,
+               "audience" => "workspace",
+               "visibility" => "private"
+             } = json_response(conn, 201)["data"]
+
+      assert Pastes.get_paste!(scope, id).audience == "workspace"
     end
 
     test "uses the user's default expiration", %{conn: conn, scope: scope} do
@@ -302,7 +315,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders errors when visibility is invalid", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", Map.put(@create_attrs, :visibility, "secret"))
 
-      assert %{"visibility" => ["is invalid"]} = json_response(conn, 422)["errors"]
+      assert %{"audience" => ["is invalid"]} = json_response(conn, 422)["errors"]
     end
 
     test "rejects JSON data over the configured size limit", %{conn: conn} do

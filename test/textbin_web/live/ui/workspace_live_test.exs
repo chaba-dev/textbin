@@ -6,6 +6,7 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
 
   alias Textbin.Organizations
   alias Textbin.Organizations.WorkspaceMembership
+  alias Textbin.Pastes.Paste
   alias Textbin.Repo
 
   setup %{conn: conn} do
@@ -133,6 +134,50 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
     |> render_submit()
 
     assert Repo.reload!(context.workspace).visibility == "open"
+  end
+
+  test "workspace owners tighten external sharing and clamp existing paste audiences", context do
+    public_paste =
+      Repo.insert!(%Paste{
+        data: "public",
+        audience: "public",
+        workspace_id: context.workspace.id,
+        created_by_user_id: context.owner.id
+      })
+
+    unlisted_paste =
+      Repo.insert!(%Paste{
+        data: "unlisted",
+        audience: "unlisted",
+        workspace_id: context.workspace.id,
+        created_by_user_id: context.owner.id
+      })
+
+    {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
+
+    view
+    |> form("#workspace-settings-form", %{
+      "workspace" => %{
+        "visibility" => "private",
+        "external_sharing_policy" => "unlisted"
+      }
+    })
+    |> render_submit()
+
+    assert Repo.reload!(public_paste).audience == "unlisted"
+    assert Repo.reload!(unlisted_paste).audience == "unlisted"
+
+    view
+    |> form("#workspace-settings-form", %{
+      "workspace" => %{
+        "visibility" => "private",
+        "external_sharing_policy" => "disabled"
+      }
+    })
+    |> render_submit()
+
+    assert Repo.reload!(public_paste).audience == "workspace"
+    assert Repo.reload!(unlisted_paste).audience == "workspace"
   end
 
   test "members can view settings but cannot mutate them", context do

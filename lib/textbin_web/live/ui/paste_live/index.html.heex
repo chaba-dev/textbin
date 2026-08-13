@@ -67,10 +67,10 @@
             placeholder="plain"
           />
           <.input
-            field={@paste_form[:visibility]}
+            field={@paste_form[:audience]}
             type="select"
-            label="Visibility"
-            options={paste_visibility_options(@current_scope.user)}
+            label="Audience"
+            options={paste_audience_options(@current_scope)}
             disabled={guest_user?(@current_scope.user)}
           />
           <.input
@@ -108,8 +108,8 @@
           </.link>
           <div class="flex flex-wrap items-center gap-3">
             <span class="badge badge-sm badge-outline">{paste.syntax_highlight}</span>
-            <span id={"paste-visibility-#{paste.id}"} class="badge badge-sm badge-outline">
-              {String.capitalize(paste.visibility)}
+            <span id={"paste-audience-#{paste.id}"} class="badge badge-sm badge-outline">
+              {String.capitalize(paste.audience)}
             </span>
             <time
               class="text-xs text-base-content/50"

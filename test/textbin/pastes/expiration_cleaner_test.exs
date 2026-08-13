@@ -14,7 +14,7 @@ defmodule Textbin.Pastes.ExpirationCleanerTest do
       Repo.insert!(%Paste{
         data: "expired",
         syntax_highlight: "plain",
-        visibility: "private",
+        audience: "workspace",
         workspace_id: workspace.id,
         created_by_user_id: user.id,
         expires_at: DateTime.add(Paste.utc_now_ms(), -1, :second)

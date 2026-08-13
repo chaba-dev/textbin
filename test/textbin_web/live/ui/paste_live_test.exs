@@ -38,7 +38,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {:ok, view, _html} = live(recycle(conn), path)
 
     assert has_element?(view, "#paste-form")
-    assert has_element?(view, "#paste_visibility[disabled] option[value='unlisted']")
+    assert has_element?(view, "#paste_audience[disabled] option[value='unlisted']")
 
     view
     |> form("#paste-form", %{
@@ -58,7 +58,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert paste.data == "guest paste"
     assert paste.created_by_user.kind == "guest"
-    assert paste.visibility == "unlisted"
+    assert paste.audience == "unlisted"
     assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 21_590..21_600
     assert has_element?(view, "##{stream_id(paste)}", "plain")
   end
@@ -75,7 +75,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#pastes-list")
     assert has_element?(view, "##{stream_id(paste)}", paste.id)
     assert has_element?(view, "##{stream_id(paste)}", "elixir")
-    assert has_element?(view, "#paste-visibility-#{paste.id}", "Private")
+    assert has_element?(view, "#paste-audience-#{paste.id}", "Workspace")
     assert has_element?(view, "#paste-expires-at-#{paste.id}", "Never expires")
     assert has_element?(view, "##{stream_id(paste)} a[href='#{path}/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
@@ -121,7 +121,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       "paste" => %{
         "data" => "team paste",
         "syntax_highlight" => "plain",
-        "visibility" => "private",
+        "audience" => "workspace",
         "expires_in" => "never"
       }
     })
@@ -154,7 +154,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       "paste" => %{
         "data" => "created after revocation",
         "syntax_highlight" => "plain",
-        "visibility" => "private",
+        "audience" => "workspace",
         "expires_in" => "never"
       }
     })
@@ -235,16 +235,16 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
 
     assert has_element?(view, "#paste-form")
-    assert has_element?(view, "#paste_visibility option[value='private']")
-    assert has_element?(view, "#paste_visibility option[value='unlisted']")
-    assert has_element?(view, "#paste_visibility option[value='public']")
+    assert has_element?(view, "#paste_audience option[value='workspace']")
+    assert has_element?(view, "#paste_audience option[value='unlisted']")
+    assert has_element?(view, "#paste_audience option[value='public']")
 
     view
     |> form("#paste-form", %{
       "paste" => %{
         "data" => "created from the browser",
         "syntax_highlight" => "markdown",
-        "visibility" => "public",
+        "audience" => "public",
         "expires_in" => "never"
       }
     })
@@ -253,13 +253,13 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert [paste] = Pastes.list_pastes(scope)
     assert paste.data == "created from the browser"
     assert paste.syntax_highlight == "markdown"
-    assert paste.visibility == "public"
+    assert paste.audience == "public"
     assert is_nil(paste.expires_at)
     assert has_element?(view, "##{stream_id(paste)}", "markdown")
-    assert has_element?(view, "#paste-visibility-#{paste.id}", "Public")
+    assert has_element?(view, "#paste-audience-#{paste.id}", "Public")
   end
 
-  test "form validation reuses the workspace resolved at mount", %{conn: conn, user: user} do
+  test "form validation revalidates the workspace resolved at mount", %{conn: conn, user: user} do
     {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
     handler_id = "paste-form-query-test-#{System.unique_integer([:positive])}"
 
@@ -282,7 +282,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       |> render_change()
     end
 
-    refute_receive {:repo_query, _metadata}, 100
+    assert_receive {:repo_query, _metadata}, 100
   end
 
   test "creates a paste with the user's default expiration", %{scope: scope} do
@@ -317,7 +317,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert has_element?(view, "h1", paste.id)
     assert has_element?(view, "span", "json")
-    assert has_element?(view, "#paste-visibility", "Private")
+    assert has_element?(view, "#paste-audience", "Workspace")
     assert has_element?(view, "#paste-expires-at", "Never expires")
     assert has_element?(view, "#paste-data .lumis code.language-json")
     assert has_element?(view, "#paste-data .l-line[data-line='1']")
@@ -333,7 +333,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       Pastes.create_paste(scope, %{
         data: "<script id=\"injected\">alert('unsafe')</script>",
         content_type: "text/html",
-        visibility: "public"
+        audience: "public"
       })
 
     {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
@@ -366,7 +366,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
       {:ok, view, _html} = live(build_conn(), ~p"/pastes/#{paste.id}")
 
-      assert has_element?(view, "#paste-visibility", String.capitalize(visibility))
+      assert has_element?(view, "#paste-audience", String.capitalize(visibility))
       assert has_element?(view, "#paste-data .l-line[data-line='1']")
       assert has_element?(view, "#paste-data", "#{visibility} paste")
       assert has_element?(view, "#copy-paste-content[phx-hook='CopyToClipboard']")

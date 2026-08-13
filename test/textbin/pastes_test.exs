@@ -142,7 +142,7 @@ defmodule Textbin.PastesTest do
         Repo.insert!(%Paste{
           data: "expired shared data",
           syntax_highlight: "plain",
-          visibility: "public",
+          audience: "public",
           workspace_id: workspace.id,
           created_by_user_id: scope.user.id,
           expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
@@ -166,12 +166,77 @@ defmodule Textbin.PastesTest do
       assert Repo.get!(Paste, paste.id).data == "some data"
       assert paste.content_type == "text/plain"
       assert paste.syntax_highlight == "plain"
-      assert paste.visibility == "private"
+      assert paste.audience == "workspace"
       assert paste.workspace_id == personal_workspace_fixture(scope.user).id
       assert paste.created_by_user_id == scope.user.id
       assert {microsecond, 6} = paste.inserted_at.microsecond
       assert rem(microsecond, 1000) == 0
       assert is_nil(paste.expires_at)
+    end
+
+    test "workspace sharing policy limits paste audiences", %{scope: scope} do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Audience", slug: "audience"})
+
+      {:ok, workspace} =
+        Organizations.create_workspace(scope, organization, %{
+          name: "Private",
+          slug: "private",
+          visibility: "private"
+        })
+
+      {:ok, workspace_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+
+      assert {:ok, %Paste{audience: "workspace"}} =
+               Pastes.create_paste(workspace_scope, %{data: "members only", audience: "workspace"})
+
+      for audience <- ["unlisted", "public"] do
+        assert {:error, changeset} =
+                 Pastes.create_paste(workspace_scope, %{data: audience, audience: audience})
+
+        assert %{audience: ["is disabled by the workspace policy"]} = errors_on(changeset)
+      end
+
+      assert {:ok, unlisted_workspace} =
+               Organizations.change_workspace_settings(scope, workspace, %{
+                 external_sharing_policy: "unlisted"
+               })
+
+      {:ok, unlisted_scope} = Organizations.resolve_workspace_scope(scope, unlisted_workspace)
+
+      assert {:ok, %Paste{audience: "unlisted"}} =
+               Pastes.create_paste(unlisted_scope, %{data: "by link", audience: "unlisted"})
+
+      assert {:error, changeset} =
+               Pastes.create_paste(unlisted_scope, %{data: "discoverable", audience: "public"})
+
+      assert %{audience: ["is disabled by the workspace policy"]} = errors_on(changeset)
+    end
+
+    test "removed members retain external link access but lose workspace audience access", %{
+      scope: owner_scope
+    } do
+      member = user_fixture()
+      member_scope = user_scope_fixture(member)
+      organization = Organizations.get_personal_organization!(owner_scope.user)
+
+      {:ok, memberships} =
+        Organizations.add_organization_member(owner_scope, organization, member)
+
+      pastes =
+        for audience <- ["workspace", "unlisted", "public"], into: %{} do
+          {:ok, paste} =
+            Pastes.create_paste(owner_scope, %{data: audience, audience: audience})
+
+          {audience, paste}
+        end
+
+      assert Pastes.get_shared_paste(member_scope, pastes["workspace"].id)
+      Repo.delete!(memberships.workspace)
+
+      refute Pastes.get_shared_paste(member_scope, pastes["workspace"].id)
+      assert Pastes.get_shared_paste(member_scope, pastes["unlisted"].id)
+      assert Pastes.get_shared_paste(member_scope, pastes["public"].id)
     end
 
     test "create_paste/2 stores content at the inline threshold in PostgreSQL", %{scope: scope} do
@@ -257,7 +322,7 @@ defmodule Textbin.PastesTest do
         assert {:ok, %Paste{} = paste} =
                  Pastes.create_paste(scope, %{data: visibility, visibility: visibility})
 
-        assert paste.visibility == visibility
+        assert paste.audience == if(visibility == "private", do: "workspace", else: visibility)
       end
     end
 
@@ -270,7 +335,7 @@ defmodule Textbin.PastesTest do
           %{data: "guest visibility"}
           |> Map.put(:visibility, requested_visibility)
 
-        assert {:ok, %Paste{visibility: "unlisted"}} = Pastes.create_paste(guest_scope, attrs)
+        assert {:ok, %Paste{audience: "unlisted"}} = Pastes.create_paste(guest_scope, attrs)
       end
     end
 
@@ -400,7 +465,7 @@ defmodule Textbin.PastesTest do
       assert {:error, changeset} =
                Pastes.create_paste(scope, %{data: "bad visibility", visibility: "secret"})
 
-      assert %{visibility: ["is invalid"]} = errors_on(changeset)
+      assert %{audience: ["is invalid"]} = errors_on(changeset)
     end
 
     test "expired pastes are excluded from scoped reads", %{scope: scope, workspace: workspace} do
@@ -438,7 +503,7 @@ defmodule Textbin.PastesTest do
         Repo.insert!(%Paste{
           data: "legacy content",
           syntax_highlight: "plain",
-          visibility: "private",
+          audience: "workspace",
           workspace_id: workspace.id,
           created_by_user_id: scope.user.id
         })
@@ -582,7 +647,7 @@ defmodule Textbin.PastesTest do
       Repo.insert!(%Paste{
         data: data,
         syntax_highlight: "plain",
-        visibility: "private",
+        audience: "workspace",
         workspace_id: workspace.id,
         created_by_user_id: scope.user.id,
         expires_at: expires_at
