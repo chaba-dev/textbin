@@ -133,6 +133,36 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "##{stream_id(paste)} a[href='#{path}/#{paste.id}']")
   end
 
+  test "revoked workspace membership prevents creation from an already connected view", %{
+    scope: owner_scope
+  } do
+    member = user_fixture()
+    {organization, _default_workspace, workspace} = team_workspaces(owner_scope)
+
+    {:ok, _organization_memberships} =
+      Organizations.add_organization_member(owner_scope, organization, member)
+
+    {:ok, membership} =
+      Organizations.add_workspace_member(owner_scope, workspace, member)
+
+    conn = log_in_user(build_conn(), member)
+    {:ok, view, _html} = live(conn, workspace_path(organization, workspace))
+    Repo.delete!(membership)
+
+    view
+    |> form("#paste-form", %{
+      "paste" => %{
+        "data" => "created after revocation",
+        "syntax_highlight" => "plain",
+        "visibility" => "private",
+        "expires_in" => "never"
+      }
+    })
+    |> render_submit()
+
+    refute Repo.get_by(Paste, workspace_id: workspace.id, data: "created after revocation")
+  end
+
   test "switching workspaces navigates to a server-owned URL and clears the previous stream", %{
     conn: conn,
     scope: scope
@@ -408,6 +438,35 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     refute has_element?(view, "##{stream_id(paste)}")
     assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
+  end
+
+  test "workspace members only see delete controls for their own pastes", %{scope: owner_scope} do
+    member = user_fixture()
+    organization = Organizations.get_personal_organization!(owner_scope.user)
+    workspace = personal_workspace_fixture(owner_scope.user)
+
+    {:ok, _memberships} =
+      Organizations.add_organization_member(owner_scope, organization, member)
+
+    owner_paste =
+      Repo.insert!(%Paste{
+        data: "owner paste",
+        workspace_id: workspace.id,
+        created_by_user_id: owner_scope.user.id
+      })
+
+    member_paste =
+      Repo.insert!(%Paste{
+        data: "member paste",
+        workspace_id: workspace.id,
+        created_by_user_id: member.id
+      })
+
+    conn = log_in_user(build_conn(), member)
+    {:ok, view, _html} = live(conn, workspace_path(organization, workspace))
+
+    refute has_element?(view, "#delete-paste-#{owner_paste.id}")
+    assert has_element?(view, "#delete-paste-#{member_paste.id}")
   end
 
   test "delete events cannot target a paste outside the active workspace", %{

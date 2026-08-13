@@ -2,6 +2,7 @@ defmodule TextbinWeb.UI.PasteLive do
   use TextbinWeb, :live_view
 
   alias Textbin.Organizations
+  alias Textbin.Organizations.Policy
   alias Textbin.Pastes
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
@@ -127,6 +128,12 @@ defmodule TextbinWeb.UI.PasteLive do
          |> put_flash(:info, "Paste created")
          |> assign_paste_form()
          |> stream_insert(:pastes, paste, at: 0)}
+
+      {:error, :not_found} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Workspace is no longer available")
+         |> push_navigate(to: ~p"/pastes")}
 
       {:error, changeset} ->
         {:noreply, assign(socket, :paste_form, to_form(changeset, action: :insert))}
@@ -266,4 +273,9 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   defp guest_user?(%Textbin.Accounts.User{} = user), do: Textbin.Accounts.User.guest?(user)
+
+  defp workspace_paste_manageable?(scope, paste) do
+    Policy.workspace_owner?(scope.workspace_membership) or
+      paste.created_by_user_id == scope.user.id
+  end
 end

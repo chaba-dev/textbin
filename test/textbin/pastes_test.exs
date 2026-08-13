@@ -36,6 +36,45 @@ defmodule Textbin.PastesTest do
       assert Enum.all?(Pastes.list_pastes(scope), &is_binary(&1.data))
     end
 
+    test "explicit workspace reads and creates revalidate current membership", %{
+      scope: owner_scope
+    } do
+      member = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(owner_scope, %{
+          name: "Revoked access",
+          slug: "revoked-access"
+        })
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, organization, %{
+          name: "Private",
+          slug: "private",
+          visibility: "private"
+        })
+
+      {:ok, _organization_memberships} =
+        Organizations.add_organization_member(owner_scope, organization, member)
+
+      {:ok, membership} =
+        Organizations.add_workspace_member(owner_scope, workspace, member)
+
+      {:ok, member_scope} =
+        Organizations.resolve_workspace_scope(user_scope_fixture(member), workspace)
+
+      {:ok, paste} = Pastes.create_paste(member_scope, %{data: "before revocation"})
+      Repo.delete!(membership)
+
+      assert Pastes.list_pastes(member_scope) == []
+      assert Pastes.list_paste_metadata(member_scope) == []
+      refute Pastes.get_paste(member_scope, paste.id)
+      assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(member_scope, paste.id) end
+
+      assert {:error, :not_found} =
+               Pastes.create_paste(member_scope, %{data: "after revocation"})
+    end
+
     test "list_paste_metadata/1 does not load paste bodies", %{scope: scope} do
       {:ok, inline_paste} = Pastes.create_paste(scope, %{data: "inline"})
       {:ok, blob_paste} = Pastes.create_paste(scope, %{data: String.duplicate("a", 8_193)})

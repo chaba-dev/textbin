@@ -168,29 +168,35 @@ defmodule Textbin.Organizations do
 
   def list_joined_workspaces(_scope, _organization), do: []
 
-  def list_workspace_members(%Scope{workspace: %Workspace{id: workspace_id}}) do
-    Repo.all(
-      from membership in WorkspaceMembership,
-        join: user in assoc(membership, :user),
-        where: membership.workspace_id == ^workspace_id,
-        preload: [user: user],
-        order_by: [asc: membership.role, asc: user.email, asc: membership.id]
-    )
+  def list_workspace_members(%Scope{workspace: %Workspace{id: workspace_id}} = scope) do
+    case resolve_workspace_scope(scope, workspace_id) do
+      {:ok, _resolved_scope} ->
+        Repo.all(
+          from membership in WorkspaceMembership,
+            join: user in assoc(membership, :user),
+            where: membership.workspace_id == ^workspace_id,
+            preload: [user: user],
+            order_by: [asc: membership.role, asc: user.email, asc: membership.id]
+        )
+
+      {:error, :not_found} ->
+        []
+    end
   end
 
   def list_workspace_members(_scope), do: []
 
   def get_workspace_member(
-        %Scope{workspace: %Workspace{id: workspace_id}},
+        %Scope{workspace: %Workspace{id: workspace_id}} = scope,
         membership_id
       ) do
-    case Ecto.UUID.cast(membership_id) do
-      {:ok, id} ->
-        WorkspaceMembership
-        |> Repo.get_by(id: id, workspace_id: workspace_id)
-        |> Repo.preload(:user)
-
-      :error ->
+    with {:ok, _resolved_scope} <- resolve_workspace_scope(scope, workspace_id),
+         {:ok, id} <- Ecto.UUID.cast(membership_id) do
+      WorkspaceMembership
+      |> Repo.get_by(id: id, workspace_id: workspace_id)
+      |> Repo.preload(:user)
+    else
+      _error ->
         nil
     end
   end

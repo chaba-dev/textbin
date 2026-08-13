@@ -133,10 +133,7 @@ defmodule TextbinWeb.UI.WorkspaceLive do
               <p class="text-sm text-base-content/60">{String.capitalize(membership.role)}</p>
             </div>
             <div
-              :if={
-                @workspace_owner? && !@current_scope.workspace.is_default &&
-                  membership.user_id != @current_scope.user.id
-              }
+              :if={@workspace_owner? && membership.user_id != @current_scope.user.id}
               class="flex gap-2"
             >
               <button
@@ -150,6 +147,7 @@ defmodule TextbinWeb.UI.WorkspaceLive do
                 {if(membership.role == "owner", do: "Make member", else: "Make owner")}
               </button>
               <button
+                :if={!@current_scope.workspace.is_default}
                 id={"remove-workspace-member-#{membership.id}"}
                 type="button"
                 phx-click="remove_member"

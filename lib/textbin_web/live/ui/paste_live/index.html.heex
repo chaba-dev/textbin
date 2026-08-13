@@ -131,6 +131,7 @@
               </span>
             <% end %>
             <button
+              :if={workspace_paste_manageable?(@current_scope, paste)}
               id={"delete-paste-#{paste.id}"}
               type="button"
               phx-click="delete"

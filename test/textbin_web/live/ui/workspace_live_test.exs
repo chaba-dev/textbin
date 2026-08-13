@@ -100,6 +100,30 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
     refute has_element?(view, "#members-#{membership.id}")
   end
 
+  test "workspace owners promote members in the default workspace without removing them",
+       context do
+    member = add_organization_member(context, user_fixture())
+    default_workspace = Enum.find(context.organization.workspaces, & &1.is_default)
+
+    membership =
+      Repo.get_by!(WorkspaceMembership,
+        workspace_id: default_workspace.id,
+        user_id: member.id
+      )
+
+    context = %{context | workspace: default_workspace}
+    {:ok, view, _html} = live(context.conn, workspace_path(context, "members"))
+
+    assert has_element?(view, "#toggle-workspace-role-#{membership.id}")
+    refute has_element?(view, "#remove-workspace-member-#{membership.id}")
+
+    view
+    |> element("#toggle-workspace-role-#{membership.id}")
+    |> render_click()
+
+    assert Repo.reload!(membership).role == "owner"
+  end
+
   test "workspace owners update non-default workspace visibility", context do
     {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
     assert has_element?(view, "#workspace-settings-form")
@@ -133,6 +157,25 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
     for path <- [workspace_path(context, "members"), workspace_path(context, "settings")] do
       assert_raise Ecto.NoResultsError, fn -> live(outsider_conn, path) end
     end
+  end
+
+  test "member records are concealed from a revoked workspace scope", context do
+    member = add_organization_member(context, user_fixture())
+
+    {:ok, membership} =
+      Organizations.add_workspace_member(context.owner_scope, context.workspace, member)
+
+    {:ok, stale_scope} =
+      Organizations.resolve_workspace_scope(user_scope_fixture(member), context.workspace)
+
+    Repo.delete!(membership)
+
+    assert Organizations.list_workspace_members(stale_scope) == []
+
+    refute Organizations.get_workspace_member(
+             stale_scope,
+             context.workspace.memberships |> hd() |> Map.fetch!(:id)
+           )
   end
 
   defp add_organization_member(context, user) do
