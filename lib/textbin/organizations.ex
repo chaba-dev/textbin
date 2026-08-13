@@ -485,7 +485,7 @@ defmodule Textbin.Organizations do
   defp organization_transaction(_, _, _), do: {:error, :not_found}
 
   defp workspace_transaction(
-         scope,
+         %Scope{user: %User{id: actor_id}} = scope,
          %Workspace{id: workspace_id, organization_id: organization_id},
          callback
        ) do
@@ -494,10 +494,12 @@ defmodule Textbin.Organizations do
       organization_transaction(
         scope,
         organization_id,
-        &run_workspace_transaction(&1, &2, &3, workspace_id, scope.user.id, callback)
+        &run_workspace_transaction(&1, &2, &3, workspace_id, actor_id, callback)
       )
     end
   end
+
+  defp workspace_transaction(_, _, _), do: {:error, :not_found}
 
   defp run_organization_transaction(organization_id, actor_id, callback) do
     with %Organization{} = organization <-

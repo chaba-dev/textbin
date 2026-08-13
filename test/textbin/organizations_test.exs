@@ -1252,13 +1252,18 @@ defmodule Textbin.OrganizationsTest do
       assert {:error, :not_found} = Organizations.change_workspace_visibility(scope, nil, "open")
       assert {:error, :not_found} = Organizations.delete_workspace(scope, nil)
 
+      workspace = hd(context.organization.workspaces)
+
+      assert {:error, :not_found} =
+               Organizations.change_workspace_visibility(%Scope{}, workspace, "open")
+
+      assert {:error, :not_found} = Organizations.delete_workspace(%Scope{}, workspace)
+
       assert_raise ArgumentError, ~r/cannot be called inside a Repo transaction/, fn ->
         Repo.transact(fn ->
           Organizations.create_workspace(scope, context.organization, attrs)
         end)
       end
-
-      workspace = hd(context.organization.workspaces)
 
       for call <- [
             fn -> Organizations.join_workspace(scope, workspace) end,
