@@ -102,6 +102,101 @@ defmodule Textbin.Organizations do
 
   def resolve_workspace_scope(_, _), do: {:error, :not_found}
 
+  @doc "Resolves an explicitly joined workspace from its stable URL slugs."
+  def resolve_workspace_scope_by_slugs(
+        %Scope{user: %User{id: user_id}} = scope,
+        organization_slug,
+        workspace_slug
+      )
+      when is_binary(organization_slug) and is_binary(workspace_slug) do
+    query =
+      from workspace in Workspace,
+        join: organization in assoc(workspace, :organization),
+        join: organization_membership in OrganizationMembership,
+        on:
+          organization_membership.organization_id == organization.id and
+            organization_membership.user_id == ^user_id,
+        join: workspace_membership in WorkspaceMembership,
+        on:
+          workspace_membership.workspace_id == workspace.id and
+            workspace_membership.user_id == ^user_id,
+        where: organization.slug == ^organization_slug and workspace.slug == ^workspace_slug,
+        select: {organization, organization_membership, workspace, workspace_membership}
+
+    case Repo.one(query) do
+      {organization, organization_membership, workspace, workspace_membership} ->
+        {:ok,
+         %{
+           scope
+           | organization: organization,
+             organization_membership: organization_membership,
+             workspace: workspace,
+             workspace_membership: workspace_membership
+         }}
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  def resolve_workspace_scope_by_slugs(_, _, _), do: {:error, :not_found}
+
+  def list_available_organizations(%Scope{user: %User{id: user_id}}) do
+    Repo.all(
+      from organization in Organization,
+        join: membership in OrganizationMembership,
+        on: membership.organization_id == organization.id,
+        where: membership.user_id == ^user_id,
+        order_by: [asc: organization.name, asc: organization.id]
+    )
+  end
+
+  def list_available_organizations(_scope), do: []
+
+  def list_joined_workspaces(
+        %Scope{user: %User{id: user_id}},
+        %Organization{id: organization_id}
+      ) do
+    Repo.all(
+      from workspace in Workspace,
+        join: membership in WorkspaceMembership,
+        on: membership.workspace_id == workspace.id,
+        where: workspace.organization_id == ^organization_id and membership.user_id == ^user_id,
+        order_by: [desc: workspace.is_default, asc: workspace.name, asc: workspace.id]
+    )
+  end
+
+  def list_joined_workspaces(_scope, _organization), do: []
+
+  def list_workspace_members(%Scope{workspace: %Workspace{id: workspace_id}}) do
+    Repo.all(
+      from membership in WorkspaceMembership,
+        join: user in assoc(membership, :user),
+        where: membership.workspace_id == ^workspace_id,
+        preload: [user: user],
+        order_by: [asc: membership.role, asc: user.email, asc: membership.id]
+    )
+  end
+
+  def list_workspace_members(_scope), do: []
+
+  def get_workspace_member(
+        %Scope{workspace: %Workspace{id: workspace_id}},
+        membership_id
+      ) do
+    case Ecto.UUID.cast(membership_id) do
+      {:ok, id} ->
+        WorkspaceMembership
+        |> Repo.get_by(id: id, workspace_id: workspace_id)
+        |> Repo.preload(:user)
+
+      :error ->
+        nil
+    end
+  end
+
+  def get_workspace_member(_scope, _membership_id), do: nil
+
   def create_workspace(
         %Scope{} = scope,
         %Organization{} = organization,

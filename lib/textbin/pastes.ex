@@ -21,9 +21,9 @@ defmodule Textbin.Pastes do
   @default_inline_paste_bytes 8_192
   @default_max_paste_bytes 1_048_576
 
-  def list_pastes(%Scope{user: %User{} = user}) do
+  def list_pastes(%Scope{user: %User{}} = scope) do
     now = Paste.utc_now_ms()
-    workspace_id = personal_workspace_id(user)
+    workspace_id = scope_workspace_id(scope)
 
     Repo.all(
       from p in Paste,
@@ -33,9 +33,9 @@ defmodule Textbin.Pastes do
     |> Enum.map(&load_data/1)
   end
 
-  def list_paste_metadata(%Scope{user: %User{} = user}) do
+  def list_paste_metadata(%Scope{user: %User{}} = scope) do
     now = Paste.utc_now_ms()
-    workspace_id = personal_workspace_id(user)
+    workspace_id = scope_workspace_id(scope)
 
     Repo.all(
       from p in Paste,
@@ -59,22 +59,30 @@ defmodule Textbin.Pastes do
     )
   end
 
-  def get_paste(%Scope{user: %User{} = user}, id) do
+  def get_paste(%Scope{user: %User{}} = scope, id) when is_binary(id) do
     now = Paste.utc_now_ms()
-    workspace_id = personal_workspace_id(user)
+    workspace_id = scope_workspace_id(scope)
 
-    Repo.one(
-      from p in Paste,
-        where:
-          p.id == ^id and p.workspace_id == ^workspace_id and
-            (is_nil(p.expires_at) or p.expires_at > ^now)
-    )
-    |> load_data()
+    case Ecto.UUID.cast(id) do
+      {:ok, paste_id} ->
+        Repo.one(
+          from p in Paste,
+            where:
+              p.id == ^paste_id and p.workspace_id == ^workspace_id and
+                (is_nil(p.expires_at) or p.expires_at > ^now)
+        )
+        |> load_data()
+
+      :error ->
+        nil
+    end
   end
 
-  def get_paste!(%Scope{user: %User{} = user}, id) do
+  def get_paste(_scope, _id), do: nil
+
+  def get_paste!(%Scope{user: %User{}} = scope, id) do
     now = Paste.utc_now_ms()
-    workspace_id = personal_workspace_id(user)
+    workspace_id = scope_workspace_id(scope)
 
     Repo.one!(
       from p in Paste,
@@ -104,9 +112,9 @@ defmodule Textbin.Pastes do
 
   def get_shared_paste(_current_scope, _id), do: nil
 
-  def create_paste(%Scope{user: %User{} = user}, attrs \\ %{}) do
+  def create_paste(%Scope{user: %User{} = user} = scope, attrs \\ %{}) do
     attrs = attrs_with_defaults(attrs, user, ContentType.text_safe?(attr_data(attrs)))
-    paste = new_paste(user)
+    paste = new_paste(scope)
     changeset = paste |> Paste.changeset(attrs) |> validate_data_size()
 
     if changeset.valid? do
@@ -117,7 +125,7 @@ defmodule Textbin.Pastes do
   end
 
   def create_paste_from_file(
-        %Scope{user: %User{} = user},
+        %Scope{user: %User{} = user} = scope,
         path,
         %{size_bytes: size_bytes, sha256: sha256} = metadata,
         attrs \\ %{}
@@ -125,7 +133,7 @@ defmodule Textbin.Pastes do
       when is_binary(path) and is_integer(size_bytes) and is_binary(sha256) do
     text_safe? = match?({:ok, true}, ContentType.text_safe_file(path))
     attrs = attrs_with_defaults(attrs, user, text_safe?)
-    paste = new_paste(user)
+    paste = new_paste(scope)
     storage_key = "pastes/#{paste.id}"
 
     changeset =
@@ -174,10 +182,25 @@ defmodule Textbin.Pastes do
 
   def manage_paste?(_scope, _paste), do: false
 
-  defp expire_manageable_paste(%Scope{user: %User{id: user_id}}, paste_id) do
-    paste_id
-    |> manageable_paste_query(user_id)
-    |> expire_paste_matching()
+  defp expire_manageable_paste(%Scope{user: %User{id: user_id}} = scope, paste_id) do
+    case Ecto.UUID.cast(paste_id) do
+      {:ok, paste_id} ->
+        query = manageable_paste_query(paste_id, user_id)
+
+        query =
+          case scope do
+            %Scope{workspace: %{id: workspace_id}} ->
+              where(query, [paste], paste.workspace_id == ^workspace_id)
+
+            _scope ->
+              query
+          end
+
+        expire_paste_matching(query)
+
+      :error ->
+        {:error, :not_found}
+    end
   end
 
   defp expire_paste_matching(query) do
@@ -259,25 +282,28 @@ defmodule Textbin.Pastes do
     end
   end
 
-  def change_paste(%Scope{user: %User{} = user}, %Paste{} = paste, attrs \\ %{}) do
+  def change_paste(%Scope{user: %User{} = user} = scope, %Paste{} = paste, attrs \\ %{}) do
     paste = %{
       paste
-      | workspace_id: paste.workspace_id || personal_workspace_id(user),
+      | workspace_id: paste.workspace_id || scope_workspace_id(scope),
         created_by_user_id: paste.created_by_user_id || user.id
     }
 
     Paste.changeset(paste, attrs_with_visibility(attrs, user))
   end
 
-  def prepare_paste(%Scope{user: %User{} = user}), do: new_paste(user)
+  def prepare_paste(%Scope{user: %User{}} = scope), do: new_paste(scope)
 
-  defp new_paste(user) do
+  defp new_paste(%Scope{user: user} = scope) do
     %Paste{
       id: Ecto.UUID.generate(),
-      workspace_id: personal_workspace_id(user),
+      workspace_id: scope_workspace_id(scope),
       created_by_user_id: user.id
     }
   end
+
+  defp scope_workspace_id(%Scope{workspace: %{id: workspace_id}}), do: workspace_id
+  defp scope_workspace_id(%Scope{user: user}), do: personal_workspace_id(user)
 
   defp personal_workspace_id(user) do
     Organizations.get_personal_default_workspace!(user).id

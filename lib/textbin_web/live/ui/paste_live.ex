@@ -1,6 +1,7 @@
 defmodule TextbinWeb.UI.PasteLive do
   use TextbinWeb, :live_view
 
+  alias Textbin.Organizations
   alias Textbin.Pastes
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
@@ -12,7 +13,7 @@ defmodule TextbinWeb.UI.PasteLive do
   def handle_params(
         _params,
         _uri,
-        %{assigns: %{live_action: :index, current_scope: nil}} = socket
+        %{assigns: %{live_action: :legacy_index, current_scope: nil}} = socket
       ) do
     {:noreply,
      socket
@@ -20,30 +21,61 @@ defmodule TextbinWeb.UI.PasteLive do
      |> redirect(to: ~p"/users/log-in")}
   end
 
-  def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
+  def handle_params(_params, _uri, %{assigns: %{live_action: :legacy_index}} = socket) do
+    organization = Organizations.get_personal_organization!(socket.assigns.current_scope.user)
+    workspace = Enum.find(organization.workspaces, & &1.is_default)
+
+    {:noreply,
+     push_navigate(socket,
+       to: workspace_pastes_path(organization.slug, workspace.slug)
+     )}
+  end
+
+  def handle_params(
+        %{"organization_slug" => organization_slug, "workspace_slug" => workspace_slug},
+        _uri,
+        %{assigns: %{live_action: :workspace_index}} = socket
+      ) do
+    scope =
+      resolve_workspace_scope!(socket.assigns.current_scope, organization_slug, workspace_slug)
+
     {:noreply,
      socket
+     |> assign_workspace_navigation(scope)
      |> assign_paste_form()
-     |> stream(:pastes, Pastes.list_paste_metadata(socket.assigns.current_scope), reset: true)}
+     |> stream(:pastes, Pastes.list_paste_metadata(scope), reset: true)}
+  end
+
+  def handle_params(
+        %{
+          "organization_slug" => organization_slug,
+          "workspace_slug" => workspace_slug,
+          "id" => id
+        },
+        _uri,
+        %{assigns: %{live_action: :workspace_show}} = socket
+      ) do
+    scope =
+      resolve_workspace_scope!(socket.assigns.current_scope, organization_slug, workspace_slug)
+
+    case Pastes.get_paste(scope, id) do
+      %Paste{} = paste -> show_paste(socket, scope, paste)
+      nil -> raise Ecto.NoResultsError, queryable: Paste
+    end
   end
 
   def handle_params(%{"id" => id}, _uri, %{assigns: %{live_action: :show}} = socket) do
     case Pastes.get_shared_paste(socket.assigns.current_scope, id) do
       %Paste{} = paste ->
-        {:noreply,
-         socket
-         |> assign(:page_title, "Paste #{paste.id}")
-         |> assign(:paste, paste)
-         |> assign(:text_content?, text_content?(paste))
-         |> assign(:owner?, Pastes.manage_paste?(socket.assigns.current_scope, paste))
-         |> assign(:highlighted_paste_data, highlighted_paste_data(paste))}
+        scope = resolve_shared_paste_scope(socket.assigns.current_scope, paste)
+        show_paste(socket, scope, paste)
 
       nil ->
         raise Ecto.NoResultsError, queryable: Paste
     end
   end
 
-  def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :index}} = socket) do
+  def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :workspace_index}} = socket) do
     case Pastes.delete_paste(socket.assigns.current_scope, %Paste{id: id}) do
       {:ok, paste} ->
         {:noreply, stream_delete(socket, :pastes, paste)}
@@ -53,16 +85,27 @@ defmodule TextbinWeb.UI.PasteLive do
     end
   end
 
-  def handle_event("delete", %{"id" => id}, %{assigns: %{live_action: :show}} = socket) do
-    case Pastes.delete_paste(socket.assigns.current_scope, %Paste{id: id}) do
-      {:ok, _paste} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Paste deleted")
-         |> push_navigate(to: ~p"/pastes")}
+  def handle_event(
+        "delete",
+        %{"id" => id},
+        %{assigns: %{live_action: action}} = socket
+      )
+      when action in [:show, :workspace_show] do
+    with true <- socket.assigns.paste.id == id,
+         {:ok, _paste} <- Pastes.delete_paste(socket.assigns.current_scope, socket.assigns.paste) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Paste deleted")
+       |> push_navigate(to: paste_index_path(socket.assigns.current_scope))}
+    else
+      _error -> {:noreply, put_flash(socket, :error, "Paste deletion could not be completed")}
+    end
+  end
 
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Paste deletion could not be completed")}
+  def handle_event("switch_workspace", %{"workspace" => %{"id" => workspace_id}}, socket) do
+    case Map.fetch(socket.assigns.workspace_destinations, workspace_id) do
+      {:ok, path} -> {:noreply, push_navigate(socket, to: path)}
+      :error -> {:noreply, socket}
     end
   end
 
@@ -90,8 +133,80 @@ defmodule TextbinWeb.UI.PasteLive do
     end
   end
 
-  def render(%{live_action: :show} = assigns), do: detail(assigns)
+  def render(%{live_action: action} = assigns) when action in [:show, :workspace_show],
+    do: detail(assigns)
+
   def render(assigns), do: index(assigns)
+
+  defp resolve_workspace_scope!(scope, organization_slug, workspace_slug) do
+    case Organizations.resolve_workspace_scope_by_slugs(scope, organization_slug, workspace_slug) do
+      {:ok, resolved_scope} ->
+        resolved_scope
+
+      {:error, :not_found} ->
+        raise Ecto.NoResultsError, queryable: Textbin.Organizations.Workspace
+    end
+  end
+
+  defp assign_workspace_navigation(socket, scope) do
+    workspaces =
+      scope
+      |> Organizations.list_available_organizations()
+      |> Enum.flat_map(fn organization ->
+        Enum.map(Organizations.list_joined_workspaces(scope, organization), &{organization, &1})
+      end)
+
+    workspace_options =
+      Enum.map(workspaces, fn {organization, workspace} ->
+        {"#{organization.name} / #{workspace.name}", workspace.id}
+      end)
+
+    workspace_destinations =
+      Map.new(workspaces, fn {organization, workspace} ->
+        {workspace.id, workspace_pastes_path(organization.slug, workspace.slug)}
+      end)
+
+    socket
+    |> assign(:current_scope, scope)
+    |> assign(:workspace_options, workspace_options)
+    |> assign(:workspace_destinations, workspace_destinations)
+    |> assign(:workspace_switcher_form, to_form(%{"id" => scope.workspace.id}, as: :workspace))
+  end
+
+  defp show_paste(socket, scope, paste) do
+    {:noreply,
+     socket
+     |> assign(:current_scope, scope)
+     |> assign(:page_title, "Paste #{paste.id}")
+     |> assign(:paste, paste)
+     |> assign(:text_content?, text_content?(paste))
+     |> assign(:owner?, Pastes.manage_paste?(scope, paste))
+     |> assign(:highlighted_paste_data, highlighted_paste_data(paste))}
+  end
+
+  defp workspace_pastes_path(organization_slug, workspace_slug),
+    do: "/w/#{organization_slug}/#{workspace_slug}/pastes"
+
+  defp paste_index_path(%{organization: organization, workspace: workspace})
+       when not is_nil(organization) and not is_nil(workspace),
+       do: workspace_pastes_path(organization.slug, workspace.slug)
+
+  defp paste_index_path(_scope), do: ~p"/pastes"
+
+  defp workspace_members_path(%{organization: organization, workspace: workspace}),
+    do: "/w/#{organization.slug}/#{workspace.slug}/members"
+
+  defp workspace_settings_path(%{organization: organization, workspace: workspace}),
+    do: "/w/#{organization.slug}/#{workspace.slug}/settings"
+
+  defp resolve_shared_paste_scope(nil, _paste), do: nil
+
+  defp resolve_shared_paste_scope(scope, paste) do
+    case Organizations.resolve_workspace_scope(scope, paste.workspace_id) do
+      {:ok, resolved_scope} -> resolved_scope
+      {:error, :not_found} -> scope
+    end
+  end
 
   defp assign_paste_form(socket) do
     new_paste = Pastes.prepare_paste(socket.assigns.current_scope)

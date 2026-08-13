@@ -5,6 +5,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   import Textbin.AccountsFixtures
 
   alias Textbin.Organizations
+  alias Textbin.Organizations.Workspace
   alias Textbin.Pastes.Paste
   alias Textbin.Pastes
   alias Textbin.Repo
@@ -20,10 +21,21 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert %{"error" => "You must log in to access this page."} = flash
   end
 
+  test "redirects the legacy index to the user's default workspace", %{
+    conn: conn,
+    user: user
+  } do
+    assert {:error, {:live_redirect, %{to: path}}} = live(conn, ~p"/pastes")
+    assert path == personal_workspace_path(user)
+  end
+
   test "allows guest paste creation when enabled" do
     put_guest_pastes_enabled(true)
 
-    {:ok, view, _html} = live(build_conn(), ~p"/pastes")
+    conn = get(build_conn(), ~p"/pastes")
+    path = redirected_to(conn)
+    assert path =~ ~r{^/w/personal-[0-9a-f-]+/default/pastes$}
+    {:ok, view, _html} = live(recycle(conn), path)
 
     assert has_element?(view, "#paste-form")
     assert has_element?(view, "#paste_visibility[disabled] option[value='unlisted']")
@@ -51,34 +63,146 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "##{stream_id(paste)}", "plain")
   end
 
-  test "lists scoped pastes", %{conn: conn, scope: scope} do
+  test "lists scoped pastes", %{conn: conn, scope: scope, user: user} do
     {:ok, paste} =
       Pastes.create_paste(scope, %{data: "live paste data", syntax_highlight: "elixir"})
 
     {:ok, other_paste} =
       Pastes.create_paste(user_scope_fixture(), %{data: "other user data"})
 
-    {:ok, view, _html} = live(conn, ~p"/pastes")
+    {path, {:ok, view, _html}} = live_personal_workspace(conn, user)
 
     assert has_element?(view, "#pastes-list")
     assert has_element?(view, "##{stream_id(paste)}", paste.id)
     assert has_element?(view, "##{stream_id(paste)}", "elixir")
     assert has_element?(view, "#paste-visibility-#{paste.id}", "Private")
     assert has_element?(view, "#paste-expires-at-#{paste.id}", "Never expires")
-    assert has_element?(view, "##{stream_id(paste)} a[href='/pastes/#{paste.id}']")
+    assert has_element?(view, "##{stream_id(paste)} a[href='#{path}/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
     refute has_element?(view, "##{stream_id(other_paste)}")
   end
 
-  test "renders an empty state", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/pastes")
+  test "renders an empty state", %{conn: conn, user: user} do
+    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
 
     assert has_element?(view, "#pastes-list")
     assert has_element?(view, "#pastes-empty.min-h-56.text-base", "No pastes yet.")
   end
 
-  test "creates a paste from the UI", %{conn: conn, scope: scope} do
-    {:ok, view, _html} = live(conn, ~p"/pastes")
+  test "workspace URLs restore the selected scope and conceal other workspace pastes", %{
+    conn: conn,
+    scope: scope
+  } do
+    {organization, first_workspace, second_workspace} = team_workspaces(scope)
+    first_scope = workspace_scope(scope, first_workspace)
+    second_scope = workspace_scope(scope, second_workspace)
+    {:ok, first_paste} = Pastes.create_paste(first_scope, %{data: "first workspace"})
+    {:ok, second_paste} = Pastes.create_paste(second_scope, %{data: "second workspace"})
+    path = workspace_path(organization, second_workspace)
+
+    {:ok, view, _html} = live(conn, path)
+
+    assert has_element?(view, "##{stream_id(second_paste)}")
+    refute has_element?(view, "##{stream_id(first_paste)}")
+    assert has_element?(view, "##{stream_id(second_paste)} a[href='#{path}/#{second_paste.id}']")
+
+    assert_raise Ecto.NoResultsError, fn ->
+      live(conn, "#{path}/#{first_paste.id}")
+    end
+  end
+
+  test "creates pastes in the workspace selected by the URL", %{conn: conn, scope: scope} do
+    {organization, _default_workspace, workspace} = team_workspaces(scope)
+    path = workspace_path(organization, workspace)
+    {:ok, view, _html} = live(conn, path)
+
+    view
+    |> form("#paste-form", %{
+      "paste" => %{
+        "data" => "team paste",
+        "syntax_highlight" => "plain",
+        "visibility" => "private",
+        "expires_in" => "never"
+      }
+    })
+    |> render_submit()
+
+    assert [paste] = Pastes.list_pastes(workspace_scope(scope, workspace))
+    assert paste.data == "team paste"
+    assert paste.workspace_id == workspace.id
+    assert has_element?(view, "##{stream_id(paste)} a[href='#{path}/#{paste.id}']")
+  end
+
+  test "switching workspaces navigates to a server-owned URL and clears the previous stream", %{
+    conn: conn,
+    scope: scope
+  } do
+    {organization, first_workspace, second_workspace} = team_workspaces(scope)
+
+    {:ok, first_paste} =
+      Pastes.create_paste(workspace_scope(scope, first_workspace), %{data: "first"})
+
+    {:ok, second_paste} =
+      Pastes.create_paste(workspace_scope(scope, second_workspace), %{data: "second"})
+
+    {:ok, view, _html} = live(conn, workspace_path(organization, first_workspace))
+    assert has_element?(view, "##{stream_id(first_paste)}")
+
+    redirect =
+      view
+      |> form("#workspace-switcher", %{"workspace" => %{"id" => second_workspace.id}})
+      |> render_change()
+
+    destination = workspace_path(organization, second_workspace)
+    assert_redirect(view, destination)
+    {:ok, switched_view, _html} = follow_redirect(redirect, conn, destination)
+    assert has_element?(switched_view, "##{stream_id(second_paste)}")
+    refute has_element?(switched_view, "##{stream_id(first_paste)}")
+  end
+
+  test "workspace navigation includes joined workspaces across organizations but not unjoined ones",
+       %{
+         conn: conn,
+         scope: scope
+       } do
+    {organization, default_workspace, _joined_workspace} = team_workspaces(scope)
+
+    {:ok, hidden_open} =
+      Organizations.create_workspace(scope, organization, %{
+        name: "Discoverable",
+        slug: "discoverable",
+        visibility: "open"
+      })
+
+    hidden_private =
+      Repo.insert!(%Workspace{
+        organization_id: organization.id,
+        created_by_id: scope.user.id,
+        name: "Hidden",
+        slug: "hidden",
+        visibility: "private",
+        is_default: false
+      })
+
+    # Removing the creator memberships simulates workspaces visible through
+    # discovery but unavailable in the active workspace switcher.
+    Repo.delete_all(Ecto.assoc(hidden_open, :memberships))
+
+    {:ok, view, _html} = live(conn, workspace_path(organization, default_workspace))
+    assert has_element?(view, "#workspace-switcher option", "Personal / Default")
+    assert has_element?(view, "#workspace-switcher option", "Navigation team / Default")
+    refute has_element?(view, "#workspace-switcher option[value='#{hidden_open.id}']")
+    refute has_element?(view, "#workspace-switcher option[value='#{hidden_private.id}']")
+
+    for workspace <- [hidden_open, hidden_private] do
+      assert_raise Ecto.NoResultsError, fn ->
+        live(conn, workspace_path(organization, workspace))
+      end
+    end
+  end
+
+  test "creates a paste from the UI", %{conn: conn, scope: scope, user: user} do
+    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
 
     assert has_element?(view, "#paste-form")
     assert has_element?(view, "#paste_visibility option[value='private']")
@@ -105,8 +229,8 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-visibility-#{paste.id}", "Public")
   end
 
-  test "form validation reuses the workspace resolved at mount", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/pastes")
+  test "form validation reuses the workspace resolved at mount", %{conn: conn, user: user} do
+    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
     handler_id = "paste-form-query-test-#{System.unique_integer([:positive])}"
 
     :telemetry.attach(
@@ -138,7 +262,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     scope = %{scope | user: user}
     conn = log_in_user(build_conn(), user)
 
-    {:ok, view, _html} = live(conn, ~p"/pastes")
+    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
 
     view
     |> form("#paste-form", %{
@@ -155,7 +279,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-expires-at-#{paste.id}", "Expires")
   end
 
-  test "shows an individual paste", %{conn: conn, scope: scope} do
+  test "shows an individual paste", %{conn: conn, scope: scope, user: user} do
     {:ok, paste} =
       Pastes.create_paste(scope, %{data: "individual paste data", syntax_highlight: "json"})
 
@@ -168,7 +292,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-data .lumis code.language-json")
     assert has_element?(view, "#paste-data .l-line[data-line='1']")
     assert has_element?(view, "#paste-data", "individual paste data")
-    assert has_element?(view, "a[href='/pastes']", "Back to pastes")
+    assert has_element?(view, "a[href='#{personal_workspace_path(user)}']", "Back to pastes")
     assert has_element?(view, "#copy-paste-content[phx-hook='CopyToClipboard']")
     assert has_element?(view, "#raw-paste-link[href='/pastes/#{paste.id}/raw']")
     assert has_element?(view, "#delete-paste-#{paste.id}")
@@ -268,10 +392,10 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     refute has_element?(view, "#paste-data script")
   end
 
-  test "deletes a paste from the list", %{conn: conn, scope: scope} do
+  test "deletes a paste from the list", %{conn: conn, scope: scope, user: user} do
     {:ok, paste} = Pastes.create_paste(scope, %{data: "delete from list"})
 
-    {:ok, view, _html} = live(conn, ~p"/pastes")
+    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
 
     assert has_element?(
              view,
@@ -286,7 +410,22 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
   end
 
-  test "deletes a paste from the detail page", %{conn: conn, scope: scope} do
+  test "delete events cannot target a paste outside the active workspace", %{
+    conn: conn,
+    scope: scope
+  } do
+    {organization, first_workspace, second_workspace} = team_workspaces(scope)
+
+    {:ok, second_paste} =
+      Pastes.create_paste(workspace_scope(scope, second_workspace), %{data: "keep me"})
+
+    {:ok, view, _html} = live(conn, workspace_path(organization, first_workspace))
+    render_click(view, "delete", %{"id" => second_paste.id})
+
+    assert Repo.get(Paste, second_paste.id)
+  end
+
+  test "deletes a paste from the detail page", %{conn: conn, scope: scope, user: user} do
     {:ok, paste} = Pastes.create_paste(scope, %{data: "delete from detail"})
 
     {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
@@ -300,7 +439,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> element("#delete-paste-#{paste.id}")
     |> render_click()
 
-    assert_redirect(view, ~p"/pastes")
+    assert_redirect(view, personal_workspace_path(user))
     assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
   end
 
@@ -329,7 +468,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> element("#delete-paste-#{paste.id}")
     |> render_click()
 
-    assert_redirect(view, ~p"/pastes")
+    assert_redirect(view, personal_workspace_path(owner_scope.user))
     refute Repo.get(Paste, paste.id)
   end
 
@@ -358,7 +497,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> element("#delete-paste-#{paste.id}")
     |> render_click()
 
-    assert_redirect(view, ~p"/pastes")
+    assert_redirect(view, personal_workspace_path(owner_scope.user))
     refute Repo.get(Paste, paste.id)
   end
 
@@ -414,6 +553,44 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   end
 
   defp stream_id(paste), do: "pastes-#{paste.id}"
+
+  defp live_personal_workspace(conn, user) do
+    path = personal_workspace_path(user)
+    {path, live(conn, path)}
+  end
+
+  defp personal_workspace_path(user) do
+    organization = Organizations.get_personal_organization!(user)
+    workspace = Enum.find(organization.workspaces, & &1.is_default)
+    "/w/#{organization.slug}/#{workspace.slug}/pastes"
+  end
+
+  defp team_workspaces(scope) do
+    slug = "navigation-#{System.unique_integer([:positive])}"
+
+    {:ok, organization} =
+      Organizations.create_organization(scope, %{name: "Navigation team", slug: slug})
+
+    [default_workspace] = organization.workspaces
+
+    {:ok, workspace} =
+      Organizations.create_workspace(scope, organization, %{
+        name: "Engineering",
+        slug: "engineering",
+        visibility: "private"
+      })
+
+    {organization, default_workspace, workspace}
+  end
+
+  defp workspace_scope(scope, workspace) do
+    {:ok, resolved_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+    resolved_scope
+  end
+
+  defp workspace_path(organization, workspace) do
+    "/w/#{organization.slug}/#{workspace.slug}/pastes"
+  end
 
   defp put_guest_pastes_enabled(enabled?) do
     previous = Application.get_env(:textbin, :allow_guest_pastes)
