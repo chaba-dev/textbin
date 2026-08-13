@@ -15,6 +15,8 @@ defmodule Textbin.Organizations do
   alias Textbin.Repo
 
   def create_organization(%Scope{user: %User{} = creator}, attrs) do
+    ensure_transaction_owner!()
+
     with {:ok, creator_id} <- public_id(creator.id) do
       creator = %{creator | id: creator_id}
 
@@ -27,8 +29,11 @@ defmodule Textbin.Organizations do
   def create_organization(_, _), do: {:error, :not_found}
 
   def create_personal_organization(%User{} = user) do
+    ensure_transaction_owner!()
     Repo.transact(fn -> create_personal_organization_in_transaction(user) end)
   end
+
+  def create_personal_organization(_), do: {:error, :not_found}
 
   @doc "Transaction-free provisioning entry point for the Accounts outer transaction."
   def create_personal_organization_in_transaction(%User{} = user) do
@@ -37,14 +42,13 @@ defmodule Textbin.Organizations do
             "create_personal_organization_in_transaction/1 must be called inside a Repo transaction"
     end
 
-    with {:ok, user_id} <- public_id(user.id) do
+    with {:ok, user_id} <- public_id(user.id),
+         {:ok, user} <- lock_existing_user(user_id) do
       case Repo.get_by(Organization, personal_owner_id: user_id) do
         %Organization{} = organization ->
           {:ok, preload_organization(organization)}
 
         nil ->
-          user = %{user | id: user_id}
-
           %Organization{kind: "personal", personal_owner_id: user_id}
           |> Organization.changeset(%{name: "Personal", slug: "personal-#{user_id}"})
           |> create_with_default_workspace_in_transaction(user)
@@ -99,15 +103,23 @@ defmodule Textbin.Organizations do
   def resolve_workspace_scope(_, _), do: {:error, :not_found}
 
   def add_organization_member(
+        scope,
+        organization,
+        user,
+        role \\ Policy.organization_member_role()
+      )
+
+  def add_organization_member(
         %Scope{} = scope,
         %Organization{} = organization,
         %User{} = user,
-        role \\ Policy.organization_member_role()
+        role
       ) do
     with {:ok, organization_id} <- public_id(organization.id),
          {:ok, user_id} <- public_id(user.id) do
-      organization_transaction(scope, organization_id, fn actor, _workspaces ->
+      organization_transaction(scope, organization_id, fn _organization, actor, _workspaces ->
         with :ok <- Policy.authorize_organization_change(actor, nil, role),
+             {:ok, _user} <- lock_existing_user(user_id),
              {:ok, om} <- insert_organization_membership(organization_id, user_id, role),
              %Workspace{} = workspace <- get_default_workspace(organization_id),
              {:ok, wm} <-
@@ -126,10 +138,13 @@ defmodule Textbin.Organizations do
     end
   end
 
+  def add_organization_member(_, _, _, _), do: {:error, :not_found}
+
   def change_organization_member_role(%Scope{} = scope, %OrganizationMembership{} = target, role) do
-    organization_transaction(scope, target.organization_id, fn actor, _ ->
+    organization_transaction(scope, target.organization_id, fn organization, actor, _ ->
       with %OrganizationMembership{} = fresh <- organization_membership(target),
            :ok <- Policy.authorize_organization_change(actor, fresh.role, role),
+           :ok <- preserve_personal_owner(organization, fresh, role),
            :ok <- preserve_organization_owner(fresh, role) do
         fresh |> OrganizationMembership.role_changeset(%{role: role}) |> Repo.update()
       else
@@ -139,8 +154,12 @@ defmodule Textbin.Organizations do
     end)
   end
 
+  def change_organization_member_role(_, _, _), do: {:error, :not_found}
+
   def remove_organization_member(%Scope{} = scope, %OrganizationMembership{} = target),
     do: remove_organization(scope, target, false)
+
+  def remove_organization_member(_, _), do: {:error, :not_found}
 
   def leave_organization(%Scope{user: %User{}} = scope, %Organization{} = organization) do
     target = %OrganizationMembership{organization_id: organization.id, user_id: scope.user.id}
@@ -149,22 +168,30 @@ defmodule Textbin.Organizations do
 
   def leave_organization(_, _), do: {:error, :not_found}
 
+  def add_workspace_member(scope, workspace, user, role \\ Policy.workspace_member_role())
+
   def add_workspace_member(
         %Scope{} = scope,
         %Workspace{} = workspace,
         %User{} = user,
-        role \\ Policy.workspace_member_role()
+        role
       ) do
     with {:ok, user_id} <- public_id(user.id) do
-      workspace_transaction(scope, workspace, fn _org_actor, actor, fresh_workspace ->
+      workspace_transaction(scope, workspace, fn _organization,
+                                                 _org_actor,
+                                                 actor,
+                                                 fresh_workspace ->
         with :ok <- Policy.authorize_workspace_change(actor),
+             false <- fresh_workspace.is_default,
              %OrganizationMembership{} <-
                Repo.get_by(OrganizationMembership,
                  organization_id: fresh_workspace.organization_id,
                  user_id: user_id
-               ) do
+               ),
+             {:ok, _user} <- lock_existing_user(user_id) do
           insert_workspace_membership(fresh_workspace.id, user_id, role, actor.user_id)
         else
+          true -> {:error, :default_workspace_membership_required}
           nil -> {:error, :not_found}
           error -> error
         end
@@ -172,13 +199,16 @@ defmodule Textbin.Organizations do
     end
   end
 
+  def add_workspace_member(_, _, _, _), do: {:error, :not_found}
+
   def change_workspace_member_role(%Scope{} = scope, %WorkspaceMembership{} = target, role) do
     with %Workspace{} = workspace <- workspace_for_membership(target) do
-      workspace_transaction(scope, workspace, fn _, actor, fresh_workspace ->
+      workspace_transaction(scope, workspace, fn organization, _, actor, fresh_workspace ->
         with %WorkspaceMembership{} = fresh <- workspace_membership(target),
              %OrganizationMembership{} <-
                organization_membership_for(fresh_workspace.organization_id, fresh.user_id),
              :ok <- Policy.authorize_workspace_change(actor),
+             :ok <- preserve_personal_workspace_owner(organization, fresh_workspace, fresh, role),
              :ok <- preserve_workspace_owner(fresh, role) do
           fresh |> WorkspaceMembership.role_changeset(%{role: role}) |> Repo.update()
         else
@@ -191,8 +221,12 @@ defmodule Textbin.Organizations do
     end
   end
 
+  def change_workspace_member_role(_, _, _), do: {:error, :not_found}
+
   def remove_workspace_member(%Scope{} = scope, %WorkspaceMembership{} = target),
     do: remove_workspace(scope, target, false)
+
+  def remove_workspace_member(_, _), do: {:error, :not_found}
 
   def leave_workspace(%Scope{user: %User{id: user_id}} = scope, %Workspace{} = workspace) do
     remove_workspace(
@@ -205,9 +239,10 @@ defmodule Textbin.Organizations do
   def leave_workspace(_, _), do: {:error, :not_found}
 
   defp remove_organization(scope, target, leaving?) do
-    organization_transaction(scope, target.organization_id, fn actor, workspaces ->
-      with %OrganizationMembership{} = fresh <- organization_membership(target),
+    organization_transaction(scope, target.organization_id, fn organization, actor, workspaces ->
+      with %OrganizationMembership{} = fresh <- organization_membership(target, leaving?),
            :ok <- authorize_org_removal(actor, fresh, leaving?),
+           :ok <- preserve_personal_owner(organization, fresh, nil),
            :ok <- preserve_organization_owner(fresh, nil),
            :ok <- preserve_owned_workspaces(fresh.user_id, workspaces) do
         Repo.delete_all(
@@ -226,12 +261,13 @@ defmodule Textbin.Organizations do
 
   defp remove_workspace(scope, target, leaving?) do
     with %Workspace{} = workspace <- workspace_for_membership(target) do
-      workspace_transaction(scope, workspace, fn _, actor, fresh_workspace ->
-        with %WorkspaceMembership{} = fresh <- workspace_membership(target),
+      workspace_transaction(scope, workspace, fn organization, _, actor, fresh_workspace ->
+        with %WorkspaceMembership{} = fresh <- workspace_membership(target, leaving?),
              %OrganizationMembership{} <-
                organization_membership_for(fresh_workspace.organization_id, fresh.user_id),
              :ok <- authorize_workspace_removal(actor, fresh, leaving?),
              false <- fresh_workspace.is_default,
+             :ok <- preserve_personal_workspace_owner(organization, fresh_workspace, fresh, nil),
              :ok <- preserve_workspace_owner(fresh, nil) do
           Repo.delete(fresh)
         else
@@ -248,8 +284,10 @@ defmodule Textbin.Organizations do
   defp organization_transaction(%Scope{user: %User{id: actor_id}}, organization_id, callback) do
     with {:ok, actor_id} <- public_id(actor_id),
          {:ok, organization_id} <- public_id(organization_id) do
+      ensure_transaction_owner!()
+
       Repo.transact(fn ->
-        with %Organization{} <-
+        with %Organization{} = organization <-
                Repo.one(
                  from o in Organization, where: o.id == ^organization_id, lock: "FOR UPDATE"
                ),
@@ -260,12 +298,13 @@ defmodule Textbin.Organizations do
                    order_by: w.id,
                    lock: "FOR UPDATE"
                ),
+             %User{} <- lock_user(actor_id),
              %OrganizationMembership{} = actor <-
                Repo.get_by(OrganizationMembership,
                  organization_id: organization_id,
                  user_id: actor_id
                ) do
-          callback.(actor, workspaces)
+          callback.(organization, actor, workspaces)
         else
           nil -> {:error, :not_found}
         end
@@ -282,14 +321,14 @@ defmodule Textbin.Organizations do
        ) do
     with {:ok, workspace_id} <- public_id(workspace_id),
          {:ok, organization_id} <- public_id(organization_id) do
-      organization_transaction(scope, organization_id, fn org_actor, workspaces ->
+      organization_transaction(scope, organization_id, fn organization, org_actor, workspaces ->
         with %Workspace{} = workspace <- Enum.find(workspaces, &(&1.id == workspace_id)),
              %WorkspaceMembership{} = actor <-
                Repo.get_by(WorkspaceMembership,
                  workspace_id: workspace_id,
                  user_id: scope.user.id
                ) do
-          callback.(org_actor, actor, workspace)
+          callback.(organization, org_actor, actor, workspace)
         else
           nil -> {:error, :not_found}
         end
@@ -347,10 +386,32 @@ defmodule Textbin.Organizations do
   defp authorize_workspace_removal(actor, _target, _),
     do: Policy.authorize_workspace_change(actor)
 
-  defp organization_membership(m) do
+  defp preserve_personal_owner(
+         %Organization{personal_owner_id: user_id},
+         %{user_id: user_id, role: role},
+         new_role
+       )
+       when role != new_role,
+       do: {:error, :personal_owner_required}
+
+  defp preserve_personal_owner(_organization, _membership, _new_role), do: :ok
+
+  defp preserve_personal_workspace_owner(
+         %Organization{personal_owner_id: user_id},
+         %Workspace{is_default: true},
+         %{user_id: user_id, role: role},
+         new_role
+       )
+       when role != new_role,
+       do: {:error, :personal_owner_required}
+
+  defp preserve_personal_workspace_owner(_organization, _workspace, _membership, _new_role),
+    do: :ok
+
+  defp organization_membership(m, composite_key? \\ false) do
     with {:ok, organization_id} <- public_id(m.organization_id),
          {:ok, user_id} <- public_id(m.user_id),
-         {:ok, id_filter} <- optional_id_filter(m.id) do
+         {:ok, id_filter} <- membership_id_filter(m.id, composite_key?) do
       Repo.get_by(
         OrganizationMembership,
         [organization_id: organization_id, user_id: user_id] ++ id_filter
@@ -360,10 +421,10 @@ defmodule Textbin.Organizations do
     end
   end
 
-  defp workspace_membership(m) do
+  defp workspace_membership(m, composite_key? \\ false) do
     with {:ok, workspace_id} <- public_id(m.workspace_id),
          {:ok, user_id} <- public_id(m.user_id),
-         {:ok, id_filter} <- optional_id_filter(m.id) do
+         {:ok, id_filter} <- membership_id_filter(m.id, composite_key?) do
       Repo.get_by(
         WorkspaceMembership,
         [workspace_id: workspace_id, user_id: user_id] ++ id_filter
@@ -391,11 +452,16 @@ defmodule Textbin.Organizations do
     end
   end
 
-  defp optional_id_filter(nil), do: {:ok, []}
-  defp optional_id_filter(id), do: with({:ok, id} <- public_id(id), do: {:ok, [id: id]})
+  defp membership_id_filter(nil, true), do: {:ok, []}
+  defp membership_id_filter(id, _), do: with({:ok, id} <- public_id(id), do: {:ok, [id: id]})
 
-  defp create_with_default_workspace(changeset, creator),
-    do: Repo.transact(fn -> create_with_default_workspace_in_transaction(changeset, creator) end)
+  defp create_with_default_workspace(changeset, creator) do
+    Repo.transact(fn ->
+      with {:ok, creator} <- lock_existing_user(creator.id) do
+        create_with_default_workspace_in_transaction(changeset, creator)
+      end
+    end)
+  end
 
   defp create_with_default_workspace_in_transaction(changeset, creator) do
     with {:ok, organization} <- Repo.insert(changeset),
@@ -438,4 +504,21 @@ defmodule Textbin.Organizations do
 
   defp get_default_workspace(oid),
     do: Repo.get_by(Workspace, organization_id: oid, is_default: true)
+
+  defp lock_user(id),
+    do: Repo.one(from user in User, where: user.id == ^id, lock: "FOR KEY SHARE")
+
+  defp lock_existing_user(id) do
+    case lock_user(id) do
+      %User{} = user -> {:ok, user}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp ensure_transaction_owner! do
+    if Repo.in_transaction?() do
+      raise ArgumentError,
+            "transaction-owning organization API cannot be called inside a Repo transaction"
+    end
+  end
 end

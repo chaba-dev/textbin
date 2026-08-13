@@ -62,19 +62,43 @@ defmodule Textbin.OrganizationsTest do
       assert Repo.aggregate(WorkspaceMembership, :count) == 1
     end
 
-    test "returns an error and rolls back when the creator was deleted" do
+    test "conceals a creator that was deleted" do
       creator = user_fixture()
       Repo.delete!(creator)
 
-      assert {:error, changeset} =
+      assert {:error, :not_found} =
                Organizations.create_organization(Scope.for_user(creator), %{
                  name: "Acme",
                  slug: "acme"
                })
 
-      assert %{user_id: ["does not exist"]} = errors_on(changeset)
       assert Repo.aggregate(OrganizationMembership, :count) == 0
       assert Repo.aggregate(Workspace, :count) == 0
+    end
+
+    test "conceals a deleted user during personal organization provisioning" do
+      user = user_fixture()
+      Repo.delete!(user)
+
+      assert {:error, :not_found} = Organizations.create_personal_organization(user)
+    end
+
+    test "transaction-owning creation functions reject explicit nesting" do
+      creator = user_fixture()
+
+      for create <- [
+            fn ->
+              Organizations.create_organization(Scope.for_user(creator), %{
+                name: "Nested",
+                slug: "nested"
+              })
+            end,
+            fn -> Organizations.create_personal_organization(creator) end
+          ] do
+        assert_raise ArgumentError, ~r/cannot be called inside a Repo transaction/, fn ->
+          Repo.transact(create)
+        end
+      end
     end
 
     test "conceals missing or malformed creators" do
@@ -159,6 +183,28 @@ defmodule Textbin.OrganizationsTest do
         Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
 
       Repo.delete!(organization)
+
+      assert {:error, :not_found} =
+               Organizations.add_organization_member(
+                 Scope.for_user(creator),
+                 organization,
+                 member
+               )
+
+      refute Repo.get_by(OrganizationMembership,
+               organization_id: organization.id,
+               user_id: member.id
+             )
+    end
+
+    test "conceals a member that was deleted" do
+      creator = user_fixture()
+      member = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(Scope.for_user(creator), %{name: "Acme", slug: "acme"})
+
+      Repo.delete!(member)
 
       assert {:error, :not_found} =
                Organizations.add_organization_member(
@@ -313,6 +359,68 @@ defmodule Textbin.OrganizationsTest do
                Organizations.leave_organization(Scope.for_user(context.member), malformed)
     end
 
+    test "all lifecycle functions conceal malformed arguments", context do
+      scope = Scope.for_user(context.owner)
+      workspace = hd(context.organization.workspaces)
+
+      calls = [
+        fn ->
+          Organizations.add_organization_member(nil, context.organization, context.member)
+        end,
+        fn -> Organizations.add_organization_member(scope, nil, context.member) end,
+        fn -> Organizations.add_organization_member(scope, context.organization, nil) end,
+        fn -> Organizations.change_organization_member_role(scope, nil, "member") end,
+        fn -> Organizations.remove_organization_member(scope, nil) end,
+        fn -> Organizations.add_workspace_member(nil, workspace, context.member) end,
+        fn -> Organizations.add_workspace_member(scope, nil, context.member) end,
+        fn -> Organizations.add_workspace_member(scope, workspace, nil) end,
+        fn -> Organizations.change_workspace_member_role(scope, nil, "member") end,
+        fn -> Organizations.remove_workspace_member(scope, nil) end
+      ]
+
+      for call <- calls do
+        assert {:error, :not_found} = call.()
+      end
+    end
+
+    test "ID-less memberships cannot select a target by parent and user", context do
+      scope = Scope.for_user(context.owner)
+      workspace = hd(context.organization.workspaces)
+
+      idless_organization_membership = %OrganizationMembership{
+        organization_id: context.organization.id,
+        user_id: context.member.id
+      }
+
+      idless_workspace_membership = %WorkspaceMembership{
+        workspace_id: workspace.id,
+        user_id: context.member.id
+      }
+
+      assert {:error, :not_found} =
+               Organizations.change_organization_member_role(
+                 scope,
+                 idless_organization_membership,
+                 "admin"
+               )
+
+      assert {:error, :not_found} =
+               Organizations.remove_organization_member(scope, idless_organization_membership)
+
+      assert {:error, :not_found} =
+               Organizations.change_workspace_member_role(
+                 scope,
+                 idless_workspace_membership,
+                 "owner"
+               )
+
+      assert {:error, :not_found} =
+               Organizations.remove_workspace_member(scope, idless_workspace_membership)
+
+      assert Repo.reload!(context.memberships.organization).role == "member"
+      assert Repo.reload!(context.memberships.workspace).role == "member"
+    end
+
     test "stale and cross-parent membership structs are not found", context do
       other_owner = user_fixture()
 
@@ -418,6 +526,208 @@ defmodule Textbin.OrganizationsTest do
 
       assert {:error, :default_workspace_membership_required} =
                Organizations.leave_workspace(Scope.for_user(context.member), workspace)
+    end
+
+    test "default workspace membership cannot be added directly", context do
+      target = user_fixture()
+
+      assert {:ok, _memberships} =
+               Organizations.add_organization_member(
+                 Scope.for_user(context.owner),
+                 context.organization,
+                 target
+               )
+
+      default_workspace = hd(context.organization.workspaces)
+
+      existing =
+        Repo.get_by!(WorkspaceMembership, workspace_id: default_workspace.id, user_id: target.id)
+
+      Repo.delete!(existing)
+
+      assert {:error, :default_workspace_membership_required} =
+               Organizations.add_workspace_member(
+                 Scope.for_user(context.owner),
+                 default_workspace,
+                 target
+               )
+
+      refute Repo.get_by(WorkspaceMembership,
+               workspace_id: default_workspace.id,
+               user_id: target.id
+             )
+    end
+
+    test "final organization and workspace owners cannot leave", context do
+      workspace = non_default_workspace_fixture(context.organization, context.owner)
+      owner_membership = workspace_membership_fixture(workspace, context.owner, "owner")
+
+      assert {:error, :last_organization_owner} =
+               Organizations.leave_organization(
+                 Scope.for_user(context.owner),
+                 context.organization
+               )
+
+      assert {:error, :last_workspace_owner} =
+               Organizations.leave_workspace(Scope.for_user(context.owner), workspace)
+
+      assert Repo.get(WorkspaceMembership, owner_membership.id)
+    end
+
+    test "non-final organization and workspace owners can leave or be removed", context do
+      second_owner = user_fixture()
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, second_memberships} =
+        Organizations.add_organization_member(owner_scope, context.organization, second_owner)
+
+      {:ok, _} =
+        Organizations.change_organization_member_role(
+          owner_scope,
+          second_memberships.organization,
+          "owner"
+        )
+
+      {:ok, _} =
+        Organizations.change_workspace_member_role(
+          owner_scope,
+          second_memberships.workspace,
+          "owner"
+        )
+
+      leave_workspace = non_default_workspace_fixture(context.organization, context.owner)
+
+      first_workspace_owner =
+        workspace_membership_fixture(leave_workspace, context.owner, "owner")
+
+      workspace_membership_fixture(leave_workspace, second_owner, "owner")
+
+      removal_workspace = non_default_workspace_fixture(context.organization, context.owner)
+      workspace_membership_fixture(removal_workspace, context.owner, "owner")
+
+      second_workspace_owner =
+        workspace_membership_fixture(removal_workspace, second_owner, "owner")
+
+      assert {:ok, _} =
+               Organizations.remove_workspace_member(owner_scope, second_workspace_owner)
+
+      {:ok, replacement_owner} =
+        Organizations.add_workspace_member(owner_scope, removal_workspace, second_owner)
+
+      {:ok, _} =
+        Organizations.change_workspace_member_role(owner_scope, replacement_owner, "owner")
+
+      assert {:ok, _} = Organizations.leave_workspace(owner_scope, leave_workspace)
+      refute Repo.get(WorkspaceMembership, first_workspace_owner.id)
+
+      assert {:ok, _} =
+               Organizations.leave_organization(owner_scope, context.organization)
+
+      refute Repo.get_by(OrganizationMembership,
+               organization_id: context.organization.id,
+               user_id: context.owner.id
+             )
+    end
+
+    test "a personal owner cannot be demoted or removed from the organization or default workspace" do
+      personal_owner = user_fixture()
+      second_owner = user_fixture()
+      organization = Organizations.get_personal_organization!(personal_owner)
+      default_workspace = hd(organization.workspaces)
+      personal_scope = Scope.for_user(personal_owner)
+
+      {:ok, second_memberships} =
+        Organizations.add_organization_member(personal_scope, organization, second_owner)
+
+      {:ok, _} =
+        Organizations.change_organization_member_role(
+          personal_scope,
+          second_memberships.organization,
+          "owner"
+        )
+
+      {:ok, _} =
+        Organizations.change_workspace_member_role(
+          personal_scope,
+          second_memberships.workspace,
+          "owner"
+        )
+
+      personal_organization_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: organization.id,
+          user_id: personal_owner.id
+        )
+
+      personal_workspace_membership =
+        Repo.get_by!(WorkspaceMembership,
+          workspace_id: default_workspace.id,
+          user_id: personal_owner.id
+        )
+
+      second_scope = Scope.for_user(second_owner)
+
+      for result <- [
+            Organizations.change_organization_member_role(
+              second_scope,
+              personal_organization_membership,
+              "member"
+            ),
+            Organizations.remove_organization_member(
+              second_scope,
+              personal_organization_membership
+            ),
+            Organizations.change_workspace_member_role(
+              second_scope,
+              personal_workspace_membership,
+              "member"
+            )
+          ] do
+        assert {:error, :personal_owner_required} = result
+      end
+
+      assert Repo.reload!(personal_organization_membership).role == "owner"
+      assert Repo.reload!(personal_workspace_membership).role == "owner"
+    end
+
+    test "transaction-owning lifecycle functions reject explicit nesting", context do
+      workspace = non_default_workspace_fixture(context.organization, context.owner)
+      workspace_membership_fixture(workspace, context.owner, "owner")
+      scope = Scope.for_user(context.owner)
+      target = user_fixture()
+
+      calls = [
+        fn ->
+          Organizations.add_organization_member(scope, context.organization, target)
+        end,
+        fn ->
+          Organizations.change_organization_member_role(
+            scope,
+            context.memberships.organization,
+            "admin"
+          )
+        end,
+        fn ->
+          Organizations.remove_organization_member(scope, context.memberships.organization)
+        end,
+        fn -> Organizations.leave_organization(scope, context.organization) end,
+        fn -> Organizations.add_workspace_member(scope, workspace, context.member) end,
+        fn ->
+          Organizations.change_workspace_member_role(
+            scope,
+            context.memberships.workspace,
+            "owner"
+          )
+        end,
+        fn -> Organizations.remove_workspace_member(scope, context.memberships.workspace) end,
+        fn -> Organizations.leave_workspace(scope, workspace) end
+      ]
+
+      for call <- calls do
+        assert_raise ArgumentError, ~r/cannot be called inside a Repo transaction/, fn ->
+          Repo.transact(call)
+        end
+      end
     end
 
     test "leaving an organization removes its workspace memberships", context do

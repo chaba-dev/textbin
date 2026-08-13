@@ -211,6 +211,41 @@ defmodule Textbin.Organizations.ConcurrencyTest do
     assert workspace_users == expected_users
   end
 
+  test "concurrent duplicate non-default workspace add inserts one membership" do
+    owner = tracked_user_fixture()
+    member = tracked_user_fixture()
+
+    {:ok, organization} =
+      Organizations.create_organization(Scope.for_user(owner), %{
+        name: "Workspace duplicate race",
+        slug: "workspace-duplicate-race-#{System.unique_integer([:positive])}"
+      })
+
+    track_organization(organization)
+
+    {:ok, _} =
+      Organizations.add_organization_member(Scope.for_user(owner), organization, member)
+
+    workspace = non_default_workspace_fixture(organization, owner)
+    workspace_membership_fixture(workspace, owner, "owner")
+
+    results =
+      race(organization.id, [
+        fn -> Organizations.add_workspace_member(Scope.for_user(owner), workspace, member) end,
+        fn -> Organizations.add_workspace_member(Scope.for_user(owner), workspace, member) end
+      ])
+
+    assert Enum.count(results, &match?({:ok, _}, &1)) == 1
+    assert Enum.count(results, &match?({:error, %Ecto.Changeset{}}, &1)) == 1
+
+    assert Repo.aggregate(
+             from(m in WorkspaceMembership,
+               where: m.workspace_id == ^workspace.id and m.user_id == ^member.id
+             ),
+             :count
+           ) == 1
+  end
+
   defp two_owner_fixture do
     owner_a = tracked_user_fixture()
     owner_b = tracked_user_fixture()
@@ -329,6 +364,33 @@ defmodule Textbin.Organizations.ConcurrencyTest do
     Agent.update(Process.get(:concurrency_cleanup), fn state ->
       %{state | organization_ids: [organization.id | state.organization_ids]}
     end)
+  end
+
+  defp non_default_workspace_fixture(organization, creator) do
+    slug = "workspace-#{System.unique_integer([:positive])}"
+
+    %Textbin.Organizations.Workspace{
+      organization_id: organization.id,
+      created_by_id: creator.id,
+      is_default: false
+    }
+    |> Textbin.Organizations.Workspace.changeset(%{
+      name: slug,
+      slug: slug,
+      visibility: "open"
+    })
+    |> Repo.insert!()
+  end
+
+  defp workspace_membership_fixture(workspace, user, role) do
+    %WorkspaceMembership{
+      workspace_id: workspace.id,
+      user_id: user.id,
+      created_by_id: user.id,
+      role: role
+    }
+    |> WorkspaceMembership.changeset()
+    |> Repo.insert!()
   end
 
   defp one_success_and_one_error?(results, allowed_errors) do
