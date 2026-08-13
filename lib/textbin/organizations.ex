@@ -102,6 +102,100 @@ defmodule Textbin.Organizations do
 
   def resolve_workspace_scope(_, _), do: {:error, :not_found}
 
+  def create_workspace(
+        %Scope{} = scope,
+        %Organization{} = organization,
+        attrs
+      )
+      when is_map(attrs) do
+    organization_transaction(scope, organization.id, fn fresh_organization, actor, _workspaces ->
+      with :ok <- Policy.authorize_workspace_creation(actor),
+           {:ok, workspace} <-
+             %Workspace{
+               organization_id: fresh_organization.id,
+               created_by_id: actor.user_id,
+               is_default: false
+             }
+             |> Workspace.changeset(attrs)
+             |> Repo.insert(),
+           {:ok, _membership} <-
+             insert_workspace_membership(
+               workspace.id,
+               actor.user_id,
+               Policy.workspace_owner_role(),
+               actor.user_id
+             ) do
+        {:ok, Repo.preload(workspace, :memberships)}
+      end
+    end)
+  end
+
+  def create_workspace(_, _, _), do: {:error, :not_found}
+
+  def list_available_workspaces(
+        %Scope{user: %User{id: user_id}},
+        %Organization{id: organization_id}
+      ) do
+    with {:ok, user_id} <- public_id(user_id),
+         {:ok, organization_id} <- public_id(organization_id) do
+      workspaces =
+        Repo.all(
+          from workspace in Workspace,
+            join: organization_membership in OrganizationMembership,
+            on:
+              organization_membership.organization_id == workspace.organization_id and
+                organization_membership.user_id == ^user_id,
+            left_join: workspace_membership in WorkspaceMembership,
+            on:
+              workspace_membership.workspace_id == workspace.id and
+                workspace_membership.user_id == ^user_id,
+            where:
+              workspace.organization_id == ^organization_id and
+                (workspace.visibility == "open" or not is_nil(workspace_membership.id)),
+            order_by: [desc: workspace.is_default, asc: workspace.name, asc: workspace.id]
+        )
+
+      if workspaces == [], do: {:error, :not_found}, else: {:ok, workspaces}
+    else
+      error -> error
+    end
+  end
+
+  def list_available_workspaces(_, _), do: {:error, :not_found}
+
+  def join_workspace(
+        %Scope{user: %User{id: user_id}} = scope,
+        %Workspace{id: workspace_id, organization_id: organization_id}
+      ) do
+    with {:ok, user_id} <- public_id(user_id),
+         {:ok, workspace_id} <- public_id(workspace_id),
+         {:ok, organization_id} <- public_id(organization_id) do
+      organization_transaction(
+        scope,
+        organization_id,
+        &join_workspace_in_transaction(&1, &2, &3, workspace_id, user_id)
+      )
+    end
+  end
+
+  def join_workspace(_, _), do: {:error, :not_found}
+
+  def change_workspace_visibility(%Scope{} = scope, %Workspace{} = workspace, visibility) do
+    workspace_transaction(
+      scope,
+      workspace,
+      &change_workspace_visibility_in_transaction(&1, &2, &3, &4, visibility)
+    )
+  end
+
+  def change_workspace_visibility(_, _, _), do: {:error, :not_found}
+
+  def delete_workspace(%Scope{} = scope, %Workspace{} = workspace) do
+    workspace_transaction(scope, workspace, &delete_workspace_in_transaction/4)
+  end
+
+  def delete_workspace(_, _), do: {:error, :not_found}
+
   def add_organization_member(
         scope,
         organization,
@@ -262,6 +356,54 @@ defmodule Textbin.Organizations do
       {:ok, %{organization: om, workspace: wm}}
     else
       nil -> {:error, :default_workspace_not_found}
+      error -> error
+    end
+  end
+
+  defp join_workspace_in_transaction(
+         _organization,
+         actor,
+         workspaces,
+         workspace_id,
+         user_id
+       ) do
+    with %Workspace{} = workspace <- Enum.find(workspaces, &(&1.id == workspace_id)),
+         :ok <- Policy.authorize_workspace_join(workspace) do
+      insert_workspace_membership(
+        workspace.id,
+        user_id,
+        Policy.workspace_member_role(),
+        actor.user_id
+      )
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp change_workspace_visibility_in_transaction(
+         _organization,
+         _org_actor,
+         actor,
+         workspace,
+         visibility
+       ) do
+    with :ok <- Policy.authorize_workspace_change(actor) do
+      workspace
+      |> Workspace.changeset(%{visibility: visibility})
+      |> Repo.update()
+    end
+  end
+
+  defp delete_workspace_in_transaction(_organization, _org_actor, actor, workspace) do
+    with :ok <- Policy.authorize_workspace_change(actor),
+         false <- workspace.is_default do
+      workspace
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.no_assoc_constraint(:pastes)
+      |> Repo.delete()
+    else
+      true -> {:error, :default_workspace_cannot_be_deleted}
       error -> error
     end
   end
