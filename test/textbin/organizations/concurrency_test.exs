@@ -246,6 +246,105 @@ defmodule Textbin.Organizations.ConcurrencyTest do
            ) == 1
   end
 
+  test "concurrent open workspace joins insert one membership" do
+    owner = tracked_user_fixture()
+    member = tracked_user_fixture()
+
+    {:ok, organization} =
+      Organizations.create_organization(Scope.for_user(owner), %{
+        name: "Join race",
+        slug: "join-race-#{System.unique_integer([:positive])}"
+      })
+
+    track_organization(organization)
+
+    {:ok, _} =
+      Organizations.add_organization_member(Scope.for_user(owner), organization, member)
+
+    {:ok, workspace} =
+      Organizations.create_workspace(Scope.for_user(owner), organization, %{
+        name: "Open",
+        slug: "open",
+        visibility: "open"
+      })
+
+    results =
+      race(organization.id, [
+        fn -> Organizations.join_workspace(Scope.for_user(member), workspace) end,
+        fn -> Organizations.join_workspace(Scope.for_user(member), workspace) end
+      ])
+
+    assert Enum.count(results, &match?({:ok, _}, &1)) == 1
+    assert Enum.count(results, &match?({:error, %Ecto.Changeset{}}, &1)) == 1
+
+    assert Repo.aggregate(
+             from(m in WorkspaceMembership,
+               where: m.workspace_id == ^workspace.id and m.user_id == ^member.id
+             ),
+             :count
+           ) == 1
+  end
+
+  test "workspace creation racing organization removal cannot orphan membership" do
+    owner = tracked_user_fixture()
+    creator = tracked_user_fixture()
+
+    {:ok, organization} =
+      Organizations.create_organization(Scope.for_user(owner), %{
+        name: "Creation removal race",
+        slug: "creation-removal-race-#{System.unique_integer([:positive])}"
+      })
+
+    track_organization(organization)
+
+    {:ok, creator_memberships} =
+      Organizations.add_organization_member(Scope.for_user(owner), organization, creator)
+
+    {:ok, creator_organization_membership} =
+      Organizations.change_organization_member_role(
+        Scope.for_user(owner),
+        creator_memberships.organization,
+        "admin"
+      )
+
+    results =
+      race(organization.id, [
+        fn ->
+          Organizations.create_workspace(Scope.for_user(creator), organization, %{
+            name: "Raced",
+            slug: "raced",
+            visibility: "private"
+          })
+        end,
+        fn ->
+          Organizations.remove_organization_member(
+            Scope.for_user(owner),
+            creator_organization_membership
+          )
+        end
+      ])
+
+    assert match?([{:ok, _}, {:error, :last_workspace_owner}], results) or
+             match?([{:error, :not_found}, {:ok, _}], results)
+
+    organization_membership =
+      Repo.get_by(OrganizationMembership,
+        organization_id: organization.id,
+        user_id: creator.id
+      )
+
+    workspace_memberships =
+      Repo.all(
+        from membership in WorkspaceMembership,
+          join: workspace in Textbin.Organizations.Workspace,
+          on: workspace.id == membership.workspace_id,
+          where:
+            workspace.organization_id == ^organization.id and membership.user_id == ^creator.id
+      )
+
+    assert is_nil(organization_membership) == Enum.empty?(workspace_memberships)
+  end
+
   defp two_owner_fixture do
     owner_a = tracked_user_fixture()
     owner_b = tracked_user_fixture()

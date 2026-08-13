@@ -6,6 +6,7 @@ defmodule Textbin.OrganizationsTest do
   alias Textbin.Organizations.OrganizationMembership
   alias Textbin.Organizations.Workspace
   alias Textbin.Organizations.WorkspaceMembership
+  alias Textbin.Pastes.Paste
 
   import Textbin.AccountsFixtures
 
@@ -951,6 +952,328 @@ defmodule Textbin.OrganizationsTest do
                organization_id: context.organization.id,
                user_id: target.id
              )
+    end
+  end
+
+  describe "workspace lifecycle" do
+    setup do
+      owner = user_fixture()
+      member = user_fixture()
+      outsider = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(Scope.for_user(owner), %{
+          name: "Workspaces",
+          slug: "workspaces-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, _memberships} =
+        Organizations.add_organization_member(Scope.for_user(owner), organization, member)
+
+      %{owner: owner, member: member, outsider: outsider, organization: organization}
+    end
+
+    test "organization owners and admins create open and private workspaces as owner", context do
+      owner_scope = Scope.for_user(context.owner)
+
+      member_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: context.organization.id,
+          user_id: context.member.id
+        )
+
+      {:ok, _admin_membership} =
+        Organizations.change_organization_member_role(owner_scope, member_membership, "admin")
+
+      for {scope, creator, visibility} <- [
+            {owner_scope, context.owner, "open"},
+            {Scope.for_user(context.member), context.member, "private"}
+          ] do
+        slug = "#{visibility}-#{System.unique_integer([:positive])}"
+
+        assert {:ok, workspace} =
+                 Organizations.create_workspace(scope, context.organization, %{
+                   name: String.capitalize(visibility),
+                   slug: slug,
+                   visibility: visibility
+                 })
+
+        assert workspace.organization_id == context.organization.id
+        assert workspace.created_by_id == creator.id
+        assert workspace.visibility == visibility
+        refute workspace.is_default
+
+        assert [%WorkspaceMembership{user_id: user_id, role: "owner"}] =
+                 workspace.memberships
+
+        assert user_id == creator.id
+      end
+    end
+
+    test "workspace creation is atomic and concealed from organization outsiders", context do
+      attrs = %{name: "Private", slug: "private", visibility: "private"}
+
+      assert {:error, :not_found} =
+               Organizations.create_workspace(
+                 Scope.for_user(context.outsider),
+                 context.organization,
+                 attrs
+               )
+
+      assert {:error, changeset} =
+               Organizations.create_workspace(
+                 Scope.for_user(context.owner),
+                 context.organization,
+                 %{attrs | slug: "Not Valid"}
+               )
+
+      assert %{slug: ["has invalid format"]} = errors_on(changeset)
+      refute Repo.get_by(Workspace, organization_id: context.organization.id, name: "Private")
+
+      assert {:error, :unauthorized} =
+               Organizations.create_workspace(
+                 Scope.for_user(context.member),
+                 context.organization,
+                 attrs
+               )
+    end
+
+    test "lists joined and open workspaces without disclosing unjoined private workspaces",
+         context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, open_workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Open",
+          slug: "open",
+          visibility: "open"
+        })
+
+      {:ok, joined_private} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Joined private",
+          slug: "joined-private",
+          visibility: "private"
+        })
+
+      {:ok, hidden_private} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Hidden private",
+          slug: "hidden-private",
+          visibility: "private"
+        })
+
+      assert {:ok, _membership} =
+               Organizations.add_workspace_member(owner_scope, joined_private, context.member)
+
+      assert {:ok, workspaces} =
+               Organizations.list_available_workspaces(
+                 Scope.for_user(context.member),
+                 context.organization
+               )
+
+      workspace_ids = MapSet.new(workspaces, & &1.id)
+      assert MapSet.member?(workspace_ids, hd(context.organization.workspaces).id)
+      assert MapSet.member?(workspace_ids, open_workspace.id)
+      assert MapSet.member?(workspace_ids, joined_private.id)
+      refute MapSet.member?(workspace_ids, hidden_private.id)
+
+      assert {:error, :not_found} =
+               Organizations.list_available_workspaces(
+                 Scope.for_user(context.outsider),
+                 context.organization
+               )
+    end
+
+    test "organization members join and leave an open workspace", context do
+      {:ok, workspace} =
+        Organizations.create_workspace(Scope.for_user(context.owner), context.organization, %{
+          name: "Open",
+          slug: "open",
+          visibility: "open"
+        })
+
+      assert {:ok, membership} =
+               Organizations.join_workspace(Scope.for_user(context.member), workspace)
+
+      assert membership.user_id == context.member.id
+      assert membership.role == "member"
+      assert membership.created_by_id == context.member.id
+
+      assert {:ok, _membership} =
+               Organizations.leave_workspace(Scope.for_user(context.member), workspace)
+
+      refute Repo.get(WorkspaceMembership, membership.id)
+    end
+
+    test "private workspaces cannot be discovered or joined without an invitation", context do
+      {:ok, workspace} =
+        Organizations.create_workspace(Scope.for_user(context.owner), context.organization, %{
+          name: "Private",
+          slug: "private",
+          visibility: "private"
+        })
+
+      assert {:error, :not_found} =
+               Organizations.join_workspace(Scope.for_user(context.member), workspace)
+
+      refute Repo.get_by(WorkspaceMembership,
+               workspace_id: workspace.id,
+               user_id: context.member.id
+             )
+    end
+
+    test "private workspace owners add, promote, demote, and remove members", context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Private",
+          slug: "private",
+          visibility: "private"
+        })
+
+      assert {:ok, membership} =
+               Organizations.add_workspace_member(owner_scope, workspace, context.member)
+
+      assert {:ok, promoted} =
+               Organizations.change_workspace_member_role(owner_scope, membership, "owner")
+
+      assert promoted.role == "owner"
+
+      assert {:ok, demoted} =
+               Organizations.change_workspace_member_role(
+                 Scope.for_user(context.member),
+                 promoted,
+                 "member"
+               )
+
+      assert demoted.role == "member"
+
+      assert {:ok, _membership} =
+               Organizations.remove_workspace_member(owner_scope, demoted)
+
+      refute Repo.get(WorkspaceMembership, membership.id)
+    end
+
+    test "current owners change visibility and delete a workspace regardless of its creator",
+         context do
+      creator_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(creator_scope, context.organization, %{
+          name: "Transferable",
+          slug: "transferable",
+          visibility: "open"
+        })
+
+      {:ok, membership} =
+        Organizations.add_workspace_member(creator_scope, workspace, context.member)
+
+      {:ok, _membership} =
+        Organizations.change_workspace_member_role(creator_scope, membership, "owner")
+
+      member_scope = Scope.for_user(context.member)
+
+      assert {:ok, changed} =
+               Organizations.change_workspace_visibility(member_scope, workspace, "private")
+
+      assert changed.visibility == "private"
+
+      assert {:ok, _workspace} = Organizations.delete_workspace(member_scope, changed)
+      refute Repo.get(Workspace, workspace.id)
+    end
+
+    test "members cannot administer workspaces and the default workspace is immutable", context do
+      default_workspace = hd(context.organization.workspaces)
+      member_scope = Scope.for_user(context.member)
+
+      assert {:error, :unauthorized} =
+               Organizations.change_workspace_visibility(
+                 member_scope,
+                 default_workspace,
+                 "private"
+               )
+
+      owner_scope = Scope.for_user(context.owner)
+
+      assert {:error, changeset} =
+               Organizations.change_workspace_visibility(
+                 owner_scope,
+                 default_workspace,
+                 "private"
+               )
+
+      assert %{visibility: ["must be open for the default workspace"]} = errors_on(changeset)
+
+      assert {:error, :default_workspace_cannot_be_deleted} =
+               Organizations.delete_workspace(owner_scope, default_workspace)
+
+      assert Repo.get(Workspace, default_workspace.id)
+    end
+
+    test "workspace deletion cannot bypass paste storage cleanup", context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Retained",
+          slug: "retained",
+          visibility: "private"
+        })
+
+      paste =
+        %Paste{
+          id: Ecto.UUID.generate(),
+          workspace_id: workspace.id,
+          created_by_user_id: context.owner.id
+        }
+        |> Paste.changeset(%{
+          data: "retained",
+          content_type: "text/plain",
+          syntax_highlight: "plain",
+          visibility: "private"
+        })
+        |> Repo.insert!()
+
+      assert {:error, changeset} = Organizations.delete_workspace(owner_scope, workspace)
+      assert %{pastes: ["are still associated with this entry"]} = errors_on(changeset)
+      assert Repo.get(Workspace, workspace.id)
+      assert Repo.get(Paste, paste.id)
+    end
+
+    test "new lifecycle APIs conceal malformed resources and reject explicit nesting", context do
+      attrs = %{name: "Open", slug: "open", visibility: "open"}
+      scope = Scope.for_user(context.member)
+
+      assert {:error, :not_found} = Organizations.create_workspace(scope, nil, attrs)
+      assert {:error, :not_found} = Organizations.list_available_workspaces(scope, nil)
+      assert {:error, :not_found} = Organizations.join_workspace(scope, nil)
+      assert {:error, :not_found} = Organizations.change_workspace_visibility(scope, nil, "open")
+      assert {:error, :not_found} = Organizations.delete_workspace(scope, nil)
+
+      workspace = hd(context.organization.workspaces)
+
+      assert {:error, :not_found} =
+               Organizations.change_workspace_visibility(%Scope{}, workspace, "open")
+
+      assert {:error, :not_found} = Organizations.delete_workspace(%Scope{}, workspace)
+
+      assert_raise ArgumentError, ~r/cannot be called inside a Repo transaction/, fn ->
+        Repo.transact(fn ->
+          Organizations.create_workspace(scope, context.organization, attrs)
+        end)
+      end
+
+      for call <- [
+            fn -> Organizations.join_workspace(scope, workspace) end,
+            fn -> Organizations.change_workspace_visibility(scope, workspace, "open") end,
+            fn -> Organizations.delete_workspace(scope, workspace) end
+          ] do
+        assert_raise ArgumentError, ~r/cannot be called inside a Repo transaction/, fn ->
+          Repo.transact(call)
+        end
+      end
     end
   end
 

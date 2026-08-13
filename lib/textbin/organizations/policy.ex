@@ -36,4 +36,13 @@ defmodule Textbin.Organizations.Policy do
   def authorize_workspace_change(actor) do
     if workspace_owner?(actor), do: :ok, else: {:error, :unauthorized}
   end
+
+  def authorize_workspace_creation(%OrganizationMembership{role: role})
+      when role in [@organization_owner, @organization_admin],
+      do: :ok
+
+  def authorize_workspace_creation(_membership), do: {:error, :unauthorized}
+
+  def authorize_workspace_join(%{visibility: "open", is_default: false}), do: :ok
+  def authorize_workspace_join(_workspace), do: {:error, :not_found}
 end

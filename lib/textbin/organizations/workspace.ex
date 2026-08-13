@@ -16,6 +16,7 @@ defmodule Textbin.Organizations.Workspace do
     belongs_to :organization, Textbin.Organizations.Organization
     belongs_to :created_by, Textbin.Accounts.User
     has_many :memberships, Textbin.Organizations.WorkspaceMembership
+    has_many :pastes, Textbin.Pastes.Paste
 
     timestamps(type: :utc_datetime)
   end
