@@ -17,6 +17,13 @@ defmodule Textbin.Organizations.Policy do
 
   def organization_owner?(%OrganizationMembership{role: @organization_owner}), do: true
   def organization_owner?(_), do: false
+
+  def organization_manager?(%OrganizationMembership{role: role})
+      when role in [@organization_owner, @organization_admin],
+      do: true
+
+  def organization_manager?(_), do: false
+
   def workspace_owner?(%WorkspaceMembership{role: @workspace_owner}), do: true
   def workspace_owner?(_), do: false
 

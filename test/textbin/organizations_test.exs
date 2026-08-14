@@ -151,6 +151,43 @@ defmodule Textbin.OrganizationsTest do
     end
   end
 
+  describe "organization member lookup" do
+    test "lists and fetches members only for a current organization member" do
+      owner = user_fixture()
+      member = user_fixture()
+      owner_scope = Scope.for_user(owner)
+      slug = "member-lookup-#{System.unique_integer([:positive])}"
+
+      {:ok, organization} =
+        Organizations.create_organization(owner_scope, %{name: "Member lookup", slug: slug})
+
+      {:ok, memberships} =
+        Organizations.add_organization_member(owner_scope, organization, member)
+
+      {:ok, member_scope} =
+        Organizations.resolve_organization_scope_by_slug(Scope.for_user(member), slug)
+
+      assert member_scope
+             |> Organizations.list_organization_members()
+             |> Enum.map(& &1.user_id)
+             |> MapSet.new() == MapSet.new([owner.id, member.id])
+
+      assert Organizations.get_organization_member(
+               member_scope,
+               memberships.organization.id
+             ).user.email == member.email
+
+      outsider_scope = %{Scope.for_user(user_fixture()) | organization: organization}
+
+      assert Organizations.list_organization_members(outsider_scope) == []
+
+      assert Organizations.get_organization_member(outsider_scope, memberships.organization.id) ==
+               nil
+
+      assert Organizations.get_organization_member(member_scope, "not-a-uuid") == nil
+    end
+  end
+
   describe "add_organization_member/3" do
     test "adds explicit organization and default-workspace memberships atomically" do
       creator = user_fixture()

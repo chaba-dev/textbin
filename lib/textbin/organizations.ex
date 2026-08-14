@@ -186,6 +186,43 @@ defmodule Textbin.Organizations do
 
   def resolve_organization_scope_by_slug(_, _), do: {:error, :not_found}
 
+  def list_organization_members(%Scope{
+        user: %User{id: user_id},
+        organization: %Organization{id: organization_id}
+      }) do
+    with {:ok, user_id} <- public_id(user_id),
+         {:ok, organization_id} <- public_id(organization_id) do
+      organization_members_query(user_id, organization_id)
+      |> order_by([membership, _actor, _organization, user], asc: user.email, asc: membership.id)
+      |> Repo.all()
+    else
+      _error -> []
+    end
+  end
+
+  def list_organization_members(_scope), do: []
+
+  def get_organization_member(
+        %Scope{
+          user: %User{id: user_id},
+          organization: %Organization{id: organization_id}
+        },
+        membership_id
+      ) do
+    with {:ok, user_id} <- public_id(user_id),
+         {:ok, organization_id} <- public_id(organization_id),
+         {:ok, membership_id} <- public_id(membership_id) do
+      user_id
+      |> organization_members_query(organization_id)
+      |> where([membership], membership.id == ^membership_id)
+      |> Repo.one()
+    else
+      _error -> nil
+    end
+  end
+
+  def get_organization_member(_scope, _membership_id), do: nil
+
   def list_available_organizations(%Scope{user: %User{id: user_id}}) do
     Repo.all(
       from organization in Organization,
@@ -666,6 +703,21 @@ defmodule Textbin.Organizations do
         error -> error
       end
     end)
+  end
+
+  defp organization_members_query(user_id, organization_id) do
+    from membership in OrganizationMembership,
+      join: actor in OrganizationMembership,
+      on:
+        actor.organization_id == membership.organization_id and
+          actor.user_id == ^user_id,
+      join: organization in Organization,
+      on: organization.id == membership.organization_id,
+      join: user in assoc(membership, :user),
+      where:
+        membership.organization_id == ^organization_id and
+          is_nil(organization.deletion_requested_at),
+      preload: [user: user]
   end
 
   defp delete_organization_membership(organization, actor, membership, workspaces, leaving?) do
