@@ -246,7 +246,13 @@ defmodule TextbinWeb.UI.WorkspaceLive do
     ~H"""
     <header class="space-y-4">
       <div>
-        <p class="text-sm text-base-content/60">{@scope.organization.name}</p>
+        <.link
+          id="organization-overview-link"
+          navigate={organization_path(@scope.organization)}
+          class="text-sm text-base-content/60 transition hover:text-primary"
+        >
+          {@scope.organization.name}
+        </.link>
         <h1 class="text-3xl font-semibold tracking-tight">{@scope.workspace.name}</h1>
       </div>
       <nav id="workspace-page-navigation" class="flex flex-wrap gap-2" aria-label="Workspace">
@@ -277,4 +283,6 @@ defmodule TextbinWeb.UI.WorkspaceLive do
 
   defp workspace_path(scope, page),
     do: "/w/#{scope.organization.slug}/#{scope.workspace.slug}/#{page}"
+
+  defp organization_path(organization), do: "/o/#{organization.slug}"
 end

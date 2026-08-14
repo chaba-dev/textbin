@@ -151,6 +151,41 @@ defmodule Textbin.Organizations do
 
   def resolve_workspace_scope_by_slugs(_, _, _), do: {:error, :not_found}
 
+  @doc "Resolves an organization membership by its stable URL slug without disclosing inaccessible records."
+  def resolve_organization_scope_by_slug(
+        %Scope{user: %User{id: user_id}} = scope,
+        organization_slug
+      )
+      when is_binary(organization_slug) do
+    query =
+      from organization in Organization,
+        join: membership in OrganizationMembership,
+        on:
+          membership.organization_id == organization.id and
+            membership.user_id == ^user_id,
+        where:
+          organization.slug == ^organization_slug and
+            is_nil(organization.deletion_requested_at),
+        select: {organization, membership}
+
+    case Repo.one(query) do
+      {organization, membership} ->
+        {:ok,
+         %{
+           scope
+           | organization: organization,
+             organization_membership: membership,
+             workspace: nil,
+             workspace_membership: nil
+         }}
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  def resolve_organization_scope_by_slug(_, _), do: {:error, :not_found}
+
   def list_available_organizations(%Scope{user: %User{id: user_id}}) do
     Repo.all(
       from organization in Organization,
