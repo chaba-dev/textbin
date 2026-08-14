@@ -508,20 +508,24 @@ defmodule Textbin.Organizations do
   end
 
   defp clamp_paste_audiences(%Workspace{id: workspace_id, external_sharing_policy: "disabled"}) do
+    updated_at = Paste.utc_now_ms()
+
     Repo.update_all(
       from(paste in Paste,
         where: paste.workspace_id == ^workspace_id and paste.audience != "workspace"
       ),
-      set: [audience: "workspace"]
+      set: [audience: "workspace", updated_at: updated_at]
     )
   end
 
   defp clamp_paste_audiences(%Workspace{id: workspace_id, external_sharing_policy: "unlisted"}) do
+    updated_at = Paste.utc_now_ms()
+
     Repo.update_all(
       from(paste in Paste,
         where: paste.workspace_id == ^workspace_id and paste.audience == "public"
       ),
-      set: [audience: "unlisted"]
+      set: [audience: "unlisted", updated_at: updated_at]
     )
   end
 

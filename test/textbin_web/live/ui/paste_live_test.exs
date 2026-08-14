@@ -390,6 +390,27 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     end
   end
 
+  test "shared HTML enforces disabled sharing for an inconsistent public row", %{scope: scope} do
+    workspace = personal_workspace_fixture(scope.user)
+
+    {:ok, workspace} =
+      Organizations.change_workspace_settings(scope, workspace, %{
+        external_sharing_policy: "disabled"
+      })
+
+    paste =
+      Repo.insert!(%Paste{
+        data: "internal page",
+        audience: "public",
+        workspace_id: workspace.id,
+        created_by_user_id: scope.user.id
+      })
+
+    assert_raise Ecto.NoResultsError, fn ->
+      live(build_conn(), ~p"/pastes/#{paste.id}")
+    end
+  end
+
   test "copy button exposes the exact stored paste data", %{scope: scope} do
     for data <- ["abc", "abc\n"] do
       {:ok, paste} =

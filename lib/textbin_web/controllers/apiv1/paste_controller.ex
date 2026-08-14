@@ -374,10 +374,29 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   defp render_changeset_errors(conn, changeset) do
+    changeset = maybe_alias_legacy_visibility_errors(changeset, conn.params)
+
     conn
     |> put_status(:unprocessable_entity)
     |> put_view(json: TextbinWeb.ChangesetJSON)
     |> render(:error, changeset: changeset)
+  end
+
+  defp maybe_alias_legacy_visibility_errors(changeset, params) do
+    params = Map.get(params, "paste", params)
+
+    if is_map(params) and Map.has_key?(params, "visibility") and
+         not Map.has_key?(params, "audience") do
+      errors =
+        Enum.map(changeset.errors, fn
+          {:audience, error} -> {:visibility, error}
+          error -> error
+        end)
+
+      %{changeset | errors: errors}
+    else
+      changeset
+    end
   end
 
   defp max_paste_bytes do

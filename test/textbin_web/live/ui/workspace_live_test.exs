@@ -137,12 +137,16 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
   end
 
   test "workspace owners tighten external sharing and clamp existing paste audiences", context do
+    old_updated_at = DateTime.add(DateTime.utc_now(), -60, :second)
+
     public_paste =
       Repo.insert!(%Paste{
         data: "public",
         audience: "public",
         workspace_id: context.workspace.id,
-        created_by_user_id: context.owner.id
+        created_by_user_id: context.owner.id,
+        inserted_at: old_updated_at,
+        updated_at: old_updated_at
       })
 
     unlisted_paste =
@@ -150,7 +154,9 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
         data: "unlisted",
         audience: "unlisted",
         workspace_id: context.workspace.id,
-        created_by_user_id: context.owner.id
+        created_by_user_id: context.owner.id,
+        inserted_at: old_updated_at,
+        updated_at: old_updated_at
       })
 
     {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
@@ -166,6 +172,7 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
 
     assert Repo.reload!(public_paste).audience == "unlisted"
     assert Repo.reload!(unlisted_paste).audience == "unlisted"
+    assert DateTime.after?(Repo.reload!(public_paste).updated_at, old_updated_at)
 
     view
     |> form("#workspace-settings-form", %{
@@ -178,6 +185,7 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
 
     assert Repo.reload!(public_paste).audience == "workspace"
     assert Repo.reload!(unlisted_paste).audience == "workspace"
+    assert DateTime.after?(Repo.reload!(unlisted_paste).updated_at, old_updated_at)
   end
 
   test "members can view settings but cannot mutate them", context do

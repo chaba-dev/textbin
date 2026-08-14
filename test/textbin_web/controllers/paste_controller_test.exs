@@ -115,6 +115,25 @@ defmodule TextbinWeb.PasteControllerTest do
     assert response(other_conn, 404) == "Not Found"
   end
 
+  test "raw enforces disabled sharing for an inconsistent public row", %{scope: scope} do
+    workspace = personal_workspace_fixture(scope.user)
+
+    {:ok, workspace} =
+      Textbin.Organizations.change_workspace_settings(scope, workspace, %{
+        external_sharing_policy: "disabled"
+      })
+
+    paste =
+      Repo.insert!(%Paste{
+        data: "internal raw",
+        audience: "public",
+        workspace_id: workspace.id,
+        created_by_user_id: scope.user.id
+      })
+
+    assert response(get(build_conn(), ~p"/pastes/#{paste.id}/raw"), 404) == "Not Found"
+  end
+
   test "raw hides expired pastes", %{scope: scope} do
     workspace = personal_workspace_fixture(scope.user)
 

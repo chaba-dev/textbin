@@ -315,7 +315,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders errors when visibility is invalid", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", Map.put(@create_attrs, :visibility, "secret"))
 
-      assert %{"audience" => ["is invalid"]} = json_response(conn, 422)["errors"]
+      assert %{"visibility" => ["is invalid"]} = json_response(conn, 422)["errors"]
     end
 
     test "rejects JSON data over the configured size limit", %{conn: conn} do

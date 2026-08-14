@@ -4,7 +4,8 @@ defmodule Textbin.Organizations.ConcurrencyTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Textbin.Accounts.Scope
   alias Textbin.Organizations
-  alias Textbin.Organizations.{OrganizationMembership, WorkspaceMembership}
+  alias Textbin.Organizations.{OrganizationMembership, Workspace, WorkspaceMembership}
+  alias Textbin.Pastes
   alias Textbin.Repo
 
   import Ecto.Query
@@ -283,6 +284,60 @@ defmodule Textbin.Organizations.ConcurrencyTest do
              ),
              :count
            ) == 1
+  end
+
+  test "paste creation rechecks policy after concurrent sharing is disabled" do
+    owner = tracked_user_fixture()
+
+    {:ok, organization} =
+      Organizations.create_organization(Scope.for_user(owner), %{
+        name: "Sharing race",
+        slug: "sharing-race-#{System.unique_integer([:positive])}"
+      })
+
+    track_organization(organization)
+    workspace = hd(organization.workspaces)
+    {:ok, scope} = Organizations.resolve_workspace_scope(Scope.for_user(owner), workspace)
+    parent = self()
+
+    {:ok, task} =
+      Repo.transaction(fn ->
+        workspace =
+          Repo.one!(
+            from workspace in Workspace,
+              where: workspace.id == ^workspace.id,
+              lock: "FOR UPDATE"
+          )
+
+        workspace
+        |> Workspace.changeset(%{external_sharing_policy: "disabled"})
+        |> Repo.update!()
+
+        task =
+          Task.async(fn ->
+            :ok = Sandbox.checkout(Repo, sandbox: false)
+
+            try do
+              %{rows: [[backend_pid]]} = Repo.query!("SELECT pg_backend_pid()")
+              send(parent, {:creator_ready, backend_pid})
+              Pastes.create_paste(scope, %{data: "raced public paste", audience: "public"})
+            after
+              Sandbox.checkin(Repo)
+            end
+          end)
+
+        assert_receive {:creator_ready, backend_pid}, 5_000
+        await_lock_waits!([backend_pid], 5_000)
+        task
+      end)
+
+    assert {:error, changeset} = Task.await(task, 10_000)
+    assert {"is disabled by the workspace policy", _} = changeset.errors[:audience]
+
+    refute Repo.exists?(
+             from paste in Textbin.Pastes.Paste,
+               where: paste.workspace_id == ^workspace.id and paste.audience == "public"
+           )
   end
 
   test "workspace creation racing organization removal cannot orphan membership" do

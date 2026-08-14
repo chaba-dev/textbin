@@ -108,6 +108,27 @@ defmodule Textbin.PastesTest do
       end
     end
 
+    test "get_shared_paste/2 enforces the workspace policy for inconsistent external rows", %{
+      scope: scope,
+      workspace: workspace
+    } do
+      {:ok, workspace} =
+        Organizations.change_workspace_settings(scope, workspace, %{
+          external_sharing_policy: "disabled"
+        })
+
+      paste =
+        Repo.insert!(%Paste{
+          data: "must remain internal",
+          audience: "public",
+          workspace_id: workspace.id,
+          created_by_user_id: scope.user.id
+        })
+
+      refute Pastes.get_shared_paste(nil, paste.id)
+      assert Pastes.get_shared_paste(scope, paste.id).id == paste.id
+    end
+
     test "get_shared_paste/2 allows an owner to access a private paste", %{scope: scope} do
       {:ok, paste} = Pastes.create_paste(scope, %{data: "private", visibility: "private"})
 
