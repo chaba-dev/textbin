@@ -264,11 +264,15 @@ defmodule TextbinWeb.UI.PasteLive do
     ]
   end
 
-  defp paste_visibility_options(%Textbin.Accounts.User{} = user) do
-    if Textbin.Accounts.User.guest?(user) do
+  defp paste_audience_options(scope) do
+    if Textbin.Accounts.User.guest?(scope.user) do
       [{"Unlisted", "unlisted"}]
     else
-      [{"Private", "private"}, {"Unlisted", "unlisted"}, {"Public", "public"}]
+      case scope.workspace.external_sharing_policy do
+        "disabled" -> [{"Workspace", "workspace"}]
+        "unlisted" -> [{"Workspace", "workspace"}, {"Unlisted", "unlisted"}]
+        "public" -> [{"Workspace", "workspace"}, {"Unlisted", "unlisted"}, {"Public", "public"}]
+      end
     end
   end
 

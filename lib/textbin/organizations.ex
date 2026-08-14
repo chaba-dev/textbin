@@ -12,6 +12,7 @@ defmodule Textbin.Organizations do
   alias Textbin.Accounts.{Scope, User}
   alias Textbin.Organizations.{Organization, OrganizationMembership, Policy}
   alias Textbin.Organizations.{Workspace, WorkspaceMembership}
+  alias Textbin.Pastes.Paste
   alias Textbin.Repo
 
   def create_organization(%Scope{user: %User{} = creator}, attrs) do
@@ -282,14 +283,21 @@ defmodule Textbin.Organizations do
   def join_workspace(_, _), do: {:error, :not_found}
 
   def change_workspace_visibility(%Scope{} = scope, %Workspace{} = workspace, visibility) do
-    workspace_transaction(
-      scope,
-      workspace,
-      &change_workspace_visibility_in_transaction(&1, &2, &3, &4, visibility)
-    )
+    change_workspace_settings(scope, workspace, %{visibility: visibility})
   end
 
   def change_workspace_visibility(_, _, _), do: {:error, :not_found}
+
+  def change_workspace_settings(%Scope{} = scope, %Workspace{} = workspace, attrs)
+      when is_map(attrs) do
+    workspace_transaction(
+      scope,
+      workspace,
+      &change_workspace_settings_in_transaction(&1, &2, &3, &4, attrs)
+    )
+  end
+
+  def change_workspace_settings(_, _, _), do: {:error, :not_found}
 
   def delete_workspace(%Scope{} = scope, %Workspace{} = workspace) do
     workspace_transaction(scope, workspace, &delete_workspace_in_transaction/4)
@@ -482,19 +490,46 @@ defmodule Textbin.Organizations do
     end
   end
 
-  defp change_workspace_visibility_in_transaction(
+  defp change_workspace_settings_in_transaction(
          _organization,
          _org_actor,
          actor,
          workspace,
-         visibility
+         attrs
        ) do
-    with :ok <- Policy.authorize_workspace_change(actor) do
-      workspace
-      |> Workspace.changeset(%{visibility: visibility})
-      |> Repo.update()
+    with :ok <- Policy.authorize_workspace_change(actor),
+         {:ok, updated_workspace} <-
+           workspace
+           |> Workspace.changeset(attrs)
+           |> Repo.update() do
+      clamp_paste_audiences(updated_workspace)
+      {:ok, updated_workspace}
     end
   end
+
+  defp clamp_paste_audiences(%Workspace{id: workspace_id, external_sharing_policy: "disabled"}) do
+    updated_at = Paste.utc_now_ms()
+
+    Repo.update_all(
+      from(paste in Paste,
+        where: paste.workspace_id == ^workspace_id and paste.audience != "workspace"
+      ),
+      set: [audience: "workspace", updated_at: updated_at]
+    )
+  end
+
+  defp clamp_paste_audiences(%Workspace{id: workspace_id, external_sharing_policy: "unlisted"}) do
+    updated_at = Paste.utc_now_ms()
+
+    Repo.update_all(
+      from(paste in Paste,
+        where: paste.workspace_id == ^workspace_id and paste.audience == "public"
+      ),
+      set: [audience: "unlisted", updated_at: updated_at]
+    )
+  end
+
+  defp clamp_paste_audiences(%Workspace{external_sharing_policy: "public"}), do: {0, nil}
 
   defp delete_workspace_in_transaction(_organization, _org_actor, actor, workspace) do
     with :ok <- Policy.authorize_workspace_change(actor),

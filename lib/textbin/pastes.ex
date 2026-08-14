@@ -13,6 +13,7 @@ defmodule Textbin.Pastes do
   alias Textbin.Storage
   alias Textbin.Storage.IntegrityError
   alias Textbin.Organizations
+  alias Textbin.Organizations.Workspace
   alias Textbin.Organizations.WorkspaceMembership
   alias Textbin.Organizations.Policy
 
@@ -22,14 +23,14 @@ defmodule Textbin.Pastes do
   @default_max_paste_bytes 1_048_576
 
   def list_pastes(%Scope{user: %User{}} = scope) do
-    case authorized_workspace_id(scope) do
-      {:ok, workspace_id} ->
+    case authorized_workspace(scope) do
+      {:ok, workspace} ->
         now = Paste.utc_now_ms()
 
         Repo.all(
           from p in Paste,
             where:
-              p.workspace_id == ^workspace_id and
+              p.workspace_id == ^workspace.id and
                 (is_nil(p.expires_at) or p.expires_at > ^now),
             order_by: [desc: p.inserted_at]
         )
@@ -41,14 +42,14 @@ defmodule Textbin.Pastes do
   end
 
   def list_paste_metadata(%Scope{user: %User{}} = scope) do
-    case authorized_workspace_id(scope) do
-      {:ok, workspace_id} ->
+    case authorized_workspace(scope) do
+      {:ok, workspace} ->
         now = Paste.utc_now_ms()
 
         Repo.all(
           from p in Paste,
             where:
-              p.workspace_id == ^workspace_id and
+              p.workspace_id == ^workspace.id and
                 (is_nil(p.expires_at) or p.expires_at > ^now),
             select:
               struct(p, [
@@ -58,7 +59,7 @@ defmodule Textbin.Pastes do
                 :sha256,
                 :content_type,
                 :syntax_highlight,
-                :visibility,
+                :audience,
                 :expires_at,
                 :workspace_id,
                 :created_by_user_id,
@@ -74,14 +75,14 @@ defmodule Textbin.Pastes do
   end
 
   def get_paste(%Scope{user: %User{}} = scope, id) when is_binary(id) do
-    with {:ok, workspace_id} <- authorized_workspace_id(scope),
+    with {:ok, workspace} <- authorized_workspace(scope),
          {:ok, paste_id} <- Ecto.UUID.cast(id) do
       now = Paste.utc_now_ms()
 
       Repo.one(
         from p in Paste,
           where:
-            p.id == ^paste_id and p.workspace_id == ^workspace_id and
+            p.id == ^paste_id and p.workspace_id == ^workspace.id and
               (is_nil(p.expires_at) or p.expires_at > ^now)
       )
       |> load_data()
@@ -123,13 +124,18 @@ defmodule Textbin.Pastes do
   def get_shared_paste(_current_scope, _id), do: nil
 
   def create_paste(%Scope{user: %User{} = user} = scope, attrs \\ %{}) do
-    with {:ok, workspace_id} <- authorized_workspace_id(scope) do
+    with {:ok, workspace} <- authorized_workspace(scope) do
       attrs = attrs_with_defaults(attrs, user, ContentType.text_safe?(attr_data(attrs)))
-      paste = new_paste(user, workspace_id)
-      changeset = paste |> Paste.changeset(attrs) |> validate_data_size()
+      paste = new_paste(user, workspace.id)
+
+      changeset =
+        paste
+        |> Paste.changeset(attrs)
+        |> validate_audience(workspace)
+        |> validate_data_size()
 
       if changeset.valid? do
-        store_paste(changeset)
+        store_paste(scope, changeset)
       else
         {:error, changeset}
       end
@@ -143,19 +149,20 @@ defmodule Textbin.Pastes do
         attrs \\ %{}
       )
       when is_binary(path) and is_integer(size_bytes) and is_binary(sha256) do
-    with {:ok, workspace_id} <- authorized_workspace_id(scope) do
+    with {:ok, workspace} <- authorized_workspace(scope) do
       text_safe? = match?({:ok, true}, ContentType.text_safe_file(path))
       attrs = attrs_with_defaults(attrs, user, text_safe?)
-      paste = new_paste(user, workspace_id)
+      paste = new_paste(user, workspace.id)
       storage_key = "pastes/#{paste.id}"
 
       changeset =
         %{paste | storage_key: storage_key}
         |> Paste.changeset(attrs)
+        |> validate_audience(workspace)
         |> validate_uploaded_file(path, metadata)
 
       if changeset.valid? do
-        store_paste_file(changeset, path, metadata)
+        store_paste_file(scope, changeset, path, metadata)
       else
         {:error, changeset}
       end
@@ -303,7 +310,12 @@ defmodule Textbin.Pastes do
         created_by_user_id: paste.created_by_user_id || user.id
     }
 
-    Paste.changeset(paste, attrs_with_visibility(attrs, user))
+    changeset = Paste.changeset(paste, attrs_with_audience(attrs, user))
+
+    case authorized_workspace(scope) do
+      {:ok, workspace} -> validate_audience(changeset, workspace)
+      {:error, :not_found} -> changeset
+    end
   end
 
   def prepare_paste(%Scope{user: %User{} = user} = scope),
@@ -317,14 +329,15 @@ defmodule Textbin.Pastes do
     }
   end
 
-  defp authorized_workspace_id(%Scope{workspace: %{id: workspace_id}} = scope) do
+  defp authorized_workspace(%Scope{workspace: %{id: workspace_id}} = scope) do
     case Organizations.resolve_workspace_scope(scope, workspace_id) do
-      {:ok, _resolved_scope} -> {:ok, workspace_id}
+      {:ok, resolved_scope} -> {:ok, resolved_scope.workspace}
       {:error, :not_found} -> {:error, :not_found}
     end
   end
 
-  defp authorized_workspace_id(%Scope{user: user}), do: {:ok, personal_workspace_id(user)}
+  defp authorized_workspace(%Scope{user: user}),
+    do: {:ok, Organizations.get_personal_default_workspace!(user)}
 
   defp scope_workspace_id(%Scope{workspace: %{id: workspace_id}}), do: workspace_id
   defp scope_workspace_id(%Scope{user: user}), do: personal_workspace_id(user)
@@ -333,24 +346,24 @@ defmodule Textbin.Pastes do
     Organizations.get_personal_default_workspace!(user).id
   end
 
-  defp store_paste(changeset) do
+  defp store_paste(scope, changeset) do
     data = Ecto.Changeset.get_field(changeset, :data)
     metadata = content_metadata(data)
 
     if inline_data?(changeset, data) do
-      insert_inline_paste(changeset, metadata, data)
+      insert_inline_paste(scope, changeset, metadata, data)
     else
-      store_blob_paste(changeset, data)
+      store_blob_paste(scope, changeset, data)
     end
   end
 
-  defp store_blob_paste(changeset, data) do
+  defp store_blob_paste(scope, changeset, data) do
     storage_key = "pastes/#{changeset.data.id}"
 
     with_pending_upload(storage_key, changeset, fn ->
       case Storage.put(storage_key, data) do
         {:ok, stored_metadata} ->
-          insert_stored_paste(changeset, storage_key, stored_metadata, data)
+          insert_stored_paste(scope, changeset, storage_key, stored_metadata, data)
 
         {:error, reason} ->
           storage_error(changeset, storage_key, reason)
@@ -358,22 +371,22 @@ defmodule Textbin.Pastes do
     end)
   end
 
-  defp store_paste_file(changeset, path, metadata) do
+  defp store_paste_file(scope, changeset, path, metadata) do
     if inline_size?(metadata) do
-      store_inline_file(changeset, path, metadata)
+      store_inline_file(scope, changeset, path, metadata)
     else
-      store_blob_file(changeset, path, metadata)
+      store_blob_file(scope, changeset, path, metadata)
     end
   end
 
-  defp store_inline_file(changeset, path, expected_metadata) do
+  defp store_inline_file(scope, changeset, path, expected_metadata) do
     with {:ok, data} <- File.read(path),
          metadata = content_metadata(data),
          true <- metadata == expected_metadata do
       if inline_data?(changeset, data) do
-        insert_inline_paste(changeset, metadata, data)
+        insert_inline_paste(scope, changeset, metadata, data)
       else
-        store_blob_file(changeset, path, metadata)
+        store_blob_file(scope, changeset, path, metadata)
       end
     else
       false ->
@@ -384,13 +397,13 @@ defmodule Textbin.Pastes do
     end
   end
 
-  defp store_blob_file(changeset, path, metadata) do
+  defp store_blob_file(scope, changeset, path, metadata) do
     storage_key = changeset.data.storage_key
 
     with_pending_upload(storage_key, changeset, fn ->
       case Storage.put_file(storage_key, path, metadata) do
         {:ok, stored_metadata} when stored_metadata == metadata ->
-          insert_stored_paste(changeset, storage_key, stored_metadata, nil)
+          insert_stored_paste(scope, changeset, storage_key, stored_metadata, nil)
 
         {:ok, _stored_metadata} ->
           storage_metadata_error(changeset, storage_key)
@@ -404,13 +417,21 @@ defmodule Textbin.Pastes do
     end)
   end
 
-  defp insert_inline_paste(changeset, metadata, data) do
-    changeset
-    |> Ecto.Changeset.put_change(:data, data)
-    |> Ecto.Changeset.put_change(:storage_key, nil)
-    |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
-    |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
-    |> Repo.insert()
+  defp insert_inline_paste(scope, changeset, metadata, data) do
+    changeset =
+      changeset
+      |> Ecto.Changeset.put_change(:data, data)
+      |> Ecto.Changeset.put_change(:storage_key, nil)
+      |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
+      |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
+
+    Repo.transact(fn ->
+      with {:ok, workspace} <- lock_authorized_workspace(scope, changeset.data.workspace_id) do
+        changeset
+        |> validate_audience(workspace)
+        |> Repo.insert()
+      end
+    end)
   end
 
   defp with_storage_compensation(storage_key, operation) do
@@ -438,7 +459,7 @@ defmodule Textbin.Pastes do
     end
   end
 
-  defp insert_stored_paste(changeset, storage_key, metadata, data) do
+  defp insert_stored_paste(scope, changeset, storage_key, metadata, data) do
     stored_changeset =
       changeset
       |> Ecto.Changeset.put_change(:data, nil)
@@ -446,17 +467,21 @@ defmodule Textbin.Pastes do
       |> Ecto.Changeset.put_change(:size_bytes, metadata.size_bytes)
       |> Ecto.Changeset.put_change(:sha256, metadata.sha256)
 
-    Repo.transaction(fn ->
-      with {:ok, paste} <- Repo.insert(stored_changeset),
+    Repo.transact(fn ->
+      with {:ok, workspace} <- lock_authorized_workspace(scope, changeset.data.workspace_id),
+           {:ok, paste} <-
+             stored_changeset
+             |> validate_audience(workspace)
+             |> Repo.insert(),
            {1, nil} <-
              Repo.delete_all(
                from upload in PendingUpload,
                  where: upload.storage_key == ^storage_key and is_nil(upload.claimed_at)
              ) do
-        paste
+        {:ok, paste}
       else
-        {:error, insert_changeset} -> Repo.rollback(insert_changeset)
-        {0, nil} -> Repo.rollback(:upload_claimed)
+        {:error, reason} -> {:error, reason}
+        {0, nil} -> {:error, :upload_claimed}
       end
     end)
     |> finalize_insert(stored_changeset, storage_key, data)
@@ -573,7 +598,7 @@ defmodule Textbin.Pastes do
   defp attrs_with_defaults(attrs, user, text_safe?) do
     attrs
     |> attrs_with_default_ttl(user)
-    |> attrs_with_visibility(user)
+    |> attrs_with_audience(user)
     |> attrs_with_content_type(text_safe?)
   end
 
@@ -601,16 +626,50 @@ defmodule Textbin.Pastes do
     if Enum.any?(Map.keys(attrs), &is_binary/1), do: "expires_in", else: :expires_in
   end
 
-  defp attrs_with_visibility(attrs, %User{} = user) when is_map(attrs) do
-    visibility = if User.guest?(user), do: "unlisted", else: visibility_value(attrs)
+  defp attrs_with_audience(attrs, %User{} = user) when is_map(attrs) do
+    audience = if User.guest?(user), do: "unlisted", else: audience_value(attrs)
 
-    Map.put(attrs, attr_key(attrs, "visibility", :visibility), visibility || "private")
+    Map.put(attrs, attr_key(attrs, "audience", :audience), audience || "workspace")
   end
 
-  defp visibility_value(attrs) do
-    case Map.get(attrs, "visibility") || Map.get(attrs, :visibility) do
+  defp audience_value(attrs) do
+    case Map.get(attrs, "audience") || Map.get(attrs, :audience) ||
+           Map.get(attrs, "visibility") || Map.get(attrs, :visibility) do
       "" -> nil
-      visibility -> visibility
+      "private" -> "workspace"
+      audience -> audience
+    end
+  end
+
+  defp validate_audience(changeset, workspace) do
+    audience = Ecto.Changeset.get_field(changeset, :audience)
+
+    if Keyword.has_key?(changeset.errors, :audience) or
+         audience_allowed?(audience, workspace.external_sharing_policy) do
+      changeset
+    else
+      Ecto.Changeset.add_error(changeset, :audience, "is disabled by the workspace policy")
+    end
+  end
+
+  defp audience_allowed?("workspace", _policy), do: true
+  defp audience_allowed?("unlisted", policy), do: policy in ["unlisted", "public"]
+  defp audience_allowed?("public", "public"), do: true
+  defp audience_allowed?(_audience, _policy), do: false
+
+  defp lock_authorized_workspace(scope, workspace_id) do
+    workspace =
+      Repo.one(
+        from workspace in Workspace,
+          where: workspace.id == ^workspace_id,
+          lock: "FOR UPDATE"
+      )
+
+    with %Workspace{} <- workspace,
+         {:ok, %Workspace{id: ^workspace_id} = current_workspace} <- authorized_workspace(scope) do
+      {:ok, current_workspace}
+    else
+      _error -> {:error, :not_found}
     end
   end
 
@@ -635,15 +694,25 @@ defmodule Textbin.Pastes do
         where: membership.user_id == ^user_id,
         select: membership.workspace_id
 
-    where(
-      query,
-      [paste],
+    query
+    |> join(:inner, [paste], workspace in Workspace, on: workspace.id == paste.workspace_id)
+    |> where(
+      [paste, workspace],
       paste.workspace_id in subquery(workspace_ids) or
-        paste.visibility in ["unlisted", "public"]
+        (paste.audience == "unlisted" and
+           workspace.external_sharing_policy in ["unlisted", "public"]) or
+        (paste.audience == "public" and workspace.external_sharing_policy == "public")
     )
   end
 
   defp allow_shared_access(query, nil) do
-    where(query, [paste], paste.visibility in ["unlisted", "public"])
+    query
+    |> join(:inner, [paste], workspace in Workspace, on: workspace.id == paste.workspace_id)
+    |> where(
+      [paste, workspace],
+      (paste.audience == "unlisted" and
+         workspace.external_sharing_policy in ["unlisted", "public"]) or
+        (paste.audience == "public" and workspace.external_sharing_policy == "public")
+    )
   end
 end

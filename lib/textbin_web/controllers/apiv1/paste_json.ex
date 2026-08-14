@@ -33,12 +33,16 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
       id: paste.id,
       content_type: paste.content_type,
       syntax_highlight: paste.syntax_highlight,
-      visibility: paste.visibility,
+      audience: paste.audience,
+      visibility: legacy_visibility(paste.audience),
       expires_at: timestamp(paste.expires_at),
       inserted_at: timestamp(paste.inserted_at),
       updated_at: timestamp(paste.updated_at)
     }
   end
+
+  defp legacy_visibility("workspace"), do: "private"
+  defp legacy_visibility(audience), do: audience
 
   defp timestamp(nil), do: nil
 
