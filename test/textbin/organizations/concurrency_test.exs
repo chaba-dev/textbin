@@ -340,6 +340,83 @@ defmodule Textbin.Organizations.ConcurrencyTest do
            )
   end
 
+  test "paste reads wait for concurrent workspace membership revocation" do
+    owner = tracked_user_fixture()
+    member = tracked_user_fixture()
+
+    {:ok, organization} =
+      Organizations.create_organization(Scope.for_user(owner), %{
+        name: "Read revocation race",
+        slug: "read-revocation-race-#{System.unique_integer([:positive])}"
+      })
+
+    track_organization(organization)
+
+    {:ok, _memberships} =
+      Organizations.add_organization_member(Scope.for_user(owner), organization, member)
+
+    {:ok, workspace} =
+      Organizations.create_workspace(Scope.for_user(owner), organization, %{
+        name: "Revoked reads",
+        slug: "revoked-reads",
+        visibility: "private"
+      })
+
+    {:ok, membership} =
+      Organizations.add_workspace_member(Scope.for_user(owner), workspace, member)
+
+    {:ok, owner_scope} =
+      Organizations.resolve_workspace_scope(Scope.for_user(owner), workspace)
+
+    {:ok, member_scope} =
+      Organizations.resolve_workspace_scope(Scope.for_user(member), workspace)
+
+    {:ok, paste} = Pastes.create_paste(owner_scope, %{data: "revoked content"})
+    parent = self()
+
+    {:ok, tasks} =
+      Repo.transaction(fn ->
+        Repo.one!(
+          from workspace in Workspace,
+            where: workspace.id == ^workspace.id,
+            lock: "FOR UPDATE"
+        )
+
+        Repo.delete!(membership)
+
+        tasks =
+          for operation <- [
+                fn -> Pastes.list_pastes_with_access(member_scope) end,
+                fn -> Pastes.get_paste(member_scope, paste.id) end
+              ] do
+            Task.async(fn ->
+              :ok = Sandbox.checkout(Repo, sandbox: false)
+
+              try do
+                %{rows: [[backend_pid]]} = Repo.query!("SELECT pg_backend_pid()")
+                send(parent, {:reader_ready, self(), backend_pid})
+                receive do: (:go -> operation.())
+              after
+                Sandbox.checkin(Repo)
+              end
+            end)
+          end
+
+        readers =
+          for _task <- tasks do
+            assert_receive {:reader_ready, task_pid, backend_pid}, 5_000
+            {task_pid, backend_pid}
+          end
+
+        Enum.each(readers, fn {task_pid, _backend_pid} -> send(task_pid, :go) end)
+        await_lock_waits!(Enum.map(readers, &elem(&1, 1)), 5_000)
+        tasks
+      end)
+
+    assert [{:error, :not_found}, nil] = Task.await_many(tasks, 10_000)
+    Repo.delete!(paste)
+  end
+
   test "workspace creation racing organization removal cannot orphan membership" do
     owner = tracked_user_fixture()
     creator = tracked_user_fixture()

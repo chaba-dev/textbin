@@ -46,8 +46,9 @@ DELETE /api/v1/workspaces/:workspace_id/pastes/:id
 All routes require an API bearer token. Workspace paste routes require current
 workspace membership; discovering an open workspace does not grant paste access.
 The existing `/api/v1/pastes` routes remain compatible and target the authenticated
-user's default personal workspace. Paste responses include `organization_id` and
-`workspace_id` on both route families.
+user's default personal workspace for the lifetime of API v1. Any future removal
+will be announced through release notes before a new API version. Paste responses
+include `organization_id` and `workspace_id` on both route families.
 
 API v1 returns UTF-8 textual paste bodies in `data`. Arbitrary binary bodies use
 an explicit Base64 representation so JSON remains valid:

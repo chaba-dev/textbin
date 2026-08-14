@@ -19,11 +19,17 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   def index(conn, params) do
     with_paste_scope(conn, params, fn paste_scope ->
-      render(conn, :index,
-        pastes: Pastes.list_pastes(paste_scope),
-        organization_id: paste_scope.organization.id,
-        workspace_id: paste_scope.workspace.id
-      )
+      case Pastes.list_pastes_with_access(paste_scope) do
+        {:ok, pastes} ->
+          render(conn, :index,
+            pastes: pastes,
+            organization_id: paste_scope.organization.id,
+            workspace_id: paste_scope.workspace.id
+          )
+
+        {:error, :not_found} ->
+          render_workspace_not_found(conn)
+      end
     end)
   end
 
@@ -31,7 +37,9 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # common JSON client shapes. This keeps CLI usage simple without making API
   # clients wrap data unless they want to.
   def create(conn, params) do
-    case paste_attrs(conn, params) do
+    request_params = Map.drop(params, Map.keys(conn.path_params))
+
+    case paste_attrs(conn, request_params) do
       {:ok, {:data, paste_attrs}, conn} ->
         create_paste(conn, params, paste_attrs)
 

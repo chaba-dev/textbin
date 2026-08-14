@@ -602,6 +602,31 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       refute Pastes.get_paste(workspace_scope, paste_id)
     end
 
+    test "creates a workspace paste from an unadorned raw request body", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{
+          name: "Raw workspace API",
+          slug: "raw-workspace-api-#{System.unique_integer([:positive])}"
+        })
+
+      workspace = hd(organization.workspaces)
+
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/workspaces/#{workspace.id}/pastes", "raw workspace paste")
+
+      assert %{"id" => paste_id, "workspace_id" => workspace_id} =
+               json_response(conn, 201)["data"]
+
+      assert workspace_id == workspace.id
+      {:ok, workspace_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+      assert Pastes.get_paste!(workspace_scope, paste_id).data == "raw workspace paste"
+    end
+
     test "workspace ids cannot be substituted to read a paste from another organization", %{
       conn: conn,
       scope: scope
