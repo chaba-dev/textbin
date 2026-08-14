@@ -6,7 +6,7 @@ defmodule Textbin.Accounts do
   import Ecto.Query, warn: false
   alias Textbin.Repo
 
-  alias Textbin.Accounts.{User, UserToken, UserNotifier}
+  alias Textbin.Accounts.{Scope, User, UserNotifier, UserToken}
   alias Textbin.Organizations
 
   ## Database getters
@@ -101,6 +101,9 @@ defmodule Textbin.Accounts do
     |> User.guest_changeset(attrs)
     |> create_user_with_personal_organization()
   end
+
+  def delete_user(%Scope{user: %User{}} = scope), do: Organizations.delete_account(scope)
+  def delete_user(_scope), do: {:error, :not_found}
 
   defp create_user_with_personal_organization(changeset) do
     Repo.transact(fn ->

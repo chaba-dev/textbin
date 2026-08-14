@@ -120,14 +120,7 @@ defmodule Textbin.Pastes do
   def get_shared_paste(current_scope, id) when is_binary(id) do
     case Ecto.UUID.cast(id) do
       {:ok, paste_id} ->
-        now = Paste.utc_now_ms()
-
-        Paste
-        |> where([paste], paste.id == ^paste_id)
-        |> where([paste], is_nil(paste.expires_at) or paste.expires_at > ^now)
-        |> allow_shared_access(current_scope)
-        |> Repo.one()
-        |> load_data()
+        with_locked_shared_paste(current_scope, paste_id)
 
       :error ->
         nil
@@ -135,6 +128,39 @@ defmodule Textbin.Pastes do
   end
 
   def get_shared_paste(_current_scope, _id), do: nil
+
+  defp with_locked_shared_paste(current_scope, paste_id) do
+    operation = fn ->
+      query = shared_paste_query(current_scope, paste_id)
+
+      with %Paste{workspace_id: workspace_id} <- Repo.one(query),
+           %Workspace{deletion_requested_at: nil} <- lock_workspace(workspace_id, "FOR SHARE") do
+        query |> Repo.one() |> load_data()
+      else
+        _error -> nil
+      end
+    end
+
+    run_shared_paste_operation(operation, Repo.in_transaction?())
+  end
+
+  defp run_shared_paste_operation(operation, true), do: operation.()
+
+  defp run_shared_paste_operation(operation, false) do
+    case Repo.transact(fn -> {:ok, operation.()} end) do
+      {:ok, paste} -> paste
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp shared_paste_query(current_scope, paste_id) do
+    now = Paste.utc_now_ms()
+
+    Paste
+    |> where([paste], paste.id == ^paste_id)
+    |> where([paste], is_nil(paste.expires_at) or paste.expires_at > ^now)
+    |> allow_shared_access(current_scope)
+  end
 
   def create_paste(%Scope{user: %User{} = user} = scope, attrs \\ %{}) do
     with {:ok, workspace} <- authorized_workspace(scope) do
@@ -293,6 +319,19 @@ defmodule Textbin.Pastes do
     deleted_count
   end
 
+  def delete_workspace_pastes(workspace_id) when is_binary(workspace_id) do
+    pastes = Repo.all(from paste in Paste, where: paste.workspace_id == ^workspace_id)
+
+    deletable_ids = for paste <- pastes, delete_stored_data(paste) == :ok, do: paste.id
+    Repo.delete_all(from paste in Paste, where: paste.id in ^deletable_ids)
+
+    if Repo.exists?(from paste in Paste, where: paste.workspace_id == ^workspace_id) do
+      {:error, :storage_cleanup_failed}
+    else
+      :ok
+    end
+  end
+
   def load_data(nil), do: nil
 
   def load_data(%Paste{data: data} = paste) when is_binary(data) do
@@ -344,13 +383,18 @@ defmodule Textbin.Pastes do
 
   defp authorized_workspace(%Scope{workspace: %{id: workspace_id}} = scope) do
     case Organizations.resolve_workspace_scope(scope, workspace_id) do
-      {:ok, resolved_scope} -> {:ok, resolved_scope.workspace}
+      {:ok, %{workspace: %Workspace{deletion_requested_at: nil} = workspace}} -> {:ok, workspace}
+      {:ok, _resolved_scope} -> {:error, :not_found}
       {:error, :not_found} -> {:error, :not_found}
     end
   end
 
-  defp authorized_workspace(%Scope{user: user}),
-    do: {:ok, Organizations.get_personal_default_workspace!(user)}
+  defp authorized_workspace(%Scope{user: user}) do
+    case Organizations.get_personal_default_workspace!(user) do
+      %Workspace{deletion_requested_at: nil} = workspace -> {:ok, workspace}
+      _workspace -> {:error, :not_found}
+    end
+  end
 
   defp scope_workspace_id(%Scope{workspace: %{id: workspace_id}}), do: workspace_id
   defp scope_workspace_id(%Scope{user: user}), do: personal_workspace_id(user)
@@ -738,6 +782,7 @@ defmodule Textbin.Pastes do
 
     query
     |> join(:inner, [paste], workspace in Workspace, on: workspace.id == paste.workspace_id)
+    |> where([_paste, workspace], is_nil(workspace.deletion_requested_at))
     |> where(
       [paste, workspace],
       paste.workspace_id in subquery(workspace_ids) or
@@ -750,6 +795,7 @@ defmodule Textbin.Pastes do
   defp allow_shared_access(query, nil) do
     query
     |> join(:inner, [paste], workspace in Workspace, on: workspace.id == paste.workspace_id)
+    |> where([_paste, workspace], is_nil(workspace.deletion_requested_at))
     |> where(
       [paste, workspace],
       (paste.audience == "unlisted" and

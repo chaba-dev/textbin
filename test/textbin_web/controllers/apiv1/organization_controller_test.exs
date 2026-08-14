@@ -3,6 +3,8 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
 
   alias Textbin.Accounts
   alias Textbin.Organizations
+  alias Textbin.Organizations.AuditEvent
+  alias Textbin.Repo
 
   import Textbin.AccountsFixtures
 
@@ -91,6 +93,109 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
     conn = get(conn, ~p"/api/v1/organizations/not-a-uuid/workspaces")
 
     assert %{"errors" => %{"detail" => "Organization not found"}} = json_response(conn, 404)
+  end
+
+  test "organization owners recover private workspace ownership and read the audit event",
+       context do
+    member = user_fixture()
+
+    {:ok, _memberships} =
+      Organizations.add_organization_member(context.scope, context.organization, member)
+
+    {:ok, workspace} =
+      Organizations.create_workspace(context.scope, context.organization, %{
+        name: "Recovery API",
+        slug: "recovery-api",
+        visibility: "private"
+      })
+
+    {:ok, member_membership} =
+      Organizations.add_workspace_member(context.scope, workspace, member, "owner")
+
+    assert member_membership.role == "owner"
+    assert {:ok, _membership} = Organizations.leave_workspace(context.scope, workspace)
+
+    recovery_conn =
+      post(context.conn, ~p"/api/v1/workspaces/#{workspace.id}/recovery")
+
+    assert %{"workspace_id" => workspace_id, "role" => "owner"} =
+             json_response(recovery_conn, 201)["data"]
+
+    assert workspace_id == workspace.id
+
+    audit_conn =
+      get(context.conn, ~p"/api/v1/organizations/#{context.organization.id}/audit-events")
+
+    assert Enum.any?(json_response(audit_conn, 200)["data"], fn event ->
+             event["action"] == "workspace.recovery_access_granted" and
+               event["actor_user_id"] == context.user.id and
+               event["target_id"] == workspace.id
+           end)
+  end
+
+  test "audit events are cursor paginated with a bounded page size", context do
+    for index <- 1..4 do
+      {:ok, _workspace} =
+        Organizations.create_workspace(context.scope, context.organization, %{
+          name: "Audit page #{index}",
+          slug: "audit-page-#{index}",
+          visibility: "private"
+        })
+    end
+
+    first_conn =
+      get(
+        context.conn,
+        ~p"/api/v1/organizations/#{context.organization.id}/audit-events?limit=2"
+      )
+
+    assert %{"data" => first_events, "next_cursor" => cursor} = json_response(first_conn, 200)
+    assert length(first_events) == 2
+    assert is_binary(cursor)
+
+    second_conn =
+      get(
+        context.conn,
+        ~p"/api/v1/organizations/#{context.organization.id}/audit-events?limit=2&cursor=#{cursor}"
+      )
+
+    assert %{"data" => second_events} = json_response(second_conn, 200)
+    assert length(second_events) == 2
+
+    assert MapSet.disjoint?(
+             MapSet.new(first_events, & &1["id"]),
+             MapSet.new(second_events, & &1["id"])
+           )
+
+    now = DateTime.utc_now()
+
+    Repo.insert_all(
+      AuditEvent,
+      for index <- 1..105 do
+        %{
+          id: Ecto.UUID.generate(),
+          organization_id: context.organization.id,
+          actor_user_id: context.user.id,
+          action: "test.event.#{index}",
+          target_type: "workspace",
+          target_id: Ecto.UUID.generate(),
+          metadata: %{},
+          inserted_at: now
+        }
+      end
+    )
+
+    bounded_conn =
+      get(
+        context.conn,
+        ~p"/api/v1/organizations/#{context.organization.id}/audit-events?limit=1000"
+      )
+
+    assert %{"data" => bounded_events, "next_cursor" => bounded_cursor} =
+             json_response(bounded_conn, 200)
+
+    assert length(bounded_events) == 100
+    assert is_binary(bounded_cursor)
   end
 
   test "requires an API token" do
