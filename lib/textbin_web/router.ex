@@ -41,6 +41,12 @@ defmodule TextbinWeb.Router do
 
     get "/me", AuthController, :show
     delete "/me/token", AuthController, :delete
+    get "/organizations", OrganizationController, :index
+    get "/organizations/:id/workspaces", OrganizationController, :workspaces
+    get "/workspaces/:workspace_id/pastes", PasteController, :index
+    post "/workspaces/:workspace_id/pastes", PasteController, :create
+    get "/workspaces/:workspace_id/pastes/:id", PasteController, :show
+    delete "/workspaces/:workspace_id/pastes/:id", PasteController, :delete
     resources "/pastes", PasteController, except: [:new, :edit, :update]
   end
 

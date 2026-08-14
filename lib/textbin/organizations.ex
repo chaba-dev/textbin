@@ -154,6 +154,22 @@ defmodule Textbin.Organizations do
 
   def list_available_organizations(_scope), do: []
 
+  def get_available_organization(%Scope{user: %User{id: user_id}}, id) do
+    with {:ok, user_id} <- public_id(user_id),
+         {:ok, organization_id} <- public_id(id) do
+      Repo.one(
+        from organization in Organization,
+          join: membership in OrganizationMembership,
+          on: membership.organization_id == organization.id and membership.user_id == ^user_id,
+          where: organization.id == ^organization_id
+      )
+    else
+      _error -> nil
+    end
+  end
+
+  def get_available_organization(_scope, _id), do: nil
+
   def list_joined_workspaces(
         %Scope{user: %User{id: user_id}},
         %Organization{id: organization_id}

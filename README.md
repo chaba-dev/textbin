@@ -31,6 +31,24 @@ container publication process in the [release guide](docs/releasing.md).
 
 ## API binary content
 
+API v1 supports explicit organization and workspace discovery plus workspace-scoped
+paste operations:
+
+```text
+GET    /api/v1/organizations
+GET    /api/v1/organizations/:id/workspaces
+GET    /api/v1/workspaces/:workspace_id/pastes
+POST   /api/v1/workspaces/:workspace_id/pastes
+GET    /api/v1/workspaces/:workspace_id/pastes/:id
+DELETE /api/v1/workspaces/:workspace_id/pastes/:id
+```
+
+All routes require an API bearer token. Workspace paste routes require current
+workspace membership; discovering an open workspace does not grant paste access.
+The existing `/api/v1/pastes` routes remain compatible and target the authenticated
+user's default personal workspace. Paste responses include `organization_id` and
+`workspace_id` on both route families.
+
 API v1 returns UTF-8 textual paste bodies in `data`. Arbitrary binary bodies use
 an explicit Base64 representation so JSON remains valid:
 
