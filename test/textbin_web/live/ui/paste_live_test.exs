@@ -78,7 +78,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert has_element?(
              view,
-             "#sidebar-navigation a[href='/o/#{organization.slug}']"
+             "#organization-menu a[href='/o/#{organization.slug}']"
            )
 
     assert has_element?(view, "##{stream_id(paste)}", paste.id)

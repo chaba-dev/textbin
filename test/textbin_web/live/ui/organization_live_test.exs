@@ -105,15 +105,18 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     assert has_element?(view, "#organization-heading", "Overview")
     assert has_element?(view, "#application-sidebar", context.organization.name)
     assert has_element?(view, "#mobile-sidebar-open")
+    assert has_element?(view, "#organization-menu")
 
     assert has_element?(
              view,
-             "#sidebar-navigation a[href='#{organization_members_path(context.organization)}']"
+             "#organization-menu a[href='#{organization_members_path(context.organization)}']",
+             "Manage members"
            )
 
     assert has_element?(
              view,
-             "#sidebar-navigation a[href='#{organization_settings_path(context.organization)}']"
+             "#organization-menu a[href='#{organization_settings_path(context.organization)}']",
+             "Organization settings"
            )
 
     for workspace <- [context.default_workspace, context.workspace] do
@@ -152,7 +155,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "#sidebar-navigation a[href='#{organization_path(context.organization)}']"
+             "#organization-menu a[href='#{organization_path(context.organization)}']"
            )
   end
 
@@ -328,7 +331,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "#sidebar-navigation a[href='#{organization_path(context.organization)}']"
+             "#organization-menu a[href='#{organization_path(context.organization)}']"
            )
   end
 

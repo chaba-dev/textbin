@@ -129,59 +129,53 @@ defmodule TextbinWeb.Layouts do
     ~H"""
     <nav id={@id} class="flex h-full min-h-0 flex-col" aria-label="Application">
       <div class="border-b border-base-300 pb-5">
-        <div class="flex items-start gap-3">
-          <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
-            <.icon name="hero-building-office-2" class="size-5" />
-          </div>
-          <div class="min-w-0 flex-1">
+        <details id="organization-menu" class="group relative">
+          <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl p-2 transition hover:bg-base-200">
+            <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+              <.icon name="hero-building-office-2" class="size-5" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-semibold text-base-content">{@scope.organization.name}</p>
+              <p class="mt-0.5 truncate font-mono text-xs text-base-content/45">
+                /o/{@scope.organization.slug}
+              </p>
+            </div>
+            <.icon
+              name="hero-chevron-down"
+              class="size-4 shrink-0 text-base-content/40 transition group-open:rotate-180"
+            />
+          </summary>
+          <div class="absolute left-0 right-0 z-20 mt-2 rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl">
+            <p class="px-3 py-2 text-xs font-medium capitalize text-base-content/50">
+              {@scope.organization_membership.role}
+            </p>
             <.link
               navigate={organization_path(@scope.organization)}
-              class="block truncate font-semibold text-base-content transition hover:text-primary"
+              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
             >
-              {@scope.organization.name}
+              <.icon name="hero-squares-2x2" class="size-4" /> Overview
             </.link>
-            <p class="mt-0.5 truncate font-mono text-xs text-base-content/45">
-              /o/{@scope.organization.slug}
-            </p>
+            <.link
+              navigate={organization_members_path(@scope.organization)}
+              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
+            >
+              <.icon name="hero-user-group" class="size-4" /> Manage members
+            </.link>
+            <.link
+              navigate={organization_settings_path(@scope.organization)}
+              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
+            >
+              <.icon name="hero-cog-6-tooth" class="size-4" /> Organization settings
+            </.link>
+            <div class="my-1 border-t border-base-300"></div>
+            <.link
+              navigate={~p"/orgs"}
+              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
+            >
+              <.icon name="hero-arrows-right-left" class="size-4" /> Switch organization
+            </.link>
           </div>
-          <.link
-            navigate={~p"/orgs"}
-            class="btn btn-square btn-ghost btn-xs"
-            title="View organizations"
-            aria-label="View organizations"
-          >
-            <.icon name="hero-arrows-right-left" class="size-4" />
-          </.link>
-        </div>
-        <span class="mt-3 inline-flex rounded-full bg-base-200 px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-base-content/55">
-          {@scope.organization_membership.role}
-        </span>
-      </div>
-
-      <div class="border-b border-base-300 py-5">
-        <p class="mb-2 px-2 text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/40">
-          Organization
-        </p>
-        <div class="space-y-1">
-          <.sidebar_link
-            navigate={organization_path(@scope.organization)}
-            icon="hero-squares-2x2"
-            label="Overview"
-            active={@active == {:organization, :overview}}
-          />
-          <.sidebar_link
-            navigate={organization_members_path(@scope.organization)}
-            icon="hero-user-group"
-            label="Members"
-            active={@active == {:organization, :members}}
-          />
-          <.sidebar_link
-            navigate={organization_settings_path(@scope.organization)}
-            icon="hero-adjustments-horizontal"
-            label="Settings"
-            active={@active == {:organization, :settings}}
-          />
-        </div>
+        </details>
       </div>
 
       <div class="flex min-h-0 flex-1 flex-col py-5">
@@ -325,12 +319,6 @@ defmodule TextbinWeb.Layouts do
                       Register
                     </.link>
                   <% else %>
-                    <.link
-                      href={~p"/orgs"}
-                      class="btn btn-ghost btn-sm w-full justify-start"
-                    >
-                      Organizations
-                    </.link>
                     <.link
                       href={~p"/users/settings"}
                       class="btn btn-ghost btn-sm w-full justify-start"
