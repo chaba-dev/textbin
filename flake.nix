@@ -42,7 +42,7 @@
             # Elixir
             beam.packages.erlang_28.elixir_1_20
             beam.packages.erlang_28.rebar3
-            erlang_28
+            beam28Packages.erlang
 
             # Rust
             rust-toolchain
@@ -54,7 +54,6 @@
             yaml-language-server
 
             # Tools
-            inotify-tools
             watchman
             docker-compose
             yamllint
@@ -64,7 +63,7 @@
             shellcheck
             git-cliff
             postgresql
-          ];
+          ] ++ lib.optionals stdenv.isLinux [ inotify-tools ];
 
           shellHook = ''
             export MIX_HOME="$PWD/.nix/mix"
