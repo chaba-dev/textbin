@@ -11,6 +11,7 @@ defmodule Textbin.Organizations.Organization do
     field :name, :string
     field :slug, :string
     field :kind, :string
+    field :deletion_requested_at, :utc_datetime_usec
 
     belongs_to :personal_owner, Textbin.Accounts.User
     has_many :memberships, Textbin.Organizations.OrganizationMembership

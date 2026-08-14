@@ -8,7 +8,7 @@ defmodule Textbin.Organizations.AuditEvent do
 
   schema "audit_events" do
     field :organization_id, :binary_id
-    belongs_to :actor_user, Textbin.Accounts.User
+    field :actor_user_id, :binary_id
     field :action, :string
     field :target_type, :string
     field :target_id, :binary_id
@@ -26,7 +26,13 @@ defmodule Textbin.Organizations.AuditEvent do
       :target_id,
       :metadata
     ])
-    |> validate_required([:organization_id, :action, :target_type, :target_id, :metadata])
-    |> foreign_key_constraint(:actor_user_id)
+    |> validate_required([
+      :organization_id,
+      :actor_user_id,
+      :action,
+      :target_type,
+      :target_id,
+      :metadata
+    ])
   end
 end

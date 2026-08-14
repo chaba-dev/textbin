@@ -27,8 +27,12 @@ defmodule TextbinWeb.ApiV1.OrganizationController do
   def audit_events(conn, %{"id" => id}) do
     with_api_scope(conn, fn scope ->
       with %{} = organization <- Organizations.get_available_organization(scope, id),
-           {:ok, events} <- Organizations.list_audit_events(scope, organization) do
-        render(conn, :audit_events, events: events)
+           {:ok, page} <-
+             Organizations.list_audit_event_page(scope, organization,
+               limit: conn.params["limit"],
+               cursor: conn.params["cursor"]
+             ) do
+        render(conn, :audit_events, events: page.events, next_cursor: page.next_cursor)
       else
         _error ->
           conn

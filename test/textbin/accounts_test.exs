@@ -3,7 +3,8 @@ defmodule Textbin.AccountsTest do
 
   alias Textbin.Accounts
   alias Textbin.Organizations
-  alias Textbin.Organizations.{Organization, OrganizationMembership, WorkspaceMembership}
+  alias Textbin.Organizations.{AuditEvent, Organization, OrganizationMembership}
+  alias Textbin.Organizations.WorkspaceMembership
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
 
@@ -568,6 +569,15 @@ defmodule Textbin.AccountsTest do
 
       assert %Paste{created_by_user_id: nil, data: "team data remains"} =
                Repo.get(Paste, team_paste.id)
+
+      assert %AuditEvent{actor_user_id: actor_user_id} =
+               Repo.get_by!(AuditEvent,
+                 organization_id: organization.id,
+                 action: "organization.membership.removed",
+                 target_id: owner.id
+               )
+
+      assert actor_user_id == owner.id
     end
 
     test "requires transfer when the user is the final owner of a team workspace" do

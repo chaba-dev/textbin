@@ -1335,6 +1335,47 @@ defmodule Textbin.OrganizationsTest do
       end
     end
 
+    test "no-op role assignments do not create role-changed audit events", context do
+      owner_scope = Scope.for_user(context.owner)
+
+      organization_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: context.organization.id,
+          user_id: context.member.id
+        )
+
+      workspace = hd(context.organization.workspaces)
+
+      workspace_membership =
+        Repo.get_by!(WorkspaceMembership,
+          workspace_id: workspace.id,
+          user_id: context.member.id
+        )
+
+      assert {:ok, _membership} =
+               Organizations.change_organization_member_role(
+                 owner_scope,
+                 organization_membership,
+                 organization_membership.role
+               )
+
+      assert {:ok, _membership} =
+               Organizations.change_workspace_member_role(
+                 owner_scope,
+                 workspace_membership,
+                 workspace_membership.role
+               )
+
+      {:ok, events} = Organizations.list_audit_events(owner_scope, context.organization)
+
+      refute Enum.any?(events, fn event ->
+               event.action in [
+                 "organization.membership.role_changed",
+                 "workspace.membership.role_changed"
+               ] and event.target_id == context.member.id
+             end)
+    end
+
     test "current owners change visibility and delete a workspace regardless of its creator",
          context do
       creator_scope = Scope.for_user(context.owner)

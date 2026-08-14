@@ -12,8 +12,11 @@ defmodule TextbinWeb.ApiV1.OrganizationJSON do
     }
   end
 
-  def audit_events(%{events: events}) do
-    %{data: for(event <- events, do: audit_event_data(event))}
+  def audit_events(%{events: events, next_cursor: next_cursor}) do
+    %{
+      data: for(event <- events, do: audit_event_data(event)),
+      next_cursor: next_cursor
+    }
   end
 
   def recovery(%{membership: %WorkspaceMembership{} = membership}) do

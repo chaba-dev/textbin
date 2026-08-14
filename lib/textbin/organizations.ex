@@ -16,6 +16,9 @@ defmodule Textbin.Organizations do
   alias Textbin.Pastes.Paste
   alias Textbin.Repo
 
+  @default_audit_page_size 50
+  @max_audit_page_size 100
+
   def create_organization(%Scope{user: %User{} = creator}, attrs) do
     ensure_transaction_owner!()
 
@@ -82,7 +85,9 @@ defmodule Textbin.Organizations do
           on: om.organization_id == o.id and om.user_id == ^user_id,
           join: wm in WorkspaceMembership,
           on: wm.workspace_id == w.id and wm.user_id == ^user_id,
-          where: w.id == ^id and is_nil(w.deletion_requested_at),
+          where:
+            w.id == ^id and is_nil(w.deletion_requested_at) and
+              is_nil(o.deletion_requested_at),
           select: {o, om, w, wm}
 
       case Repo.one(query) do
@@ -123,7 +128,9 @@ defmodule Textbin.Organizations do
           workspace_membership.workspace_id == workspace.id and
             workspace_membership.user_id == ^user_id,
         where: organization.slug == ^organization_slug and workspace.slug == ^workspace_slug,
-        where: is_nil(workspace.deletion_requested_at),
+        where:
+          is_nil(workspace.deletion_requested_at) and
+            is_nil(organization.deletion_requested_at),
         select: {organization, organization_membership, workspace, workspace_membership}
 
     case Repo.one(query) do
@@ -149,7 +156,7 @@ defmodule Textbin.Organizations do
       from organization in Organization,
         join: membership in OrganizationMembership,
         on: membership.organization_id == organization.id,
-        where: membership.user_id == ^user_id,
+        where: membership.user_id == ^user_id and is_nil(organization.deletion_requested_at),
         order_by: [asc: organization.name, asc: organization.id]
     )
   end
@@ -163,7 +170,8 @@ defmodule Textbin.Organizations do
         from organization in Organization,
           join: membership in OrganizationMembership,
           on: membership.organization_id == organization.id and membership.user_id == ^user_id,
-          where: organization.id == ^organization_id
+          where:
+            organization.id == ^organization_id and is_nil(organization.deletion_requested_at)
       )
     else
       _error -> nil
@@ -173,21 +181,104 @@ defmodule Textbin.Organizations do
   def get_available_organization(_scope, _id), do: nil
 
   def list_audit_events(%Scope{} = scope, %Organization{} = organization) do
-    organization_transaction(scope, organization.id, fn fresh_organization, actor, _workspaces ->
-      if Policy.organization_owner?(actor) do
-        {:ok,
-         Repo.all(
-           from event in AuditEvent,
-             where: event.organization_id == ^fresh_organization.id,
-             order_by: [desc: event.inserted_at, desc: event.id]
-         )}
-      else
-        {:error, :unauthorized}
-      end
-    end)
+    case list_audit_event_page(scope, organization, limit: @max_audit_page_size) do
+      {:ok, %{events: events}} -> {:ok, events}
+      error -> error
+    end
   end
 
   def list_audit_events(_, _), do: {:error, :not_found}
+
+  def list_audit_event_page(scope, organization, opts \\ [])
+
+  def list_audit_event_page(
+        %Scope{user: %User{id: actor_id}},
+        %Organization{id: organization_id},
+        opts
+      ) do
+    with {:ok, actor_id} <- public_id(actor_id),
+         {:ok, organization_id} <- public_id(organization_id) do
+      ensure_transaction_owner!()
+      limit = audit_page_limit(Keyword.get(opts, :limit))
+      cursor = Keyword.get(opts, :cursor)
+
+      Repo.transact(fn ->
+        list_audit_event_page_in_transaction(actor_id, organization_id, limit, cursor)
+      end)
+    end
+  end
+
+  def list_audit_event_page(_, _, _), do: {:error, :not_found}
+
+  defp list_audit_event_page_in_transaction(actor_id, organization_id, limit, cursor) do
+    with %Organization{} <-
+           Repo.one(
+             from organization in Organization,
+               where:
+                 organization.id == ^organization_id and
+                   is_nil(organization.deletion_requested_at),
+               lock: "FOR SHARE"
+           ),
+         %OrganizationMembership{} = actor <-
+           Repo.get_by(OrganizationMembership,
+             organization_id: organization_id,
+             user_id: actor_id
+           ),
+         true <- Policy.organization_owner?(actor),
+         {:ok, query} <- audit_event_page_query(organization_id, cursor) do
+      events = Repo.all(from event in query, limit: ^(limit + 1))
+      page_events = Enum.take(events, limit)
+
+      {:ok,
+       %{
+         events: page_events,
+         next_cursor: if(length(events) > limit, do: List.last(page_events).id)
+       }}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp audit_event_page_query(organization_id, nil) do
+    query =
+      from event in AuditEvent,
+        where: event.organization_id == ^organization_id,
+        order_by: [desc: event.inserted_at, desc: event.id]
+
+    {:ok, query}
+  end
+
+  defp audit_event_page_query(organization_id, cursor) do
+    with {:ok, cursor_id} <- public_id(cursor),
+         %AuditEvent{} = cursor_event <-
+           Repo.get_by(AuditEvent, id: cursor_id, organization_id: organization_id) do
+      query =
+        from event in AuditEvent,
+          where:
+            event.organization_id == ^organization_id and
+              (event.inserted_at < ^cursor_event.inserted_at or
+                 (event.inserted_at == ^cursor_event.inserted_at and event.id < ^cursor_event.id)),
+          order_by: [desc: event.inserted_at, desc: event.id]
+
+      {:ok, query}
+    else
+      _error -> {:error, :not_found}
+    end
+  end
+
+  defp audit_page_limit(limit) when is_binary(limit) do
+    case Integer.parse(limit) do
+      {limit, ""} -> audit_page_limit(limit)
+      _error -> @default_audit_page_size
+    end
+  end
+
+  defp audit_page_limit(limit) when is_integer(limit),
+    do: limit |> max(1) |> min(@max_audit_page_size)
+
+  defp audit_page_limit(_limit), do: @default_audit_page_size
 
   def list_joined_workspaces(
         %Scope{user: %User{id: user_id}},
@@ -396,13 +487,14 @@ defmodule Textbin.Organizations do
            {:ok, membership} <-
              fresh |> OrganizationMembership.role_changeset(%{role: role}) |> Repo.update(),
            :ok <-
-             record_audit(
+             record_role_change_audit(
                organization.id,
                actor.user_id,
                "organization.membership.role_changed",
-               "user",
                fresh.user_id,
-               %{"old_role" => old_role, "new_role" => role}
+               old_role,
+               role,
+               %{}
              ) do
         {:ok, membership}
       else
@@ -706,7 +798,7 @@ defmodule Textbin.Organizations do
 
       Repo.update_all(
         from(paste in Paste,
-          where: paste.workspace_id == ^workspace.id and is_nil(paste.expires_at)
+          where: paste.workspace_id == ^workspace.id
         ),
         set: [expires_at: requested_at, updated_at: requested_at]
       )
@@ -795,13 +887,14 @@ defmodule Textbin.Organizations do
          {:ok, membership} <-
            fresh |> WorkspaceMembership.role_changeset(%{role: role}) |> Repo.update(),
          :ok <-
-           record_audit(
+           record_role_change_audit(
              organization.id,
              actor.user_id,
              "workspace.membership.role_changed",
-             "user",
              fresh.user_id,
-             %{"old_role" => old_role, "new_role" => role, "workspace_id" => workspace.id}
+             old_role,
+             role,
+             %{"workspace_id" => workspace.id}
            ) do
       {:ok, membership}
     else
@@ -884,7 +977,11 @@ defmodule Textbin.Organizations do
 
   defp run_organization_transaction(organization_id, actor_id, callback) do
     with %Organization{} = organization <-
-           Repo.one(from o in Organization, where: o.id == ^organization_id, lock: "FOR UPDATE"),
+           Repo.one(
+             from o in Organization,
+               where: o.id == ^organization_id and is_nil(o.deletion_requested_at),
+               lock: "FOR UPDATE"
+           ),
          workspaces <-
            Repo.all(
              from w in Workspace,
@@ -1149,6 +1246,36 @@ defmodule Textbin.Organizations do
     end
   end
 
+  defp record_role_change_audit(
+         _organization_id,
+         _actor_user_id,
+         _action,
+         _target_id,
+         role,
+         role,
+         _metadata
+       ),
+       do: :ok
+
+  defp record_role_change_audit(
+         organization_id,
+         actor_user_id,
+         action,
+         target_id,
+         old_role,
+         new_role,
+         metadata
+       ) do
+    record_audit(
+      organization_id,
+      actor_user_id,
+      action,
+      "user",
+      target_id,
+      Map.merge(metadata, %{"old_role" => old_role, "new_role" => new_role})
+    )
+  end
+
   defp record_workspace_setting_audits(organization_id, actor_user_id, previous, updated) do
     [
       {:visibility, "workspace.visibility_changed"},
@@ -1200,10 +1327,11 @@ defmodule Textbin.Organizations do
          personal_workspace_ids when personal_workspace_ids != [] <-
            personal_workspace_ids(organizations, workspaces) do
       requested_at = Paste.utc_now_ms()
+      personal_organization_ids = personal_organization_ids(organizations)
 
       Repo.update_all(
         from(paste in Paste,
-          where: paste.workspace_id in ^personal_workspace_ids and is_nil(paste.expires_at)
+          where: paste.workspace_id in ^personal_workspace_ids
         ),
         set: [expires_at: requested_at, updated_at: requested_at]
       )
@@ -1216,6 +1344,13 @@ defmodule Textbin.Organizations do
         set: [deletion_requested_at: requested_at, updated_at: requested_at]
       )
 
+      Repo.update_all(
+        from(organization in Organization,
+          where: organization.id in ^personal_organization_ids
+        ),
+        set: [deletion_requested_at: requested_at, updated_at: requested_at]
+      )
+
       {:ok, personal_workspace_ids}
     else
       [] -> {:error, :not_found}
@@ -1224,13 +1359,15 @@ defmodule Textbin.Organizations do
   end
 
   defp personal_workspace_ids(organizations, workspaces) do
-    personal_organization_ids =
-      for organization <- organizations, organization.kind == "personal", do: organization.id
+    personal_organization_ids = personal_organization_ids(organizations)
 
     for workspace <- workspaces,
         workspace.organization_id in personal_organization_ids,
         do: workspace.id
   end
+
+  defp personal_organization_ids(organizations),
+    do: for(organization <- organizations, organization.kind == "personal", do: organization.id)
 
   defp delete_workspace_pastes(workspace_ids) do
     Enum.reduce_while(workspace_ids, :ok, fn workspace_id, :ok ->

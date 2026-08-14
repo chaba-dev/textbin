@@ -98,7 +98,15 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
     assert {:error, :storage_cleanup_failed} = Accounts.delete_user(context.scope)
     assert Repo.get(Textbin.Accounts.User, context.scope.user.id)
-    assert Repo.get(Organization, organization.id)
+
+    assert %Organization{deletion_requested_at: %DateTime{}} =
+             Repo.get(Organization, organization.id)
+
+    refute organization.id in Enum.map(
+             Organizations.list_available_organizations(context.scope),
+             & &1.id
+           )
+
     assert %Workspace{deletion_requested_at: %DateTime{}} = Repo.get(Workspace, workspace.id)
     assert Repo.get(Paste, paste.id)
     refute Pastes.get_paste(context.scope, paste.id)
@@ -109,6 +117,141 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     refute Repo.get(Organization, organization.id)
     refute Repo.get(Paste, paste.id)
     assert Storage.get(paste.storage_key) == {:error, :enoent}
+  end
+
+  test "failed workspace deletion immediately conceals future-TTL shared pastes", context do
+    organization = Organizations.get_personal_organization!(context.scope.user)
+
+    {:ok, workspace} =
+      Organizations.create_workspace(context.scope, organization, %{
+        name: "Shared deletion",
+        slug: "shared-deletion",
+        visibility: "open",
+        external_sharing_policy: "public"
+      })
+
+    {:ok, workspace_scope} = Organizations.resolve_workspace_scope(context.scope, workspace)
+
+    {:ok, paste} =
+      Pastes.create_paste(workspace_scope, %{
+        data: "future shared content",
+        audience: "public",
+        expires_in: "30d"
+      })
+
+    delegate = Application.fetch_env!(:textbin, Storage)
+
+    Application.put_env(:textbin, Storage,
+      adapter: Textbin.FailingDeleteStorage,
+      opts: [test_pid: self(), delegate: delegate]
+    )
+
+    assert {:error, :storage_cleanup_failed} =
+             Organizations.delete_workspace(context.scope, workspace)
+
+    assert_receive {:storage_delete_failed, storage_key}
+    assert storage_key == paste.storage_key
+    refute Pastes.get_shared_paste(nil, paste.id)
+    refute Pastes.get_shared_paste(context.scope, paste.id)
+  end
+
+  test "account deletion prevents personal workspace creation after cleanup starts", context do
+    organization = Organizations.get_personal_organization!(context.scope.user)
+    {:ok, _paste} = Pastes.create_paste(context.scope, %{data: "block account cleanup"})
+    {:ok, gate} = Agent.start_link(fn -> true end)
+    delegate = Application.fetch_env!(:textbin, Storage)
+
+    Application.put_env(:textbin, Storage,
+      adapter: Textbin.BlockingStorage,
+      opts: [gate: gate, test_pid: self(), delegate: delegate]
+    )
+
+    deletion =
+      Task.async(fn ->
+        try do
+          Accounts.delete_user(context.scope)
+        rescue
+          error -> {:raised, error}
+        end
+      end)
+
+    Ecto.Adapters.SQL.Sandbox.allow(Repo, self(), deletion.pid)
+
+    assert_receive {:storage_delete_blocked, deleting_pid, storage_key}, 1_000
+
+    create_result =
+      Organizations.create_workspace(context.scope, organization, %{
+        name: "Too late",
+        slug: "too-late",
+        visibility: "private"
+      })
+
+    send(deleting_pid, {:continue_storage_delete, storage_key})
+    deletion_result = Task.await(deletion)
+
+    assert {:error, :not_found} = create_result
+    assert {:ok, _user} = deletion_result
+  end
+
+  test "shared blob reads hold workspace access stable through content loading", context do
+    organization = Organizations.get_personal_organization!(context.scope.user)
+
+    {:ok, workspace} =
+      Organizations.create_workspace(context.scope, organization, %{
+        name: "Read lock",
+        slug: "read-lock",
+        visibility: "open",
+        external_sharing_policy: "public"
+      })
+
+    {:ok, workspace_scope} = Organizations.resolve_workspace_scope(context.scope, workspace)
+
+    {:ok, paste} =
+      Pastes.create_paste(workspace_scope, %{data: "stable shared read", audience: "public"})
+
+    {:ok, read_gate} = Agent.start_link(fn -> true end)
+    {:ok, delete_gate} = Agent.start_link(fn -> false end)
+    delegate = Application.fetch_env!(:textbin, Storage)
+
+    Application.put_env(:textbin, Storage,
+      adapter: Textbin.BlockingStorage,
+      opts: [
+        read_gate: read_gate,
+        gate: delete_gate,
+        test_pid: self(),
+        delegate: delegate
+      ]
+    )
+
+    read =
+      Task.async(fn ->
+        try do
+          {:ok, Pastes.get_shared_paste(nil, paste.id)}
+        rescue
+          error -> {:raised, error}
+        end
+      end)
+
+    Ecto.Adapters.SQL.Sandbox.allow(Repo, self(), read.pid)
+    assert_receive {:storage_read_blocked, reading_pid, storage_key}, 1_000
+
+    deletion = Task.async(fn -> Organizations.delete_workspace(context.scope, workspace) end)
+    Ecto.Adapters.SQL.Sandbox.allow(Repo, self(), deletion.pid)
+    deletion_before_read = Task.yield(deletion, 100)
+
+    send(reading_pid, {:continue_storage_read, storage_key})
+    read_result = Task.await(read)
+
+    deletion_result =
+      case deletion_before_read do
+        nil -> Task.await(deletion)
+        {:ok, result} -> result
+      end
+
+    assert deletion_before_read == nil
+    assert {:ok, %Paste{id: paste_id, data: "stable shared read"}} = read_result
+    assert paste_id == paste.id
+    assert {:ok, _workspace} = deletion_result
   end
 
   test "manual deletion succeeds when expiration cleanup wins the hard-delete race", context do
