@@ -25,7 +25,6 @@ defmodule TextbinWeb.Router do
   scope "/", TextbinWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
     get "/pastes/:id/raw", PasteController, :raw
   end
 
@@ -73,6 +72,8 @@ defmodule TextbinWeb.Router do
 
   scope "/", TextbinWeb do
     pipe_through [:browser, :require_authenticated_user]
+
+    get "/", PageController, :home
 
     live_session :require_authenticated_user,
       on_mount: [{TextbinWeb.UserAuth, :require_authenticated}] do
