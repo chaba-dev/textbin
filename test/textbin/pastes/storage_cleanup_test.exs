@@ -6,7 +6,9 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
+  alias Textbin.Accounts
   alias Textbin.Organizations
+  alias Textbin.Organizations.{Organization, Workspace}
   alias Textbin.Repo
   alias Textbin.Storage
 
@@ -85,6 +87,28 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
     assert Repo.get(Paste, paste.id)
     assert Storage.get(paste.storage_key) == {:ok, "retained blob"}
+  end
+
+  test "account deletion keeps a retryable personal-workspace tombstone on storage failure",
+       context do
+    {:ok, paste} = Pastes.create_paste(context.scope, %{data: "account cleanup retry"})
+    organization = Organizations.get_personal_organization!(context.scope.user)
+    workspace = Organizations.get_personal_default_workspace!(context.scope.user)
+    block_storage_deletes!(context.blocked_root)
+
+    assert {:error, :storage_cleanup_failed} = Accounts.delete_user(context.scope)
+    assert Repo.get(Textbin.Accounts.User, context.scope.user.id)
+    assert Repo.get(Organization, organization.id)
+    assert %Workspace{deletion_requested_at: %DateTime{}} = Repo.get(Workspace, workspace.id)
+    assert Repo.get(Paste, paste.id)
+    refute Pastes.get_paste(context.scope, paste.id)
+
+    use_storage_root(context.root)
+    assert {:ok, _user} = Accounts.delete_user(context.scope)
+    refute Repo.get(Textbin.Accounts.User, context.scope.user.id)
+    refute Repo.get(Organization, organization.id)
+    refute Repo.get(Paste, paste.id)
+    assert Storage.get(paste.storage_key) == {:error, :enoent}
   end
 
   test "manual deletion succeeds when expiration cleanup wins the hard-delete race", context do

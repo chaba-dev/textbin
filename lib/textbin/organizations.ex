@@ -10,8 +10,9 @@ defmodule Textbin.Organizations do
   import Ecto.Query, warn: false
 
   alias Textbin.Accounts.{Scope, User}
-  alias Textbin.Organizations.{Organization, OrganizationMembership, Policy}
+  alias Textbin.Organizations.{AuditEvent, Organization, OrganizationMembership, Policy}
   alias Textbin.Organizations.{Workspace, WorkspaceMembership}
+  alias Textbin.Pastes
   alias Textbin.Pastes.Paste
   alias Textbin.Repo
 
@@ -81,7 +82,7 @@ defmodule Textbin.Organizations do
           on: om.organization_id == o.id and om.user_id == ^user_id,
           join: wm in WorkspaceMembership,
           on: wm.workspace_id == w.id and wm.user_id == ^user_id,
-          where: w.id == ^id,
+          where: w.id == ^id and is_nil(w.deletion_requested_at),
           select: {o, om, w, wm}
 
       case Repo.one(query) do
@@ -122,6 +123,7 @@ defmodule Textbin.Organizations do
           workspace_membership.workspace_id == workspace.id and
             workspace_membership.user_id == ^user_id,
         where: organization.slug == ^organization_slug and workspace.slug == ^workspace_slug,
+        where: is_nil(workspace.deletion_requested_at),
         select: {organization, organization_membership, workspace, workspace_membership}
 
     case Repo.one(query) do
@@ -170,6 +172,23 @@ defmodule Textbin.Organizations do
 
   def get_available_organization(_scope, _id), do: nil
 
+  def list_audit_events(%Scope{} = scope, %Organization{} = organization) do
+    organization_transaction(scope, organization.id, fn fresh_organization, actor, _workspaces ->
+      if Policy.organization_owner?(actor) do
+        {:ok,
+         Repo.all(
+           from event in AuditEvent,
+             where: event.organization_id == ^fresh_organization.id,
+             order_by: [desc: event.inserted_at, desc: event.id]
+         )}
+      else
+        {:error, :unauthorized}
+      end
+    end)
+  end
+
+  def list_audit_events(_, _), do: {:error, :not_found}
+
   def list_joined_workspaces(
         %Scope{user: %User{id: user_id}},
         %Organization{id: organization_id}
@@ -178,7 +197,9 @@ defmodule Textbin.Organizations do
       from workspace in Workspace,
         join: membership in WorkspaceMembership,
         on: membership.workspace_id == workspace.id,
-        where: workspace.organization_id == ^organization_id and membership.user_id == ^user_id,
+        where:
+          workspace.organization_id == ^organization_id and membership.user_id == ^user_id and
+            is_nil(workspace.deletion_requested_at),
         order_by: [desc: workspace.is_default, asc: workspace.name, asc: workspace.id]
     )
   end
@@ -242,6 +263,15 @@ defmodule Textbin.Organizations do
                actor.user_id,
                Policy.workspace_owner_role(),
                actor.user_id
+             ),
+           :ok <-
+             record_audit(
+               fresh_organization.id,
+               actor.user_id,
+               "workspace.created",
+               "workspace",
+               workspace.id,
+               %{"visibility" => workspace.visibility}
              ) do
         {:ok, Repo.preload(workspace, :memberships)}
       end
@@ -269,6 +299,7 @@ defmodule Textbin.Organizations do
                 workspace_membership.user_id == ^user_id,
             where:
               workspace.organization_id == ^organization_id and
+                is_nil(workspace.deletion_requested_at) and
                 (workspace.visibility == "open" or not is_nil(workspace_membership.id)),
             order_by: [desc: workspace.is_default, asc: workspace.name, asc: workspace.id]
         )
@@ -316,7 +347,16 @@ defmodule Textbin.Organizations do
   def change_workspace_settings(_, _, _), do: {:error, :not_found}
 
   def delete_workspace(%Scope{} = scope, %Workspace{} = workspace) do
-    workspace_transaction(scope, workspace, &delete_workspace_in_transaction/4)
+    with {:ok, deletion_workspace} <-
+           workspace_transaction(
+             scope,
+             workspace,
+             &request_workspace_deletion_in_transaction/4,
+             true
+           ),
+         :ok <- Pastes.delete_workspace_pastes(deletion_workspace.id) do
+      workspace_transaction(scope, deletion_workspace, &delete_workspace_in_transaction/4, true)
+    end
   end
 
   def delete_workspace(_, _), do: {:error, :not_found}
@@ -351,8 +391,20 @@ defmodule Textbin.Organizations do
       with %OrganizationMembership{} = fresh <- organization_membership(target),
            :ok <- Policy.authorize_organization_change(actor, fresh.role, role),
            :ok <- preserve_personal_owner(organization, fresh, role),
-           :ok <- preserve_organization_owner(fresh, role) do
-        fresh |> OrganizationMembership.role_changeset(%{role: role}) |> Repo.update()
+           :ok <- preserve_organization_owner(fresh, role),
+           old_role = fresh.role,
+           {:ok, membership} <-
+             fresh |> OrganizationMembership.role_changeset(%{role: role}) |> Repo.update(),
+           :ok <-
+             record_audit(
+               organization.id,
+               actor.user_id,
+               "organization.membership.role_changed",
+               "user",
+               fresh.user_id,
+               %{"old_role" => old_role, "new_role" => role}
+             ) do
+        {:ok, membership}
       else
         nil -> {:error, :not_found}
         error -> error
@@ -424,6 +476,56 @@ defmodule Textbin.Organizations do
 
   def leave_workspace(_, _), do: {:error, :not_found}
 
+  def recover_workspace_access(
+        %Scope{user: %User{id: user_id}} = scope,
+        %Workspace{id: workspace_id, organization_id: organization_id}
+      ) do
+    organization_transaction(scope, organization_id, fn organization, actor, workspaces ->
+      with true <- Policy.organization_owner?(actor),
+           %Workspace{visibility: "private", deletion_requested_at: nil} = workspace <-
+             Enum.find(workspaces, &(&1.id == workspace_id)),
+           {:ok, membership} <- recover_workspace_membership(workspace.id, user_id),
+           :ok <-
+             record_audit(
+               organization.id,
+               user_id,
+               "workspace.recovery_access_granted",
+               "workspace",
+               workspace.id,
+               %{"role" => Policy.workspace_owner_role()}
+             ) do
+        {:ok, membership}
+      else
+        false -> {:error, :unauthorized}
+        nil -> {:error, :not_found}
+        error -> error
+      end
+    end)
+  end
+
+  def recover_workspace_access(%Scope{} = scope, workspace_id) when is_binary(workspace_id) do
+    with {:ok, workspace_id} <- public_id(workspace_id),
+         %Workspace{} = workspace <- Repo.get(Workspace, workspace_id) do
+      recover_workspace_access(scope, workspace)
+    else
+      _error -> {:error, :not_found}
+    end
+  end
+
+  def recover_workspace_access(_, _), do: {:error, :not_found}
+
+  def delete_account(%Scope{user: %User{id: user_id}}) do
+    ensure_transaction_owner!()
+
+    with {:ok, personal_workspace_ids} <-
+           Repo.transact(fn -> prepare_account_deletion(user_id) end),
+         :ok <- delete_workspace_pastes(personal_workspace_ids) do
+      Repo.transact(fn -> finalize_account_deletion(user_id) end)
+    end
+  end
+
+  def delete_account(_scope), do: {:error, :not_found}
+
   defp remove_organization(scope, target, leaving?) do
     organization_transaction(scope, target.organization_id, fn organization, actor, workspaces ->
       with %OrganizationMembership{} = fresh <- organization_membership(target, leaving?),
@@ -431,18 +533,34 @@ defmodule Textbin.Organizations do
            :ok <- preserve_personal_owner(organization, fresh, nil),
            :ok <- preserve_organization_owner(fresh, nil),
            :ok <- preserve_owned_workspaces(fresh.user_id, workspaces) do
-        Repo.delete_all(
-          from wm in WorkspaceMembership,
-            where:
-              wm.user_id == ^fresh.user_id and wm.workspace_id in ^Enum.map(workspaces, & &1.id)
-        )
-
-        Repo.delete(fresh)
+        delete_organization_membership(organization, actor, fresh, workspaces, leaving?)
       else
         nil -> {:error, :not_found}
         error -> error
       end
     end)
+  end
+
+  defp delete_organization_membership(organization, actor, membership, workspaces, leaving?) do
+    Repo.delete_all(
+      from workspace_membership in WorkspaceMembership,
+        where:
+          workspace_membership.user_id == ^membership.user_id and
+            workspace_membership.workspace_id in ^Enum.map(workspaces, & &1.id)
+    )
+
+    with {:ok, membership} <- Repo.delete(membership),
+         :ok <-
+           record_audit(
+             organization.id,
+             actor.user_id,
+             "organization.membership.removed",
+             "user",
+             membership.user_id,
+             %{"role" => membership.role, "self" => leaving?}
+           ) do
+      {:ok, membership}
+    end
   end
 
   defp remove_workspace(scope, target, leaving?) do
@@ -477,6 +595,15 @@ defmodule Textbin.Organizations do
              user_id,
              Policy.workspace_member_role(),
              actor.user_id
+           ),
+         :ok <-
+           record_audit(
+             organization_id,
+             actor.user_id,
+             "organization.membership.added",
+             "user",
+             user_id,
+             %{"role" => role}
            ) do
       {:ok, %{organization: om, workspace: wm}}
     else
@@ -493,13 +620,24 @@ defmodule Textbin.Organizations do
          user_id
        ) do
     with %Workspace{} = workspace <- Enum.find(workspaces, &(&1.id == workspace_id)),
-         :ok <- Policy.authorize_workspace_join(workspace) do
-      insert_workspace_membership(
-        workspace.id,
-        user_id,
-        Policy.workspace_member_role(),
-        actor.user_id
-      )
+         :ok <- Policy.authorize_workspace_join(workspace),
+         {:ok, membership} <-
+           insert_workspace_membership(
+             workspace.id,
+             user_id,
+             Policy.workspace_member_role(),
+             actor.user_id
+           ),
+         :ok <-
+           record_audit(
+             workspace.organization_id,
+             actor.user_id,
+             "workspace.membership.added",
+             "user",
+             user_id,
+             %{"role" => membership.role, "workspace_id" => workspace.id}
+           ) do
+      {:ok, membership}
     else
       nil -> {:error, :not_found}
       error -> error
@@ -507,7 +645,7 @@ defmodule Textbin.Organizations do
   end
 
   defp change_workspace_settings_in_transaction(
-         _organization,
+         organization,
          _org_actor,
          actor,
          workspace,
@@ -519,7 +657,16 @@ defmodule Textbin.Organizations do
            |> Workspace.changeset(attrs)
            |> Repo.update() do
       clamp_paste_audiences(updated_workspace)
-      {:ok, updated_workspace}
+
+      with :ok <-
+             record_workspace_setting_audits(
+               organization.id,
+               actor.user_id,
+               workspace,
+               updated_workspace
+             ) do
+        {:ok, updated_workspace}
+      end
     end
   end
 
@@ -547,13 +694,50 @@ defmodule Textbin.Organizations do
 
   defp clamp_paste_audiences(%Workspace{external_sharing_policy: "public"}), do: {0, nil}
 
-  defp delete_workspace_in_transaction(_organization, _org_actor, actor, workspace) do
+  defp request_workspace_deletion_in_transaction(
+         _organization,
+         _org_actor,
+         actor,
+         workspace
+       ) do
     with :ok <- Policy.authorize_workspace_change(actor),
          false <- workspace.is_default do
+      requested_at = workspace.deletion_requested_at || Paste.utc_now_ms()
+
+      Repo.update_all(
+        from(paste in Paste,
+          where: paste.workspace_id == ^workspace.id and is_nil(paste.expires_at)
+        ),
+        set: [expires_at: requested_at, updated_at: requested_at]
+      )
+
       workspace
-      |> Ecto.Changeset.change()
-      |> Ecto.Changeset.no_assoc_constraint(:pastes)
-      |> Repo.delete()
+      |> Ecto.Changeset.change(deletion_requested_at: requested_at)
+      |> Repo.update()
+    else
+      true -> {:error, :default_workspace_cannot_be_deleted}
+      error -> error
+    end
+  end
+
+  defp delete_workspace_in_transaction(organization, _org_actor, actor, workspace) do
+    with :ok <- Policy.authorize_workspace_change(actor),
+         false <- workspace.is_default,
+         {:ok, deleted_workspace} <-
+           workspace
+           |> Ecto.Changeset.change()
+           |> Ecto.Changeset.no_assoc_constraint(:pastes)
+           |> Repo.delete(),
+         :ok <-
+           record_audit(
+             organization.id,
+             actor.user_id,
+             "workspace.deleted",
+             "workspace",
+             workspace.id,
+             %{"name" => workspace.name}
+           ) do
+      {:ok, deleted_workspace}
     else
       true -> {:error, :default_workspace_cannot_be_deleted}
       error -> error
@@ -573,7 +757,19 @@ defmodule Textbin.Organizations do
          %OrganizationMembership{} <-
            organization_membership_for(workspace.organization_id, user_id),
          {:ok, _user} <- lock_existing_user(user_id) do
-      insert_workspace_membership(workspace.id, user_id, role, actor.user_id)
+      with {:ok, membership} <-
+             insert_workspace_membership(workspace.id, user_id, role, actor.user_id),
+           :ok <-
+             record_audit(
+               workspace.organization_id,
+               actor.user_id,
+               "workspace.membership.added",
+               "user",
+               user_id,
+               %{"role" => role, "workspace_id" => workspace.id}
+             ) do
+        {:ok, membership}
+      end
     else
       true -> {:error, :default_workspace_membership_required}
       nil -> {:error, :not_found}
@@ -594,8 +790,20 @@ defmodule Textbin.Organizations do
            organization_membership_for(workspace.organization_id, fresh.user_id),
          :ok <- Policy.authorize_workspace_change(actor),
          :ok <- preserve_personal_workspace_owner(organization, workspace, fresh, role),
-         :ok <- preserve_workspace_owner(fresh, role) do
-      fresh |> WorkspaceMembership.role_changeset(%{role: role}) |> Repo.update()
+         :ok <- preserve_workspace_owner(fresh, role),
+         old_role = fresh.role,
+         {:ok, membership} <-
+           fresh |> WorkspaceMembership.role_changeset(%{role: role}) |> Repo.update(),
+         :ok <-
+           record_audit(
+             organization.id,
+             actor.user_id,
+             "workspace.membership.role_changed",
+             "user",
+             fresh.user_id,
+             %{"old_role" => old_role, "new_role" => role, "workspace_id" => workspace.id}
+           ) do
+      {:ok, membership}
     else
       nil -> {:error, :not_found}
       error -> error
@@ -616,8 +824,18 @@ defmodule Textbin.Organizations do
          :ok <- authorize_workspace_removal(actor, fresh, leaving?),
          false <- workspace.is_default,
          :ok <- preserve_personal_workspace_owner(organization, workspace, fresh, nil),
-         :ok <- preserve_workspace_owner(fresh, nil) do
-      Repo.delete(fresh)
+         :ok <- preserve_workspace_owner(fresh, nil),
+         {:ok, membership} <- Repo.delete(fresh),
+         :ok <-
+           record_audit(
+             organization.id,
+             actor.user_id,
+             "workspace.membership.removed",
+             "user",
+             fresh.user_id,
+             %{"role" => fresh.role, "workspace_id" => workspace.id, "self" => leaving?}
+           ) do
+      {:ok, membership}
     else
       true -> {:error, :default_workspace_membership_required}
       nil -> {:error, :not_found}
@@ -636,22 +854,33 @@ defmodule Textbin.Organizations do
 
   defp organization_transaction(_, _, _), do: {:error, :not_found}
 
+  defp workspace_transaction(scope, workspace, callback, allow_deleting? \\ false)
+
   defp workspace_transaction(
          %Scope{user: %User{id: actor_id}} = scope,
          %Workspace{id: workspace_id, organization_id: organization_id},
-         callback
+         callback,
+         allow_deleting?
        ) do
     with {:ok, workspace_id} <- public_id(workspace_id),
          {:ok, organization_id} <- public_id(organization_id) do
       organization_transaction(
         scope,
         organization_id,
-        &run_workspace_transaction(&1, &2, &3, workspace_id, actor_id, callback)
+        &run_workspace_transaction(
+          &1,
+          &2,
+          &3,
+          workspace_id,
+          actor_id,
+          callback,
+          allow_deleting?
+        )
       )
     end
   end
 
-  defp workspace_transaction(_, _, _), do: {:error, :not_found}
+  defp workspace_transaction(_, _, _, _), do: {:error, :not_found}
 
   defp run_organization_transaction(organization_id, actor_id, callback) do
     with %Organization{} = organization <-
@@ -681,14 +910,17 @@ defmodule Textbin.Organizations do
          workspaces,
          workspace_id,
          actor_id,
-         callback
+         callback,
+         allow_deleting?
        ) do
     with %Workspace{} = workspace <- Enum.find(workspaces, &(&1.id == workspace_id)),
+         true <- allow_deleting? or is_nil(workspace.deletion_requested_at),
          %WorkspaceMembership{} = actor <-
            Repo.get_by(WorkspaceMembership, workspace_id: workspace_id, user_id: actor_id) do
       callback.(organization, org_actor, actor, workspace)
     else
       nil -> {:error, :not_found}
+      false -> {:error, :not_found}
     end
   end
 
@@ -838,6 +1070,15 @@ defmodule Textbin.Organizations do
              Policy.workspace_owner_role(),
              creator.id
            ),
+         :ok <-
+           record_audit(
+             organization.id,
+             creator.id,
+             "workspace.created",
+             "workspace",
+             workspace.id,
+             %{"visibility" => workspace.visibility, "default" => true}
+           ),
          do: {:ok, preload_organization(organization)}
   end
 
@@ -861,6 +1102,23 @@ defmodule Textbin.Organizations do
       |> WorkspaceMembership.changeset()
       |> Repo.insert()
 
+  defp recover_workspace_membership(workspace_id, user_id) do
+    case Repo.get_by(WorkspaceMembership, workspace_id: workspace_id, user_id: user_id) do
+      nil ->
+        insert_workspace_membership(
+          workspace_id,
+          user_id,
+          Policy.workspace_owner_role(),
+          user_id
+        )
+
+      %WorkspaceMembership{} = membership ->
+        membership
+        |> WorkspaceMembership.role_changeset(%{role: Policy.workspace_owner_role()})
+        |> Repo.update()
+    end
+  end
+
   defp get_default_workspace(oid),
     do: Repo.get_by(Workspace, organization_id: oid, is_default: true)
 
@@ -872,6 +1130,211 @@ defmodule Textbin.Organizations do
       %User{} = user -> {:ok, user}
       nil -> {:error, :not_found}
     end
+  end
+
+  defp record_audit(organization_id, actor_user_id, action, target_type, target_id, metadata) do
+    %AuditEvent{}
+    |> AuditEvent.changeset(%{
+      organization_id: organization_id,
+      actor_user_id: actor_user_id,
+      action: action,
+      target_type: target_type,
+      target_id: target_id,
+      metadata: metadata
+    })
+    |> Repo.insert()
+    |> case do
+      {:ok, _event} -> :ok
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  defp record_workspace_setting_audits(organization_id, actor_user_id, previous, updated) do
+    [
+      {:visibility, "workspace.visibility_changed"},
+      {:external_sharing_policy, "workspace.external_sharing_policy_changed"}
+    ]
+    |> Enum.reduce_while(:ok, fn {field, action}, :ok ->
+      case record_workspace_setting_audit(
+             organization_id,
+             actor_user_id,
+             previous,
+             updated,
+             field,
+             action
+           ) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp record_workspace_setting_audit(
+         organization_id,
+         actor_user_id,
+         previous,
+         updated,
+         field,
+         action
+       ) do
+    old_value = Map.fetch!(previous, field)
+    new_value = Map.fetch!(updated, field)
+
+    if old_value == new_value do
+      :ok
+    else
+      record_audit(
+        organization_id,
+        actor_user_id,
+        action,
+        "workspace",
+        updated.id,
+        %{"old" => old_value, "new" => new_value}
+      )
+    end
+  end
+
+  defp prepare_account_deletion(user_id) do
+    with {:ok, user, organizations, workspaces} <- lock_account_state(user_id),
+         :ok <- require_transferred_team_ownership(user.id, organizations, workspaces),
+         personal_workspace_ids when personal_workspace_ids != [] <-
+           personal_workspace_ids(organizations, workspaces) do
+      requested_at = Paste.utc_now_ms()
+
+      Repo.update_all(
+        from(paste in Paste,
+          where: paste.workspace_id in ^personal_workspace_ids and is_nil(paste.expires_at)
+        ),
+        set: [expires_at: requested_at, updated_at: requested_at]
+      )
+
+      Repo.update_all(
+        from(workspace in Workspace,
+          where:
+            workspace.id in ^personal_workspace_ids and is_nil(workspace.deletion_requested_at)
+        ),
+        set: [deletion_requested_at: requested_at, updated_at: requested_at]
+      )
+
+      {:ok, personal_workspace_ids}
+    else
+      [] -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp personal_workspace_ids(organizations, workspaces) do
+    personal_organization_ids =
+      for organization <- organizations, organization.kind == "personal", do: organization.id
+
+    for workspace <- workspaces,
+        workspace.organization_id in personal_organization_ids,
+        do: workspace.id
+  end
+
+  defp delete_workspace_pastes(workspace_ids) do
+    Enum.reduce_while(workspace_ids, :ok, fn workspace_id, :ok ->
+      case Pastes.delete_workspace_pastes(workspace_id) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp finalize_account_deletion(user_id) do
+    with {:ok, user, organizations, workspaces} <- lock_account_state(user_id),
+         :ok <- require_transferred_team_ownership(user.id, organizations, workspaces),
+         :ok <- record_account_deletion_audits(user, organizations) do
+      Repo.delete(user)
+    end
+  end
+
+  defp record_account_deletion_audits(user, organizations) do
+    organizations
+    |> Enum.reject(&(&1.kind == "personal"))
+    |> Enum.reduce_while(:ok, fn organization, :ok ->
+      case record_audit(
+             organization.id,
+             user.id,
+             "organization.membership.removed",
+             "user",
+             user.id,
+             %{"reason" => "account_deleted"}
+           ) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp lock_account_state(user_id) do
+    organization_ids =
+      Repo.all(
+        from membership in OrganizationMembership,
+          where: membership.user_id == ^user_id,
+          select: membership.organization_id
+      )
+
+    organizations =
+      Repo.all(
+        from organization in Organization,
+          where: organization.id in ^organization_ids,
+          order_by: organization.id,
+          lock: "FOR UPDATE"
+      )
+
+    workspaces =
+      Repo.all(
+        from workspace in Workspace,
+          where: workspace.organization_id in ^organization_ids,
+          order_by: workspace.id,
+          lock: "FOR UPDATE"
+      )
+
+    case lock_user(user_id) do
+      %User{} = user -> {:ok, user, organizations, workspaces}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp require_transferred_team_ownership(user_id, organizations, workspaces) do
+    team_ids = for organization <- organizations, organization.kind == "team", do: organization.id
+
+    workspace_ids =
+      for workspace <- workspaces, workspace.organization_id in team_ids, do: workspace.id
+
+    final_organization_owner? = final_organization_owner?(user_id, team_ids)
+    final_workspace_owner? = final_workspace_owner?(user_id, workspace_ids)
+
+    if final_organization_owner? or final_workspace_owner?,
+      do: {:error, :ownership_transfer_required},
+      else: :ok
+  end
+
+  defp final_organization_owner?(user_id, organization_ids) do
+    Repo.exists?(
+      from membership in OrganizationMembership,
+        left_join: other_owner in OrganizationMembership,
+        on:
+          other_owner.organization_id == membership.organization_id and
+            other_owner.role == "owner" and other_owner.user_id != ^user_id,
+        where:
+          membership.user_id == ^user_id and membership.organization_id in ^organization_ids and
+            membership.role == "owner" and is_nil(other_owner.id)
+    )
+  end
+
+  defp final_workspace_owner?(user_id, workspace_ids) do
+    Repo.exists?(
+      from membership in WorkspaceMembership,
+        left_join: other_owner in WorkspaceMembership,
+        on:
+          other_owner.workspace_id == membership.workspace_id and other_owner.role == "owner" and
+            other_owner.user_id != ^user_id,
+        where:
+          membership.user_id == ^user_id and membership.workspace_id in ^workspace_ids and
+            membership.role == "owner" and is_nil(other_owner.id)
+    )
   end
 
   defp ensure_transaction_owner! do

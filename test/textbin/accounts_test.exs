@@ -3,6 +3,9 @@ defmodule Textbin.AccountsTest do
 
   alias Textbin.Accounts
   alias Textbin.Organizations
+  alias Textbin.Organizations.{Organization, OrganizationMembership, WorkspaceMembership}
+  alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
 
   import Textbin.AccountsFixtures
   alias Textbin.Accounts.{User, UserToken}
@@ -511,6 +514,151 @@ defmodule Textbin.AccountsTest do
       assert user_token.user_id == user.id
       assert user_token.sent_to == user.email
       assert user_token.context == "login"
+    end
+  end
+
+  describe "delete_user/1" do
+    test "requires transfer only when the user is the final team organization owner" do
+      owner = user_fixture()
+      successor = user_fixture()
+      scope = Textbin.Accounts.Scope.for_user(owner)
+
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{
+          name: "Deletion safety",
+          slug: "deletion-safety-#{System.unique_integer([:positive])}"
+        })
+
+      assert {:error, :ownership_transfer_required} = Accounts.delete_user(scope)
+      assert Repo.get(User, owner.id)
+
+      {:ok, _memberships} = Organizations.add_organization_member(scope, organization, successor)
+
+      successor_workspace_membership =
+        Repo.get_by!(WorkspaceMembership,
+          workspace_id: hd(organization.workspaces).id,
+          user_id: successor.id
+        )
+
+      {:ok, _membership} =
+        Organizations.change_workspace_member_role(
+          scope,
+          successor_workspace_membership,
+          "owner"
+        )
+
+      membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: organization.id,
+          user_id: successor.id
+        )
+
+      {:ok, _membership} =
+        Organizations.change_organization_member_role(scope, membership, "owner")
+
+      {:ok, team_scope} =
+        Organizations.resolve_workspace_scope(scope, hd(organization.workspaces))
+
+      {:ok, team_paste} = Pastes.create_paste(team_scope, %{data: "team data remains"})
+
+      assert {:ok, %User{id: deleted_id}} = Accounts.delete_user(scope)
+      assert deleted_id == owner.id
+      refute Repo.get(User, owner.id)
+      assert Repo.get(Organization, organization.id)
+
+      assert %Paste{created_by_user_id: nil, data: "team data remains"} =
+               Repo.get(Paste, team_paste.id)
+    end
+
+    test "requires transfer when the user is the final owner of a team workspace" do
+      owner = user_fixture()
+      successor = user_fixture()
+      scope = Textbin.Accounts.Scope.for_user(owner)
+
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{
+          name: "Workspace transfer",
+          slug: "workspace-transfer-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, _memberships} = Organizations.add_organization_member(scope, organization, successor)
+      default_workspace = hd(organization.workspaces)
+
+      successor_org_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: organization.id,
+          user_id: successor.id
+        )
+
+      {:ok, _membership} =
+        Organizations.change_organization_member_role(scope, successor_org_membership, "owner")
+
+      successor_workspace_membership =
+        Repo.get_by!(WorkspaceMembership,
+          workspace_id: default_workspace.id,
+          user_id: successor.id
+        )
+
+      {:ok, _membership} =
+        Organizations.change_workspace_member_role(
+          scope,
+          successor_workspace_membership,
+          "owner"
+        )
+
+      owner_org_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: organization.id,
+          user_id: owner.id
+        )
+
+      {:ok, _membership} =
+        Organizations.change_organization_member_role(scope, owner_org_membership, "admin")
+
+      {:ok, workspace} =
+        Organizations.create_workspace(scope, organization, %{
+          name: "Untransferred",
+          slug: "untransferred",
+          visibility: "private"
+        })
+
+      assert {:error, :ownership_transfer_required} = Accounts.delete_user(scope)
+      assert Repo.get(User, owner.id)
+
+      assert Repo.get_by!(WorkspaceMembership, workspace_id: workspace.id, user_id: owner.id).role ==
+               "owner"
+    end
+
+    test "deletes the personal organization, paste rows, and external blobs" do
+      user = user_fixture()
+      scope = Textbin.Accounts.Scope.for_user(user)
+      personal_organization = Organizations.get_personal_organization!(user)
+
+      {:ok, paste} = Pastes.create_paste(scope, %{data: String.duplicate("x", 8_193)})
+
+      {:ok, workspace} =
+        Organizations.create_workspace(scope, personal_organization, %{
+          name: "Personal project",
+          slug: "personal-project",
+          visibility: "private"
+        })
+
+      {:ok, workspace_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+
+      {:ok, workspace_paste} =
+        Pastes.create_paste(workspace_scope, %{data: String.duplicate("y", 8_193)})
+
+      assert is_binary(paste.storage_key)
+      assert is_binary(workspace_paste.storage_key)
+
+      assert {:ok, %User{id: deleted_id}} = Accounts.delete_user(scope)
+      assert deleted_id == user.id
+      refute Repo.get(User, user.id)
+      refute Repo.get(Organization, personal_organization.id)
+      refute Repo.get(Paste, paste.id)
+      refute Repo.get(Paste, workspace_paste.id)
+      assert Textbin.Storage.get(paste.storage_key) == {:error, :enoent}
+      assert Textbin.Storage.get(workspace_paste.storage_key) == {:error, :enoent}
     end
   end
 

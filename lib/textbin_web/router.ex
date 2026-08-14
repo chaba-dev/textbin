@@ -43,6 +43,8 @@ defmodule TextbinWeb.Router do
     delete "/me/token", AuthController, :delete
     get "/organizations", OrganizationController, :index
     get "/organizations/:id/workspaces", OrganizationController, :workspaces
+    get "/organizations/:id/audit-events", OrganizationController, :audit_events
+    post "/workspaces/:workspace_id/recovery", OrganizationController, :recover_workspace
     get "/workspaces/:workspace_id/pastes", PasteController, :index
     post "/workspaces/:workspace_id/pastes", PasteController, :create
     get "/workspaces/:workspace_id/pastes/:id", PasteController, :show

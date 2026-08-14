@@ -14,6 +14,7 @@ defmodule Textbin.Organizations.Workspace do
     field :visibility, :string, default: "open"
     field :external_sharing_policy, :string, default: "disabled"
     field :is_default, :boolean, default: false
+    field :deletion_requested_at, :utc_datetime_usec
 
     belongs_to :organization, Textbin.Organizations.Organization
     belongs_to :created_by, Textbin.Accounts.User

@@ -293,6 +293,19 @@ defmodule Textbin.Pastes do
     deleted_count
   end
 
+  def delete_workspace_pastes(workspace_id) when is_binary(workspace_id) do
+    pastes = Repo.all(from paste in Paste, where: paste.workspace_id == ^workspace_id)
+
+    deletable_ids = for paste <- pastes, delete_stored_data(paste) == :ok, do: paste.id
+    Repo.delete_all(from paste in Paste, where: paste.id in ^deletable_ids)
+
+    if Repo.exists?(from paste in Paste, where: paste.workspace_id == ^workspace_id) do
+      {:error, :storage_cleanup_failed}
+    else
+      :ok
+    end
+  end
+
   def load_data(nil), do: nil
 
   def load_data(%Paste{data: data} = paste) when is_binary(data) do
@@ -344,13 +357,18 @@ defmodule Textbin.Pastes do
 
   defp authorized_workspace(%Scope{workspace: %{id: workspace_id}} = scope) do
     case Organizations.resolve_workspace_scope(scope, workspace_id) do
-      {:ok, resolved_scope} -> {:ok, resolved_scope.workspace}
+      {:ok, %{workspace: %Workspace{deletion_requested_at: nil} = workspace}} -> {:ok, workspace}
+      {:ok, _resolved_scope} -> {:error, :not_found}
       {:error, :not_found} -> {:error, :not_found}
     end
   end
 
-  defp authorized_workspace(%Scope{user: user}),
-    do: {:ok, Organizations.get_personal_default_workspace!(user)}
+  defp authorized_workspace(%Scope{user: user}) do
+    case Organizations.get_personal_default_workspace!(user) do
+      %Workspace{deletion_requested_at: nil} = workspace -> {:ok, workspace}
+      _workspace -> {:error, :not_found}
+    end
+  end
 
   defp scope_workspace_id(%Scope{workspace: %{id: workspace_id}}), do: workspace_id
   defp scope_workspace_id(%Scope{user: user}), do: personal_workspace_id(user)

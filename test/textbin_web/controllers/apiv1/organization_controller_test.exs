@@ -93,6 +93,44 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
     assert %{"errors" => %{"detail" => "Organization not found"}} = json_response(conn, 404)
   end
 
+  test "organization owners recover private workspace ownership and read the audit event",
+       context do
+    member = user_fixture()
+
+    {:ok, _memberships} =
+      Organizations.add_organization_member(context.scope, context.organization, member)
+
+    {:ok, workspace} =
+      Organizations.create_workspace(context.scope, context.organization, %{
+        name: "Recovery API",
+        slug: "recovery-api",
+        visibility: "private"
+      })
+
+    {:ok, member_membership} =
+      Organizations.add_workspace_member(context.scope, workspace, member, "owner")
+
+    assert member_membership.role == "owner"
+    assert {:ok, _membership} = Organizations.leave_workspace(context.scope, workspace)
+
+    recovery_conn =
+      post(context.conn, ~p"/api/v1/workspaces/#{workspace.id}/recovery")
+
+    assert %{"workspace_id" => workspace_id, "role" => "owner"} =
+             json_response(recovery_conn, 201)["data"]
+
+    assert workspace_id == workspace.id
+
+    audit_conn =
+      get(context.conn, ~p"/api/v1/organizations/#{context.organization.id}/audit-events")
+
+    assert Enum.any?(json_response(audit_conn, 200)["data"], fn event ->
+             event["action"] == "workspace.recovery_access_granted" and
+               event["actor_user_id"] == context.user.id and
+               event["target_id"] == workspace.id
+           end)
+  end
+
   test "requires an API token" do
     conn = get(build_conn(), ~p"/api/v1/organizations")
 

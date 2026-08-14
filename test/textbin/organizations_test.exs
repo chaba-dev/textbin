@@ -3,10 +3,13 @@ defmodule Textbin.OrganizationsTest do
 
   alias Textbin.Accounts.Scope
   alias Textbin.Organizations
+  alias Textbin.Organizations.AuditEvent
   alias Textbin.Organizations.OrganizationMembership
   alias Textbin.Organizations.Workspace
   alias Textbin.Organizations.WorkspaceMembership
+  alias Textbin.Pastes
   alias Textbin.Pastes.Paste
+  alias Textbin.Storage
 
   import Textbin.AccountsFixtures
 
@@ -1156,6 +1159,182 @@ defmodule Textbin.OrganizationsTest do
       refute Repo.get(WorkspaceMembership, membership.id)
     end
 
+    test "organization owners explicitly recover private workspace ownership with an audit trail",
+         context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Recovery",
+          slug: "recovery",
+          visibility: "private"
+        })
+
+      {:ok, member_membership} =
+        Organizations.add_workspace_member(owner_scope, workspace, context.member)
+
+      {:ok, _member_owner} =
+        Organizations.change_workspace_member_role(
+          owner_scope,
+          member_membership,
+          "owner"
+        )
+
+      assert {:ok, _membership} = Organizations.leave_workspace(owner_scope, workspace)
+      assert {:error, :not_found} = Organizations.resolve_workspace_scope(owner_scope, workspace)
+
+      assert {:ok, recovered} = Organizations.recover_workspace_access(owner_scope, workspace)
+      assert recovered.role == "owner"
+
+      assert {:ok, events} =
+               Organizations.list_audit_events(owner_scope, context.organization)
+
+      recovery_event =
+        Enum.find(events, &(&1.action == "workspace.recovery_access_granted"))
+
+      assert %AuditEvent{
+               organization_id: organization_id,
+               actor_user_id: actor_user_id,
+               target_type: "workspace",
+               target_id: target_id,
+               metadata: %{"role" => "owner"},
+               inserted_at: %DateTime{}
+             } = recovery_event
+
+      assert organization_id == context.organization.id
+      assert actor_user_id == context.owner.id
+      assert target_id == workspace.id
+    end
+
+    test "recovery promotes an existing organization owner membership and remains auditable",
+         context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Recovery promotion",
+          slug: "recovery-promotion",
+          visibility: "private"
+        })
+
+      {:ok, member_membership} =
+        Organizations.add_workspace_member(owner_scope, workspace, context.member, "owner")
+
+      {:ok, _owner_membership} =
+        Organizations.change_workspace_member_role(owner_scope, member_membership, "member")
+
+      assert {:ok, recovered} = Organizations.recover_workspace_access(owner_scope, workspace)
+      assert recovered.role == "owner"
+
+      assert {:ok, events} =
+               Organizations.list_audit_events(owner_scope, context.organization)
+
+      assert Enum.any?(events, fn event ->
+               event.action == "workspace.recovery_access_granted" and
+                 event.target_id == workspace.id and
+                 event.actor_user_id == context.owner.id
+             end)
+    end
+
+    test "organization admins cannot use recovery or read the audit log", context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Owner only",
+          slug: "owner-only",
+          visibility: "private"
+        })
+
+      {:ok, admin_membership} =
+        Organizations.change_organization_member_role(
+          owner_scope,
+          Repo.get_by!(OrganizationMembership,
+            organization_id: context.organization.id,
+            user_id: context.member.id
+          ),
+          "admin"
+        )
+
+      admin_scope = Scope.for_user(context.member)
+      assert admin_membership.role == "admin"
+
+      assert {:error, :unauthorized} =
+               Organizations.recover_workspace_access(admin_scope, workspace)
+
+      assert {:error, :unauthorized} =
+               Organizations.list_audit_events(admin_scope, context.organization)
+    end
+
+    test "audit log covers administrative membership, ownership, policy, and lifecycle changes",
+         context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Audited",
+          slug: "audited",
+          visibility: "open"
+        })
+
+      {:ok, membership} =
+        Organizations.add_workspace_member(owner_scope, workspace, context.member)
+
+      {:ok, promoted} =
+        Organizations.change_workspace_member_role(owner_scope, membership, "owner")
+
+      {:ok, _workspace} =
+        Organizations.change_workspace_settings(owner_scope, workspace, %{
+          visibility: "private",
+          external_sharing_policy: "unlisted"
+        })
+
+      {:ok, demoted} =
+        Organizations.change_workspace_member_role(owner_scope, promoted, "member")
+
+      {:ok, _membership} = Organizations.remove_workspace_member(owner_scope, demoted)
+
+      outsider = context.outsider
+
+      {:ok, _memberships} =
+        Organizations.add_organization_member(owner_scope, context.organization, outsider)
+
+      organization_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: context.organization.id,
+          user_id: outsider.id
+        )
+
+      {:ok, changed_organization_membership} =
+        Organizations.change_organization_member_role(
+          owner_scope,
+          organization_membership,
+          "admin"
+        )
+
+      {:ok, _membership} =
+        Organizations.remove_organization_member(owner_scope, changed_organization_membership)
+
+      {:ok, _workspace} = Organizations.delete_workspace(owner_scope, workspace)
+      {:ok, events} = Organizations.list_audit_events(owner_scope, context.organization)
+      actions = MapSet.new(events, & &1.action)
+
+      for action <- [
+            "workspace.created",
+            "workspace.membership.added",
+            "workspace.membership.role_changed",
+            "workspace.visibility_changed",
+            "workspace.external_sharing_policy_changed",
+            "workspace.membership.removed",
+            "organization.membership.added",
+            "organization.membership.role_changed",
+            "organization.membership.removed",
+            "workspace.deleted"
+          ] do
+        assert MapSet.member?(actions, action), "missing audit action #{action}"
+      end
+    end
+
     test "current owners change visibility and delete a workspace regardless of its creator",
          context do
       creator_scope = Scope.for_user(context.owner)
@@ -1212,7 +1391,7 @@ defmodule Textbin.OrganizationsTest do
       assert Repo.get(Workspace, default_workspace.id)
     end
 
-    test "workspace deletion cannot bypass paste storage cleanup", context do
+    test "workspace deletion cleans associated paste rows before deleting", context do
       owner_scope = Scope.for_user(context.owner)
 
       {:ok, workspace} =
@@ -1236,10 +1415,93 @@ defmodule Textbin.OrganizationsTest do
         })
         |> Repo.insert!()
 
-      assert {:error, changeset} = Organizations.delete_workspace(owner_scope, workspace)
-      assert %{pastes: ["are still associated with this entry"]} = errors_on(changeset)
-      assert Repo.get(Workspace, workspace.id)
+      assert {:ok, _workspace} = Organizations.delete_workspace(owner_scope, workspace)
+      refute Repo.get(Workspace, workspace.id)
+      refute Repo.get(Paste, paste.id)
+    end
+
+    test "workspace deletion removes externally stored paste blobs", context do
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Blob cleanup",
+          slug: "blob-cleanup",
+          visibility: "private"
+        })
+
+      {:ok, workspace_scope} = Organizations.resolve_workspace_scope(owner_scope, workspace)
+      {:ok, paste} = Pastes.create_paste(workspace_scope, %{data: String.duplicate("x", 8_193)})
+
+      assert {:ok, _data} = Storage.get(paste.storage_key)
+      assert {:ok, _workspace} = Organizations.delete_workspace(owner_scope, workspace)
+      assert Storage.get(paste.storage_key) == {:error, :enoent}
+      refute Repo.get(Paste, paste.id)
+    end
+
+    test "failed workspace blob cleanup leaves a hidden tombstone that can be retried", context do
+      original_storage = Application.fetch_env!(:textbin, Storage)
+      original_inline_bytes = Application.fetch_env!(:textbin, :inline_paste_bytes)
+      root = Path.join(System.tmp_dir!(), "textbin-workspace-delete-#{Ecto.UUID.generate()}")
+      blocked_root = root <> "-blocked"
+
+      Application.put_env(:textbin, Storage,
+        adapter: Textbin.Storage.Local,
+        opts: [root: root]
+      )
+
+      Application.put_env(:textbin, :inline_paste_bytes, 0)
+
+      on_exit(fn ->
+        Application.put_env(:textbin, Storage, original_storage)
+        Application.put_env(:textbin, :inline_paste_bytes, original_inline_bytes)
+        File.rm_rf!(root)
+        File.rm_rf!(blocked_root)
+      end)
+
+      owner_scope = Scope.for_user(context.owner)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, context.organization, %{
+          name: "Retry cleanup",
+          slug: "retry-cleanup",
+          visibility: "private"
+        })
+
+      {:ok, workspace_scope} = Organizations.resolve_workspace_scope(owner_scope, workspace)
+      {:ok, paste} = Pastes.create_paste(workspace_scope, %{data: "retry blob cleanup"})
+      File.write!(blocked_root, "not a directory")
+
+      Application.put_env(:textbin, Storage,
+        adapter: Textbin.Storage.Local,
+        opts: [root: blocked_root]
+      )
+
+      assert {:error, :storage_cleanup_failed} =
+               Organizations.delete_workspace(owner_scope, workspace)
+
+      assert %Workspace{deletion_requested_at: %DateTime{}} = Repo.get(Workspace, workspace.id)
       assert Repo.get(Paste, paste.id)
+      assert {:error, :not_found} = Organizations.resolve_workspace_scope(owner_scope, workspace)
+      assert {:error, :not_found} = Pastes.create_paste(workspace_scope, %{data: "too late"})
+
+      assert {:error, :not_found} =
+               Organizations.add_workspace_member(owner_scope, workspace, context.member)
+
+      assert {:ok, available} =
+               Organizations.list_available_workspaces(owner_scope, context.organization)
+
+      refute Enum.any?(available, &(&1.id == workspace.id))
+
+      Application.put_env(:textbin, Storage,
+        adapter: Textbin.Storage.Local,
+        opts: [root: root]
+      )
+
+      assert {:ok, _workspace} = Organizations.delete_workspace(owner_scope, workspace)
+      refute Repo.get(Workspace, workspace.id)
+      refute Repo.get(Paste, paste.id)
+      assert Storage.get(paste.storage_key) == {:error, :enoent}
     end
 
     test "new lifecycle APIs conceal malformed resources and reject explicit nesting", context do
