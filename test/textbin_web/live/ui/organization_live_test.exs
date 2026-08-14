@@ -220,6 +220,46 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     assert Repo.reload!(context.organization).name == context.organization.name
   end
 
+  test "mounted settings page reauthorizes an owner after demotion", context do
+    {:ok, view, _html} = live(context.conn, organization_settings_path(context.organization))
+    second_owner = user_fixture()
+
+    {:ok, second_owner_memberships} =
+      Organizations.add_organization_member(
+        context.owner_scope,
+        context.organization,
+        second_owner
+      )
+
+    {:ok, _second_owner_membership} =
+      Organizations.change_organization_member_role(
+        context.owner_scope,
+        second_owner_memberships.organization,
+        "owner"
+      )
+
+    first_owner_membership =
+      Repo.get_by!(OrganizationMembership,
+        organization_id: context.organization.id,
+        user_id: context.owner.id
+      )
+
+    assert {:ok, _demoted_membership} =
+             Organizations.change_organization_member_role(
+               user_scope_fixture(second_owner),
+               first_owner_membership,
+               "admin"
+             )
+
+    view
+    |> form("#organization-settings-form", %{
+      "organization" => %{"name" => "Stale owner edit"}
+    })
+    |> render_submit()
+
+    assert Repo.reload!(context.organization).name == context.organization.name
+  end
+
   test "conceals organizations the user has not joined", context do
     outsider_conn = build_conn() |> log_in_user(user_fixture())
 

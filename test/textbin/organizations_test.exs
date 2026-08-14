@@ -1115,6 +1115,60 @@ defmodule Textbin.OrganizationsTest do
 
       assert Repo.reload!(context.organization).name == "Original name"
     end
+
+    test "rejects an owner using a stale scope after demotion", context do
+      second_owner = user_fixture()
+
+      {:ok, second_owner_memberships} =
+        Organizations.add_organization_member(
+          Scope.for_user(context.owner),
+          context.organization,
+          second_owner
+        )
+
+      {:ok, _second_owner_membership} =
+        Organizations.change_organization_member_role(
+          Scope.for_user(context.owner),
+          second_owner_memberships.organization,
+          "owner"
+        )
+
+      assert {:ok, stale_owner_scope} =
+               Organizations.resolve_organization_scope_by_slug(
+                 Scope.for_user(context.owner),
+                 context.organization.slug
+               )
+
+      first_owner_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: context.organization.id,
+          user_id: context.owner.id
+        )
+
+      assert {:ok, _demoted_membership} =
+               Organizations.change_organization_member_role(
+                 Scope.for_user(second_owner),
+                 first_owner_membership,
+                 "admin"
+               )
+
+      assert {:error, :unauthorized} =
+               Organizations.change_organization_settings(
+                 stale_owner_scope,
+                 context.organization,
+                 %{name: "Stale owner edit"}
+               )
+
+      assert Repo.reload!(context.organization).name == "Original name"
+
+      assert {:ok, events} =
+               Organizations.list_audit_events(
+                 Scope.for_user(second_owner),
+                 context.organization
+               )
+
+      refute Enum.any?(events, &(&1.action == "organization.name_changed"))
+    end
   end
 
   describe "workspace lifecycle" do
