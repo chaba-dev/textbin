@@ -81,6 +81,7 @@ defmodule TextbinWeb.Router do
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
       live "/o/:organization_slug", UI.OrganizationLive, :show
       live "/o/:organization_slug/members", UI.OrganizationLive, :members
+      live "/o/:organization_slug/settings", UI.OrganizationLive, :settings
       live "/w/:organization_slug/:workspace_slug/members", UI.WorkspaceLive, :members
       live "/w/:organization_slug/:workspace_slug/settings", UI.WorkspaceLive, :settings
     end

@@ -492,6 +492,21 @@ defmodule Textbin.Organizations do
 
   def join_workspace(_, _), do: {:error, :not_found}
 
+  def change_organization_settings(
+        %Scope{} = scope,
+        %Organization{} = organization,
+        attrs
+      )
+      when is_map(attrs) do
+    organization_transaction(
+      scope,
+      organization.id,
+      &change_organization_settings_in_transaction(&1, &2, &3, attrs)
+    )
+  end
+
+  def change_organization_settings(_, _, _), do: {:error, :not_found}
+
   def change_workspace_visibility(%Scope{} = scope, %Workspace{} = workspace, visibility) do
     change_workspace_settings(scope, workspace, %{visibility: visibility})
   end
@@ -787,6 +802,19 @@ defmodule Textbin.Organizations do
       {:ok, %{organization: om, workspace: wm}}
     else
       nil -> {:error, :default_workspace_not_found}
+      error -> error
+    end
+  end
+
+  defp change_organization_settings_in_transaction(organization, actor, _workspaces, attrs) do
+    with true <- Policy.organization_owner?(actor),
+         {:ok, updated_organization} <-
+           organization |> Organization.settings_changeset(attrs) |> Repo.update(),
+         :ok <-
+           record_organization_name_audit(organization, updated_organization, actor.user_id) do
+      {:ok, updated_organization}
+    else
+      false -> {:error, :unauthorized}
       error -> error
     end
   end
@@ -1361,6 +1389,21 @@ defmodule Textbin.Organizations do
       target_id,
       Map.merge(metadata, %{"old_role" => old_role, "new_role" => new_role})
     )
+  end
+
+  defp record_organization_name_audit(previous, updated, actor_user_id) do
+    if previous.name == updated.name do
+      :ok
+    else
+      record_audit(
+        updated.id,
+        actor_user_id,
+        "organization.name_changed",
+        "organization",
+        updated.id,
+        %{"old" => previous.name, "new" => updated.name}
+      )
+    end
   end
 
   defp record_workspace_setting_audits(organization_id, actor_user_id, previous, updated) do

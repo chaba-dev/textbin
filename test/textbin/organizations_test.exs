@@ -1022,6 +1022,101 @@ defmodule Textbin.OrganizationsTest do
     end
   end
 
+  describe "change_organization_settings/3" do
+    setup do
+      owner = user_fixture()
+      member = user_fixture()
+      outsider = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(Scope.for_user(owner), %{
+          name: "Original name",
+          slug: "settings-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, _memberships} =
+        Organizations.add_organization_member(Scope.for_user(owner), organization, member)
+
+      %{owner: owner, member: member, outsider: outsider, organization: organization}
+    end
+
+    test "owners update the name without changing the stable slug and create an audit event",
+         context do
+      assert {:ok, organization} =
+               Organizations.change_organization_settings(
+                 Scope.for_user(context.owner),
+                 context.organization,
+                 %{"name" => "New name", "slug" => "forged-slug"}
+               )
+
+      assert organization.name == "New name"
+      assert organization.slug == context.organization.slug
+
+      assert {:ok, events} =
+               Organizations.list_audit_events(
+                 Scope.for_user(context.owner),
+                 context.organization
+               )
+
+      assert event = Enum.find(events, &(&1.action == "organization.name_changed"))
+      assert event.actor_user_id == context.owner.id
+      assert event.metadata == %{"old" => "Original name", "new" => "New name"}
+    end
+
+    test "rejects invalid names", context do
+      for name <- ["", String.duplicate("a", 161)] do
+        assert {:error, changeset} =
+                 Organizations.change_organization_settings(
+                   Scope.for_user(context.owner),
+                   context.organization,
+                   %{name: name}
+                 )
+
+        assert %{name: [_ | _]} = errors_on(changeset)
+      end
+
+      assert Repo.reload!(context.organization).name == "Original name"
+    end
+
+    test "reauthorizes members and outsiders against current membership state", context do
+      assert {:error, :unauthorized} =
+               Organizations.change_organization_settings(
+                 Scope.for_user(context.member),
+                 context.organization,
+                 %{name: "Member edit"}
+               )
+
+      member_membership =
+        Repo.get_by!(OrganizationMembership,
+          organization_id: context.organization.id,
+          user_id: context.member.id
+        )
+
+      assert {:ok, _admin_membership} =
+               Organizations.change_organization_member_role(
+                 Scope.for_user(context.owner),
+                 member_membership,
+                 "admin"
+               )
+
+      assert {:error, :unauthorized} =
+               Organizations.change_organization_settings(
+                 Scope.for_user(context.member),
+                 context.organization,
+                 %{name: "Admin edit"}
+               )
+
+      assert {:error, :not_found} =
+               Organizations.change_organization_settings(
+                 Scope.for_user(context.outsider),
+                 context.organization,
+                 %{name: "Outsider edit"}
+               )
+
+      assert Repo.reload!(context.organization).name == "Original name"
+    end
+  end
+
   describe "workspace lifecycle" do
     setup do
       owner = user_fixture()

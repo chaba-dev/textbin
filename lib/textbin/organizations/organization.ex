@@ -34,6 +34,13 @@ defmodule Textbin.Organizations.Organization do
     |> foreign_key_constraint(:personal_owner_id)
   end
 
+  def settings_changeset(organization, attrs) do
+    organization
+    |> cast(attrs, [:name])
+    |> validate_required([:name])
+    |> validate_length(:name, max: 160)
+  end
+
   defp validate_personal_owner(changeset) do
     case {get_field(changeset, :kind), get_field(changeset, :personal_owner_id)} do
       {"personal", nil} ->
