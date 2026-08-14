@@ -2,6 +2,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
   use TextbinWeb, :controller
 
   alias Textbin.Accounts.Scope
+  alias Textbin.Organizations
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
   alias Textbin.Pastes.UploadCleaner
@@ -16,10 +17,19 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # :max_paste_bytes.
   @default_max_paste_bytes 1_048_576
 
-  def index(conn, _params) do
-    with_api_scope(conn, fn current_scope ->
-      pastes = Pastes.list_pastes(current_scope)
-      render(conn, :index, pastes: pastes)
+  def index(conn, params) do
+    with_paste_scope(conn, params, fn paste_scope ->
+      case Pastes.list_pastes_with_access(paste_scope) do
+        {:ok, pastes} ->
+          render(conn, :index,
+            pastes: pastes,
+            organization_id: paste_scope.organization.id,
+            workspace_id: paste_scope.workspace.id
+          )
+
+        {:error, :not_found} ->
+          render_workspace_not_found(conn)
+      end
     end)
   end
 
@@ -27,12 +37,14 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # common JSON client shapes. This keeps CLI usage simple without making API
   # clients wrap data unless they want to.
   def create(conn, params) do
-    case paste_attrs(conn, params) do
+    request_params = Map.drop(params, Map.keys(conn.path_params))
+
+    case paste_attrs(conn, request_params) do
       {:ok, {:data, paste_attrs}, conn} ->
-        create_paste(conn, paste_attrs)
+        create_paste(conn, params, paste_attrs)
 
       {:ok, {:file, path, metadata, paste_attrs}, conn} ->
-        create_paste_from_file(conn, path, metadata, paste_attrs)
+        create_paste_from_file(conn, params, path, metadata, paste_attrs)
 
       {:error, :too_large, conn} ->
         render_too_large(conn, close?: true)
@@ -127,14 +139,15 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end
   end
 
-  defp create_paste(conn, paste_params) do
-    with_api_scope(conn, &create_scoped_paste(conn, &1, paste_params))
+  defp create_paste(conn, route_params, paste_params) do
+    with_paste_scope(conn, route_params, &create_scoped_paste(conn, &1, paste_params))
   end
 
-  defp create_paste_from_file(conn, path, metadata, paste_params) do
+  defp create_paste_from_file(conn, route_params, path, metadata, paste_params) do
     try do
-      with_api_scope(
+      with_paste_scope(
         conn,
+        route_params,
         &insert_file_paste(conn, &1, path, metadata, paste_params)
       )
     after
@@ -154,8 +167,15 @@ defmodule TextbinWeb.ApiV1.PasteController do
       {:ok, paste} ->
         conn
         |> put_status(:created)
-        |> put_resp_header("location", ~p"/api/v1/pastes/#{paste.id}")
-        |> render(:create, paste: paste)
+        |> put_resp_header("location", paste_location(conn, current_scope, paste))
+        |> render(:create,
+          paste: paste,
+          organization_id: current_scope.organization.id,
+          workspace_id: current_scope.workspace.id
+        )
+
+      {:error, :not_found} ->
+        render_workspace_not_found(conn)
 
       {:error, changeset} ->
         render_changeset_errors(conn, changeset)
@@ -167,8 +187,15 @@ defmodule TextbinWeb.ApiV1.PasteController do
       {:ok, paste} ->
         conn
         |> put_status(:created)
-        |> put_resp_header("location", ~p"/api/v1/pastes/#{paste.id}")
-        |> render(:create, paste: paste)
+        |> put_resp_header("location", paste_location(conn, current_scope, paste))
+        |> render(:create,
+          paste: paste,
+          organization_id: current_scope.organization.id,
+          workspace_id: current_scope.workspace.id
+        )
+
+      {:error, :not_found} ->
+        render_workspace_not_found(conn)
 
       {:error, changeset} ->
         render_changeset_errors(conn, changeset)
@@ -276,25 +303,29 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end
   end
 
-  def show(conn, %{"id" => id}) do
-    with_api_scope(conn, &show_scoped_paste(conn, &1, id))
+  def show(conn, %{"id" => id} = params) do
+    with_paste_scope(conn, params, &show_scoped_paste(conn, &1, id))
   end
 
   defp show_scoped_paste(conn, current_scope, id) do
     with {:ok, paste_id} <- Ecto.UUID.cast(id),
          %{} = paste <- Pastes.get_paste(current_scope, paste_id) do
-      render(conn, :show, paste: paste)
+      render(conn, :show,
+        paste: paste,
+        organization_id: current_scope.organization.id,
+        workspace_id: current_scope.workspace.id
+      )
     else
       :error -> render_invalid_paste_id(conn)
       nil -> render_paste_not_found(conn)
     end
   end
 
-  def delete(conn, %{"id" => id}) do
-    with_api_scope(conn, fn current_scope ->
+  def delete(conn, %{"id" => id} = params) do
+    with_paste_scope(conn, params, fn current_scope ->
       result =
         with {:ok, paste_id} <- Ecto.UUID.cast(id) do
-          Pastes.delete_personal_paste(current_scope, %Paste{id: paste_id})
+          delete_scoped_paste(current_scope, %Paste{id: paste_id}, params)
         end
 
       case result do
@@ -311,6 +342,12 @@ defmodule TextbinWeb.ApiV1.PasteController do
       end
     end)
   end
+
+  defp delete_scoped_paste(scope, paste, %{"workspace_id" => _workspace_id}),
+    do: Pastes.delete_paste(scope, paste)
+
+  defp delete_scoped_paste(scope, paste, _params),
+    do: Pastes.delete_personal_paste(scope, paste)
 
   defp validate_paste_size(%{"data" => data}) when is_binary(data) do
     if byte_size(data) <= max_paste_bytes() do
@@ -405,6 +442,41 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   defp upload_tmp_dir do
     Application.get_env(:textbin, :upload_tmp_dir, System.tmp_dir!())
+  end
+
+  defp with_paste_scope(conn, params, fun) do
+    with_api_scope(conn, fn scope ->
+      case resolve_paste_scope(scope, params) do
+        {:ok, paste_scope} -> fun.(paste_scope)
+        {:error, :not_found} -> render_workspace_not_found(conn)
+      end
+    end)
+  end
+
+  defp resolve_paste_scope(scope, %{"workspace_id" => workspace_id}) do
+    Organizations.resolve_workspace_scope(scope, workspace_id)
+  end
+
+  defp resolve_paste_scope(%Scope{user: user} = scope, _params) do
+    workspace = Organizations.get_personal_default_workspace!(user)
+    Organizations.resolve_workspace_scope(scope, workspace)
+  end
+
+  defp paste_location(
+         %{path_params: %{"workspace_id" => _workspace_id}},
+         %Scope{workspace: workspace},
+         %Paste{id: paste_id}
+       ) do
+    ~p"/api/v1/workspaces/#{workspace.id}/pastes/#{paste_id}"
+  end
+
+  defp paste_location(_conn, _scope, %Paste{id: paste_id}),
+    do: ~p"/api/v1/pastes/#{paste_id}"
+
+  defp render_workspace_not_found(conn) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{errors: %{detail: "Workspace not found"}})
   end
 
   defp with_api_scope(%{assigns: %{current_scope: %Scope{user: %{}} = current_scope}}, fun) do

@@ -2,20 +2,20 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
 
-  def index(%{pastes: pastes}) do
-    %{data: for(paste <- pastes, do: data(paste))}
+  def index(%{pastes: pastes} = assigns) do
+    %{data: for(paste <- pastes, do: data(paste, assigns))}
   end
 
-  def create(%{paste: paste}) do
-    %{data: metadata(paste)}
+  def create(%{paste: paste} = assigns) do
+    %{data: metadata(paste, assigns)}
   end
 
-  def show(%{paste: paste}) do
-    %{data: data(paste)}
+  def show(%{paste: paste} = assigns) do
+    %{data: data(paste, assigns)}
   end
 
-  defp data(%Paste{} = paste) do
-    metadata = metadata(paste)
+  defp data(%Paste{} = paste, assigns) do
+    metadata = metadata(paste, assigns)
 
     if ContentType.textual?(paste.content_type) and ContentType.text_safe?(paste.data) do
       Map.put(metadata, :data, paste.data)
@@ -28,9 +28,11 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
     end
   end
 
-  defp metadata(%Paste{} = paste) do
+  defp metadata(%Paste{} = paste, assigns) do
     %{
       id: paste.id,
+      organization_id: assigns.organization_id,
+      workspace_id: assigns.workspace_id,
       content_type: paste.content_type,
       syntax_highlight: paste.syntax_highlight,
       audience: paste.audience,

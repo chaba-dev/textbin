@@ -23,51 +23,61 @@ defmodule Textbin.Pastes do
   @default_max_paste_bytes 1_048_576
 
   def list_pastes(%Scope{user: %User{}} = scope) do
-    case authorized_workspace(scope) do
-      {:ok, workspace} ->
-        now = Paste.utc_now_ms()
-
-        Repo.all(
-          from p in Paste,
-            where:
-              p.workspace_id == ^workspace.id and
-                (is_nil(p.expires_at) or p.expires_at > ^now),
-            order_by: [desc: p.inserted_at]
-        )
-        |> Enum.map(&load_data/1)
+    case list_pastes_with_access(scope) do
+      {:ok, pastes} ->
+        pastes
 
       {:error, :not_found} ->
         []
     end
   end
 
-  def list_paste_metadata(%Scope{user: %User{}} = scope) do
-    case authorized_workspace(scope) do
-      {:ok, workspace} ->
-        now = Paste.utc_now_ms()
+  def list_pastes_with_access(%Scope{user: %User{}} = scope) do
+    with_locked_read_workspace(scope, fn workspace ->
+      now = Paste.utc_now_ms()
 
-        Repo.all(
-          from p in Paste,
-            where:
-              p.workspace_id == ^workspace.id and
-                (is_nil(p.expires_at) or p.expires_at > ^now),
-            select:
-              struct(p, [
-                :id,
-                :storage_key,
-                :size_bytes,
-                :sha256,
-                :content_type,
-                :syntax_highlight,
-                :audience,
-                :expires_at,
-                :workspace_id,
-                :created_by_user_id,
-                :inserted_at,
-                :updated_at
-              ]),
-            order_by: [desc: p.inserted_at]
-        )
+      Repo.all(
+        from p in Paste,
+          where:
+            p.workspace_id == ^workspace.id and
+              (is_nil(p.expires_at) or p.expires_at > ^now),
+          order_by: [desc: p.inserted_at]
+      )
+      |> Enum.map(&load_data/1)
+    end)
+  end
+
+  def list_pastes_with_access(_scope), do: {:error, :not_found}
+
+  def list_paste_metadata(%Scope{user: %User{}} = scope) do
+    case with_locked_read_workspace(scope, fn workspace ->
+           now = Paste.utc_now_ms()
+
+           Repo.all(
+             from p in Paste,
+               where:
+                 p.workspace_id == ^workspace.id and
+                   (is_nil(p.expires_at) or p.expires_at > ^now),
+               select:
+                 struct(p, [
+                   :id,
+                   :storage_key,
+                   :size_bytes,
+                   :sha256,
+                   :content_type,
+                   :syntax_highlight,
+                   :audience,
+                   :expires_at,
+                   :workspace_id,
+                   :created_by_user_id,
+                   :inserted_at,
+                   :updated_at
+                 ]),
+               order_by: [desc: p.inserted_at]
+           )
+         end) do
+      {:ok, pastes} ->
+        pastes
 
       {:error, :not_found} ->
         []
@@ -75,17 +85,20 @@ defmodule Textbin.Pastes do
   end
 
   def get_paste(%Scope{user: %User{}} = scope, id) when is_binary(id) do
-    with {:ok, workspace} <- authorized_workspace(scope),
-         {:ok, paste_id} <- Ecto.UUID.cast(id) do
-      now = Paste.utc_now_ms()
+    with {:ok, paste_id} <- Ecto.UUID.cast(id),
+         {:ok, paste} <-
+           with_locked_read_workspace(scope, fn workspace ->
+             now = Paste.utc_now_ms()
 
-      Repo.one(
-        from p in Paste,
-          where:
-            p.id == ^paste_id and p.workspace_id == ^workspace.id and
-              (is_nil(p.expires_at) or p.expires_at > ^now)
-      )
-      |> load_data()
+             Repo.one(
+               from p in Paste,
+                 where:
+                   p.id == ^paste_id and p.workspace_id == ^workspace.id and
+                     (is_nil(p.expires_at) or p.expires_at > ^now)
+             )
+             |> load_data()
+           end) do
+      paste
     else
       _error ->
         nil
@@ -658,12 +671,11 @@ defmodule Textbin.Pastes do
   defp audience_allowed?(_audience, _policy), do: false
 
   defp lock_authorized_workspace(scope, workspace_id) do
-    workspace =
-      Repo.one(
-        from workspace in Workspace,
-          where: workspace.id == ^workspace_id,
-          lock: "FOR UPDATE"
-      )
+    lock_authorized_workspace(scope, workspace_id, "FOR UPDATE")
+  end
+
+  defp lock_authorized_workspace(scope, workspace_id, lock) do
+    workspace = lock_workspace(workspace_id, lock)
 
     with %Workspace{} <- workspace,
          {:ok, %Workspace{id: ^workspace_id} = current_workspace} <- authorized_workspace(scope) do
@@ -671,6 +683,36 @@ defmodule Textbin.Pastes do
     else
       _error -> {:error, :not_found}
     end
+  end
+
+  defp lock_workspace(workspace_id, "FOR UPDATE") do
+    Repo.one(
+      from workspace in Workspace,
+        where: workspace.id == ^workspace_id,
+        lock: "FOR UPDATE"
+    )
+  end
+
+  defp lock_workspace(workspace_id, "FOR SHARE") do
+    Repo.one(
+      from workspace in Workspace,
+        where: workspace.id == ^workspace_id,
+        lock: "FOR SHARE"
+    )
+  end
+
+  # Keep membership authorization valid until inline or external paste data is
+  # loaded. Membership mutations take an exclusive workspace lock, so either
+  # the read completes first or observes the committed revocation.
+  defp with_locked_read_workspace(scope, operation) do
+    transaction = fn ->
+      with {:ok, workspace} <-
+             lock_authorized_workspace(scope, scope_workspace_id(scope), "FOR SHARE") do
+        {:ok, operation.(workspace)}
+      end
+    end
+
+    if Repo.in_transaction?(), do: transaction.(), else: Repo.transact(transaction)
   end
 
   defp attr_key(attrs, string_key, atom_key) do

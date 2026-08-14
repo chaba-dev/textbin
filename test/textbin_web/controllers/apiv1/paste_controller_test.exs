@@ -54,9 +54,13 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   describe "create paste" do
     test "renders paste when data is valid", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
+      personal_organization = Organizations.get_personal_organization!(scope.user)
+      personal_workspace = Organizations.get_personal_default_workspace!(scope.user)
 
       assert %{
                "id" => id,
+               "organization_id" => organization_id,
+               "workspace_id" => workspace_id,
                "syntax_highlight" => "elixir",
                "visibility" => "private",
                "expires_at" => expires_at
@@ -64,6 +68,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
                response_data = json_response(conn, 201)["data"]
 
       refute Map.has_key?(response_data, "data")
+      assert organization_id == personal_organization.id
+      assert workspace_id == personal_workspace.id
+      assert get_resp_header(conn, "location") == [~p"/api/v1/pastes/#{id}"]
       assert is_nil(expires_at)
       assert_stored_paste(scope, id, "some data", "elixir")
 
@@ -541,6 +548,177 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
   end
 
+  describe "workspace-scoped paste routes" do
+    test "creates, lists, shows, and deletes a paste in the selected workspace", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{
+          name: "Workspace API",
+          slug: "workspace-api-#{System.unique_integer([:positive])}"
+        })
+
+      workspace = hd(organization.workspaces)
+      {:ok, workspace_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+      {:ok, personal_paste} = Pastes.create_paste(scope, %{data: "personal"})
+
+      create_conn =
+        post(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes", %{
+          data: "workspace paste",
+          audience: "workspace"
+        })
+
+      assert %{
+               "id" => paste_id,
+               "organization_id" => organization_id,
+               "workspace_id" => workspace_id
+             } = json_response(create_conn, 201)["data"]
+
+      assert organization_id == organization.id
+      assert workspace_id == workspace.id
+
+      assert get_resp_header(create_conn, "location") == [
+               ~p"/api/v1/workspaces/#{workspace.id}/pastes/#{paste_id}"
+             ]
+
+      index_conn = get(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes")
+
+      assert [%{"id" => ^paste_id, "workspace_id" => ^workspace_id}] =
+               json_response(index_conn, 200)["data"]
+
+      refute Enum.any?(json_response(index_conn, 200)["data"], &(&1["id"] == personal_paste.id))
+
+      show_conn = get(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes/#{paste_id}")
+
+      assert %{"id" => ^paste_id, "data" => "workspace paste"} =
+               json_response(show_conn, 200)["data"]
+
+      assert response(
+               delete(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes/#{paste_id}"),
+               204
+             ) == ""
+
+      refute Pastes.get_paste(workspace_scope, paste_id)
+    end
+
+    test "creates a workspace paste from an unadorned raw request body", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{
+          name: "Raw workspace API",
+          slug: "raw-workspace-api-#{System.unique_integer([:positive])}"
+        })
+
+      workspace = hd(organization.workspaces)
+
+      conn =
+        conn
+        |> put_req_header("content-type", "text/plain")
+        |> post(~p"/api/v1/workspaces/#{workspace.id}/pastes", "raw workspace paste")
+
+      assert %{"id" => paste_id, "workspace_id" => workspace_id} =
+               json_response(conn, 201)["data"]
+
+      assert workspace_id == workspace.id
+      {:ok, workspace_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+      assert Pastes.get_paste!(workspace_scope, paste_id).data == "raw workspace paste"
+    end
+
+    test "workspace ids cannot be substituted to read a paste from another organization", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, personal_paste} = Pastes.create_paste(scope, %{data: "personal secret"})
+
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{
+          name: "Other API scope",
+          slug: "other-api-scope-#{System.unique_integer([:positive])}"
+        })
+
+      workspace = hd(organization.workspaces)
+
+      conn = get(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes/#{personal_paste.id}")
+
+      assert %{"errors" => %{"detail" => "Paste not found"}} = json_response(conn, 404)
+    end
+
+    test "discovering an open workspace does not grant paste access", %{scope: owner_scope} do
+      member = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(owner_scope, %{
+          name: "Discovery API",
+          slug: "discovery-api-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, _memberships} =
+        Organizations.add_organization_member(owner_scope, organization, member)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, organization, %{
+          name: "Open API",
+          slug: "open-api",
+          visibility: "open"
+        })
+
+      conn = get(api_conn(member), ~p"/api/v1/workspaces/#{workspace.id}/pastes")
+
+      assert %{"errors" => %{"detail" => "Workspace not found"}} = json_response(conn, 404)
+    end
+
+    test "removing workspace membership immediately revokes API access", %{
+      scope: owner_scope
+    } do
+      member = user_fixture()
+
+      {:ok, organization} =
+        Organizations.create_organization(owner_scope, %{
+          name: "Revocation API",
+          slug: "revocation-api-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, _memberships} =
+        Organizations.add_organization_member(owner_scope, organization, member)
+
+      {:ok, workspace} =
+        Organizations.create_workspace(owner_scope, organization, %{
+          name: "Private API",
+          slug: "private-api",
+          visibility: "private"
+        })
+
+      {:ok, membership} =
+        Organizations.add_workspace_member(owner_scope, workspace, member)
+
+      conn = api_conn(member)
+      assert json_response(get(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes"), 200)
+
+      assert {:ok, _membership} =
+               Organizations.remove_workspace_member(owner_scope, membership)
+
+      revoked_conn = get(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes")
+
+      assert %{"errors" => %{"detail" => "Workspace not found"}} =
+               json_response(revoked_conn, 404)
+    end
+
+    test "conceals invalid and inaccessible workspace ids", %{conn: conn} do
+      outsider_scope = user_scope_fixture()
+      outsider_workspace = Organizations.get_personal_default_workspace!(outsider_scope.user)
+
+      for workspace_id <- ["not-a-uuid", outsider_workspace.id] do
+        response_conn = get(conn, ~p"/api/v1/workspaces/#{workspace_id}/pastes")
+
+        assert %{"errors" => %{"detail" => "Workspace not found"}} =
+                 json_response(response_conn, 404)
+      end
+    end
+  end
+
   defp assert_millisecond_timestamp(timestamp) do
     assert timestamp =~ ~r/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
   end
@@ -584,4 +762,9 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
   defp restore_application_env(key, nil), do: Application.delete_env(:textbin, key)
   defp restore_application_env(key, value), do: Application.put_env(:textbin, key, value)
+
+  defp api_conn(user) do
+    {:ok, {token, _user_token}} = Accounts.create_user_api_token(user, %{"name" => "API"})
+    put_req_header(build_conn(), "authorization", "Bearer #{token}")
+  end
 end
