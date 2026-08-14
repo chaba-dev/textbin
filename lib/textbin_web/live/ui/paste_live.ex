@@ -206,6 +206,8 @@ defmodule TextbinWeb.UI.PasteLive do
   defp workspace_settings_path(%{organization: organization, workspace: workspace}),
     do: "/w/#{organization.slug}/#{workspace.slug}/settings"
 
+  defp organization_path(organization), do: "/o/#{organization.slug}"
+
   defp resolve_shared_paste_scope(nil, _paste), do: nil
 
   defp resolve_shared_paste_scope(scope, paste) do

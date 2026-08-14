@@ -3,6 +3,14 @@
     <div class="flex flex-col gap-2">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
+          <.link
+            :if={@current_scope.organization && !guest_user?(@current_scope.user)}
+            id="organization-overview-link"
+            navigate={organization_path(@current_scope.organization)}
+            class="text-sm text-base-content/60 transition hover:text-primary"
+          >
+            {@current_scope.organization.name}
+          </.link>
           <h1 class="text-3xl font-semibold tracking-tight text-base-content">
             Pastes
           </h1>

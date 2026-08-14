@@ -124,6 +124,33 @@ defmodule Textbin.OrganizationsTest do
     end
   end
 
+  describe "resolve_organization_scope_by_slug/2" do
+    test "resolves only organizations the user has joined" do
+      owner = user_fixture()
+      owner_scope = Scope.for_user(owner)
+      slug = "resolved-organization-#{System.unique_integer([:positive])}"
+
+      assert {:ok, organization} =
+               Organizations.create_organization(owner_scope, %{
+                 name: "Resolved organization",
+                 slug: slug
+               })
+
+      assert {:ok, resolved_scope} =
+               Organizations.resolve_organization_scope_by_slug(owner_scope, slug)
+
+      assert resolved_scope.organization.id == organization.id
+      assert resolved_scope.organization_membership.role == "owner"
+      assert resolved_scope.workspace == nil
+      assert resolved_scope.workspace_membership == nil
+
+      outsider_scope = user_scope_fixture()
+
+      assert {:error, :not_found} =
+               Organizations.resolve_organization_scope_by_slug(outsider_scope, slug)
+    end
+  end
+
   describe "add_organization_member/3" do
     test "adds explicit organization and default-workspace memberships atomically" do
       creator = user_fixture()
