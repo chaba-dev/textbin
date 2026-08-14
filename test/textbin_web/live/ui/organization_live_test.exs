@@ -40,6 +40,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
   test "requires authentication", context do
     for path <- [
+          "/orgs",
           organization_path(context.organization),
           organization_members_path(context.organization),
           organization_settings_path(context.organization)
@@ -50,20 +51,69 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     end
   end
 
-  test "lists joined workspaces and links to their paste pages", context do
-    {:ok, view, _html} = live(context.conn, organization_path(context.organization))
+  test "lists the organizations available to the user", context do
+    {:ok, view, _html} = live(context.conn, "/orgs")
+    personal_organization = Organizations.get_personal_organization!(context.owner)
 
-    assert has_element?(view, "#organization-overview")
-    assert has_element?(view, "#organization-heading", context.organization.name)
+    assert has_element?(view, "#organizations-index")
 
     assert has_element?(
              view,
-             "#organization-navigation a[href='#{organization_members_path(context.organization)}']"
+             "#organizations-list a[href='#{organization_path(context.organization)}']",
+             context.organization.name
            )
 
     assert has_element?(
              view,
-             "#organization-navigation a[href='#{organization_settings_path(context.organization)}']"
+             "#organizations-list a[href='#{organization_path(personal_organization)}']",
+             personal_organization.name
+           )
+  end
+
+  test "sidebar keeps a long workspace list scrollable", context do
+    workspaces =
+      for index <- 1..15 do
+        {:ok, workspace} =
+          Organizations.create_workspace(context.owner_scope, context.organization, %{
+            name: "Workspace #{index}",
+            slug: "workspace-#{index}",
+            visibility: "private"
+          })
+
+        workspace
+      end
+
+    {:ok, view, _html} = live(context.conn, organization_path(context.organization))
+
+    assert has_element?(
+             view,
+             "#sidebar-navigation-workspaces.overflow-y-auto"
+           )
+
+    for workspace <- workspaces do
+      assert has_element?(
+               view,
+               "#sidebar-navigation-workspaces a[href='#{workspace_path(context.organization, workspace)}']"
+             )
+    end
+  end
+
+  test "lists joined workspaces and links to their paste pages", context do
+    {:ok, view, _html} = live(context.conn, organization_path(context.organization))
+
+    assert has_element?(view, "#organization-overview")
+    assert has_element?(view, "#organization-heading", "Overview")
+    assert has_element?(view, "#application-sidebar", context.organization.name)
+    assert has_element?(view, "#mobile-sidebar-open")
+
+    assert has_element?(
+             view,
+             "#sidebar-navigation a[href='#{organization_members_path(context.organization)}']"
+           )
+
+    assert has_element?(
+             view,
+             "#sidebar-navigation a[href='#{organization_settings_path(context.organization)}']"
            )
 
     for workspace <- [context.default_workspace, context.workspace] do
@@ -102,7 +152,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "#organization-navigation a[href='#{organization_path(context.organization)}']"
+             "#sidebar-navigation a[href='#{organization_path(context.organization)}']"
            )
   end
 
@@ -196,7 +246,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert Repo.reload!(context.organization).name == "Acme Labs"
     assert Repo.reload!(context.organization).slug == context.organization.slug
-    assert has_element?(view, "#organization-heading", "Acme Labs")
+    assert has_element?(view, "#application-sidebar", "Acme Labs")
   end
 
   test "organization members view read-only settings and cannot forge an update", context do
@@ -278,7 +328,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "#organization-overview-link[href='#{organization_path(context.organization)}']"
+             "#sidebar-navigation a[href='#{organization_path(context.organization)}']"
            )
   end
 

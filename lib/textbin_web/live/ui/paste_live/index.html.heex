@@ -1,50 +1,18 @@
-<Layouts.app flash={@flash} current_scope={@current_scope}>
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  navigation_workspaces={@navigation_workspaces}
+  active_navigation={{:workspace, :pastes}}
+>
   <div class="space-y-8">
-    <div class="flex flex-col gap-2">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <.link
-            :if={@current_scope.organization && !guest_user?(@current_scope.user)}
-            id="organization-overview-link"
-            navigate={organization_path(@current_scope.organization)}
-            class="text-sm text-base-content/60 transition hover:text-primary"
-          >
-            {@current_scope.organization.name}
-          </.link>
-          <h1 class="text-3xl font-semibold tracking-tight text-base-content">
-            Pastes
-          </h1>
-          <p class="mt-2 text-sm leading-6 text-base-content/70">
-            Recently created snippets.
-          </p>
-        </div>
-        <.form
-          for={@workspace_switcher_form}
-          id="workspace-switcher"
-          phx-change="switch_workspace"
-          class="w-full sm:w-72"
-        >
-          <.input
-            field={@workspace_switcher_form[:id]}
-            type="select"
-            label="Workspace"
-            options={@workspace_options}
-          />
-        </.form>
-      </div>
-      <nav
-        :if={!guest_user?(@current_scope.user)}
-        id="workspace-navigation"
-        class="flex flex-wrap gap-2"
-        aria-label="Workspace"
-      >
-        <.link navigate={workspace_members_path(@current_scope)} class="btn btn-sm btn-ghost">
-          <.icon name="hero-user-group" class="size-4" /> Members
-        </.link>
-        <.link navigate={workspace_settings_path(@current_scope)} class="btn btn-sm btn-ghost">
-          <.icon name="hero-cog-6-tooth" class="size-4" /> Settings
-        </.link>
-      </nav>
+    <div>
+      <p class="text-sm font-medium text-base-content/55">{@current_scope.workspace.name}</p>
+      <h1 class="mt-1 text-3xl font-semibold tracking-tight text-base-content">
+        Pastes
+      </h1>
+      <p class="mt-2 text-sm leading-6 text-base-content/70">
+        Recently created snippets.
+      </p>
     </div>
 
     <section

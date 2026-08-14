@@ -20,6 +20,11 @@ defmodule TextbinWeb.UI.WorkspaceLive do
     {:noreply,
      socket
      |> assign(:current_scope, scope)
+     |> assign(:page_title, scope.workspace.name)
+     |> assign(
+       :navigation_workspaces,
+       Organizations.list_joined_workspaces(scope, scope.organization)
+     )
      |> assign(:workspace_owner?, Policy.workspace_owner?(scope.workspace_membership))
      |> assign(:member_form, to_form(%{"email" => ""}, as: :member))
      |> assign(
@@ -119,9 +124,14 @@ defmodule TextbinWeb.UI.WorkspaceLive do
   @impl true
   def render(%{live_action: :members} = assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_workspaces={@navigation_workspaces}
+      active_navigation={{:workspace, :members}}
+    >
       <div class="space-y-8">
-        <.workspace_header scope={@current_scope} active={:members} />
+        <.workspace_header scope={@current_scope} title="Members" />
 
         <section
           :if={@workspace_owner? && !@current_scope.workspace.is_default}
@@ -179,9 +189,14 @@ defmodule TextbinWeb.UI.WorkspaceLive do
 
   def render(%{live_action: :settings} = assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_workspaces={@navigation_workspaces}
+      active_navigation={{:workspace, :settings}}
+    >
       <div class="space-y-8">
-        <.workspace_header scope={@current_scope} active={:settings} />
+        <.workspace_header scope={@current_scope} title="Settings" />
 
         <section
           id="workspace-settings"
@@ -240,36 +255,13 @@ defmodule TextbinWeb.UI.WorkspaceLive do
   end
 
   attr :scope, :map, required: true
-  attr :active, :atom, required: true
+  attr :title, :string, required: true
 
   defp workspace_header(assigns) do
     ~H"""
-    <header class="space-y-4">
-      <div>
-        <.link
-          id="organization-overview-link"
-          navigate={organization_path(@scope.organization)}
-          class="text-sm text-base-content/60 transition hover:text-primary"
-        >
-          {@scope.organization.name}
-        </.link>
-        <h1 class="text-3xl font-semibold tracking-tight">{@scope.workspace.name}</h1>
-      </div>
-      <nav id="workspace-page-navigation" class="flex flex-wrap gap-2" aria-label="Workspace">
-        <.link navigate={workspace_path(@scope, "pastes")} class="btn btn-sm btn-ghost">Pastes</.link>
-        <.link
-          navigate={workspace_path(@scope, "members")}
-          class={["btn btn-sm", if(@active == :members, do: "btn-primary", else: "btn-ghost")]}
-        >
-          Members
-        </.link>
-        <.link
-          navigate={workspace_path(@scope, "settings")}
-          class={["btn btn-sm", if(@active == :settings, do: "btn-primary", else: "btn-ghost")]}
-        >
-          Settings
-        </.link>
-      </nav>
+    <header>
+      <p class="text-sm font-medium text-base-content/55">{@scope.workspace.name}</p>
+      <h1 class="mt-1 text-3xl font-semibold tracking-tight text-base-content">{@title}</h1>
     </header>
     """
   end
@@ -280,9 +272,4 @@ defmodule TextbinWeb.UI.WorkspaceLive do
       {:error, :not_found} -> raise Ecto.NoResultsError, queryable: Workspace
     end
   end
-
-  defp workspace_path(scope, page),
-    do: "/w/#{scope.organization.slug}/#{scope.workspace.slug}/#{page}"
-
-  defp organization_path(organization), do: "/o/#{organization.slug}"
 end
