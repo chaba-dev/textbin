@@ -45,23 +45,26 @@ defmodule TextbinWeb.Layouts do
     ~H"""
     <%= if application_shell?(@current_scope) do %>
       <div id="application-shell" class="min-h-[calc(100vh-4rem)] bg-base-200/45 lg:flex">
-        <input
-          id="mobile-sidebar-toggle"
-          type="checkbox"
-          class="peer sr-only lg:hidden"
-          aria-label="Toggle navigation"
-          aria-controls="application-sidebar"
-        />
+        <div
+          id="navigation-dialog-controller"
+          phx-hook="NavigationDialog"
+          phx-update="ignore"
+          data-dialog-id="mobile-navigation-dialog"
+        >
+        </div>
 
-        <div class="flex items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-3 peer-focus-visible:[&_#mobile-sidebar-open]:ring-2 peer-focus-visible:[&_#mobile-sidebar-open]:ring-primary lg:hidden">
-          <label
-            for="mobile-sidebar-toggle"
+        <div class="flex items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-3 lg:hidden">
+          <button
+            type="button"
             id="mobile-sidebar-open"
             class="btn btn-square btn-ghost btn-sm"
             aria-label="Open navigation"
+            aria-controls="mobile-navigation-dialog"
+            aria-expanded="false"
+            data-navigation-dialog-open
           >
             <.icon name="hero-bars-3" class="size-5" />
-          </label>
+          </button>
           <div class="min-w-0">
             <p class="truncate text-sm font-semibold text-base-content">
               {@current_scope.organization.name}
@@ -72,27 +75,39 @@ defmodule TextbinWeb.Layouts do
           </div>
         </div>
 
-        <label
-          for="mobile-sidebar-toggle"
-          class="pointer-events-none fixed inset-0 z-40 bg-neutral/45 opacity-0 backdrop-blur-[2px] transition-opacity peer-checked:pointer-events-auto peer-checked:opacity-100 lg:hidden"
-          aria-label="Close navigation"
+        <dialog
+          id="mobile-navigation-dialog"
+          class="m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none border-0 border-r border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
+          aria-label="Application navigation"
         >
-        </label>
+          <div class="flex h-full min-h-0 flex-col p-4">
+            <div class="mb-3 flex justify-end">
+              <button
+                type="button"
+                class="btn btn-square btn-ghost btn-sm"
+                aria-label="Close navigation"
+                data-navigation-dialog-close
+                autofocus
+              >
+                <.icon name="hero-x-mark" class="size-5" />
+              </button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-visible">
+              <.application_sidebar
+                id="mobile-sidebar-navigation"
+                scope={@current_scope}
+                workspaces={@navigation_workspaces}
+                active={@active_navigation}
+              />
+            </div>
+          </div>
+        </dialog>
 
         <aside
           id="application-sidebar"
-          class="fixed inset-y-0 left-0 z-50 flex w-[min(20rem,88vw)] -translate-x-full flex-col border-r border-base-300 bg-base-100 p-4 shadow-2xl transition-transform duration-200 peer-checked:translate-x-0 lg:sticky lg:top-16 lg:z-auto lg:h-[calc(100vh-4rem)] lg:w-72 lg:shrink-0 lg:translate-x-0 lg:p-5 lg:shadow-none"
+          class="sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col border-r border-base-300 bg-base-100 p-5 lg:flex"
         >
-          <div class="mb-3 flex justify-end lg:hidden">
-            <label
-              for="mobile-sidebar-toggle"
-              class="btn btn-square btn-ghost btn-sm"
-              aria-label="Close navigation"
-            >
-              <.icon name="hero-x-mark" class="size-5" />
-            </label>
-          </div>
-          <div class="min-h-0 flex-1 overflow-hidden">
+          <div class="min-h-0 flex-1 overflow-visible">
             <.application_sidebar
               id="sidebar-navigation"
               scope={@current_scope}
@@ -129,7 +144,7 @@ defmodule TextbinWeb.Layouts do
     ~H"""
     <nav id={@id} class="flex h-full min-h-0 flex-col" aria-label="Application">
       <div class="border-b border-base-300 pb-5">
-        <details id="organization-menu" class="group relative">
+        <details id={organization_menu_id(@id)} class="group relative">
           <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl p-2 transition hover:bg-base-200">
             <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
               <.icon name="hero-building-office-2" class="size-5" />
@@ -145,28 +160,31 @@ defmodule TextbinWeb.Layouts do
               class="size-4 shrink-0 text-base-content/40 transition group-open:rotate-180"
             />
           </summary>
-          <div class="absolute left-0 right-0 z-20 mt-2 rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl">
+          <div
+            id={organization_menu_panel_id(@id)}
+            class="absolute left-0 right-0 z-20 mt-2 max-h-[min(20rem,calc(100dvh-8rem))] overflow-y-auto overscroll-contain rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl"
+          >
             <p class="px-3 py-2 text-xs font-medium capitalize text-base-content/50">
               {@scope.organization_membership.role}
             </p>
-            <.link
+            <.sidebar_link
               navigate={organization_path(@scope.organization)}
-              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
-            >
-              <.icon name="hero-squares-2x2" class="size-4" /> Overview
-            </.link>
-            <.link
+              icon="hero-squares-2x2"
+              label="Overview"
+              active={@active == {:organization, :overview}}
+            />
+            <.sidebar_link
               navigate={organization_members_path(@scope.organization)}
-              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
-            >
-              <.icon name="hero-user-group" class="size-4" /> Manage members
-            </.link>
-            <.link
+              icon="hero-user-group"
+              label="Manage members"
+              active={@active == {:organization, :members}}
+            />
+            <.sidebar_link
               navigate={organization_settings_path(@scope.organization)}
-              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
-            >
-              <.icon name="hero-cog-6-tooth" class="size-4" /> Organization settings
-            </.link>
+              icon="hero-cog-6-tooth"
+              label="Organization settings"
+              active={@active == {:organization, :settings}}
+            />
             <div class="my-1 border-t border-base-300"></div>
             <.link
               navigate={~p"/orgs"}
@@ -372,6 +390,12 @@ defmodule TextbinWeb.Layouts do
 
   defp active_workspace?(%{workspace: %{id: workspace_id}}, %{id: workspace_id}), do: true
   defp active_workspace?(_scope, _workspace), do: false
+
+  defp organization_menu_id("sidebar-navigation"), do: "organization-menu"
+  defp organization_menu_id(id), do: "#{id}-organization-menu"
+
+  defp organization_menu_panel_id("sidebar-navigation"), do: "organization-menu-panel"
+  defp organization_menu_panel_id(id), do: "#{id}-organization-menu-panel"
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
   defp organization_members_path(organization), do: "/o/#{organization.slug}/members"

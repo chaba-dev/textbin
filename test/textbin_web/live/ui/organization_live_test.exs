@@ -98,6 +98,48 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     end
   end
 
+  test "mobile navigation exposes a modal dialog with explicit controls", context do
+    {:ok, view, _html} = live(context.conn, organization_path(context.organization))
+
+    assert has_element?(
+             view,
+             "#navigation-dialog-controller[phx-hook='NavigationDialog'][phx-update='ignore']"
+           )
+
+    assert has_element?(
+             view,
+             "button#mobile-sidebar-open[aria-controls='mobile-navigation-dialog'][aria-expanded='false'][data-navigation-dialog-open]"
+           )
+
+    assert has_element?(view, "dialog#mobile-navigation-dialog")
+
+    assert has_element?(
+             view,
+             "#mobile-navigation-dialog button[data-navigation-dialog-close]"
+           )
+
+    refute has_element?(view, "input#mobile-sidebar-toggle")
+  end
+
+  test "organization menu remains scrollable and identifies its active destination", context do
+    {:ok, overview_view, _html} = live(context.conn, organization_path(context.organization))
+
+    assert has_element?(overview_view, "#organization-menu-panel.overflow-y-auto")
+
+    assert has_element?(
+             overview_view,
+             "#organization-menu a[href='#{organization_path(context.organization)}'][aria-current='page']"
+           )
+
+    {:ok, settings_view, _html} =
+      live(context.conn, organization_settings_path(context.organization))
+
+    assert has_element?(
+             settings_view,
+             "#organization-menu a[href='#{organization_settings_path(context.organization)}'][aria-current='page']"
+           )
+  end
+
   test "lists joined workspaces and links to their paste pages", context do
     {:ok, view, _html} = live(context.conn, organization_path(context.organization))
 

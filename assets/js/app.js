@@ -58,11 +58,77 @@ const CopyToClipboard = {
   },
 }
 
+const NavigationDialog = {
+  mounted() {
+    const dialogId = this.el.dataset.dialogId
+    this.returnFocusTo = null
+
+    this.dialog = () => document.getElementById(dialogId)
+
+    this.finishClose = () => {
+      document.documentElement.classList.remove("overflow-hidden")
+
+      if (this.returnFocusTo) {
+        this.returnFocusTo.setAttribute("aria-expanded", "false")
+
+        if (this.returnFocusTo.isConnected) this.returnFocusTo.focus()
+      }
+
+      this.returnFocusTo = null
+    }
+
+    this.handleClick = event => {
+      const opener = event.target.closest("[data-navigation-dialog-open]")
+
+      if (opener?.getAttribute("aria-controls") === dialogId) {
+        const dialog = this.dialog()
+
+        if (dialog && !dialog.open) {
+          this.returnFocusTo = opener
+          opener.setAttribute("aria-expanded", "true")
+          document.documentElement.classList.add("overflow-hidden")
+          dialog.showModal()
+        }
+
+        return
+      }
+
+      const dialog = this.dialog()
+
+      if (!dialog?.open) return
+
+      const closeButton = event.target.closest("[data-navigation-dialog-close]")
+      const navigationLink = event.target.closest("a[href]")
+
+      if (
+        (closeButton && dialog.contains(closeButton)) ||
+        (navigationLink && dialog.contains(navigationLink)) ||
+        event.target === dialog
+      ) {
+        dialog.close()
+      }
+    }
+
+    this.handleClose = event => {
+      if (event.target.id === dialogId) this.finishClose()
+    }
+
+    document.addEventListener("click", this.handleClick)
+    document.addEventListener("close", this.handleClose, true)
+  },
+
+  destroyed() {
+    document.removeEventListener("click", this.handleClick)
+    document.removeEventListener("close", this.handleClose, true)
+    this.finishClose()
+  },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, CopyToClipboard},
+  hooks: {...colocatedHooks, CopyToClipboard, NavigationDialog},
 })
 
 // Show progress bar on live navigation and form submits
