@@ -31,6 +31,20 @@ defmodule TextbinWeb.UI.OrganizationLive do
          )
          |> assign(:member_form, to_form(%{"email" => ""}, as: :member))
          |> stream(:members, Organizations.list_organization_members(scope), reset: true)}
+
+      :settings ->
+        {:noreply,
+         socket
+         |> assign(
+           :organization_owner?,
+           Policy.organization_owner?(scope.organization_membership)
+         )
+         |> assign(
+           :settings_form,
+           scope.organization
+           |> Organization.settings_changeset(%{})
+           |> to_form()
+         )}
     end
   end
 
@@ -97,6 +111,39 @@ defmodule TextbinWeb.UI.OrganizationLive do
         {:noreply, put_flash(socket, :error, "Organization member could not be removed")}
     end
   end
+
+  def handle_event(
+        "update_settings",
+        %{"organization" => organization_params},
+        %{assigns: %{live_action: :settings}} = socket
+      ) do
+    case Organizations.change_organization_settings(
+           socket.assigns.current_scope,
+           socket.assigns.current_scope.organization,
+           organization_params
+         ) do
+      {:ok, organization} ->
+        scope = %{socket.assigns.current_scope | organization: organization}
+
+        {:noreply,
+         socket
+         |> assign(:current_scope, scope)
+         |> assign(:page_title, organization.name)
+         |> assign(
+           :settings_form,
+           organization |> Organization.settings_changeset(%{}) |> to_form()
+         )
+         |> put_flash(:info, "Organization settings updated")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :settings_form, to_form(changeset, action: :update))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Organization settings could not be updated")}
+    end
+  end
+
+  def handle_event("update_settings", _params, socket), do: {:noreply, socket}
 
   @impl true
   def render(%{live_action: :show} = assigns) do
@@ -257,6 +304,66 @@ defmodule TextbinWeb.UI.OrganizationLive do
     """
   end
 
+  def render(%{live_action: :settings} = assigns) do
+    ~H"""
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <div id="organization-settings-page" class="space-y-8">
+        <.organization_header scope={@current_scope} active={:settings} />
+
+        <section class="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm sm:p-6">
+          <div class="mb-6">
+            <h2 class="text-lg font-semibold text-base-content">General</h2>
+            <p class="mt-1 text-sm text-base-content/60">
+              Organization identity used throughout Textbin.
+            </p>
+          </div>
+
+          <.form
+            :if={@organization_owner?}
+            for={@settings_form}
+            id="organization-settings-form"
+            phx-submit="update_settings"
+            class="max-w-2xl space-y-4"
+          >
+            <.input field={@settings_form[:name]} type="text" label="Organization name" required />
+            <div>
+              <.input
+                id="organization-slug"
+                name="organization_slug"
+                type="text"
+                label="Slug"
+                value={@current_scope.organization.slug}
+                disabled
+              />
+              <p class="text-xs leading-5 text-base-content/50">
+                Slug changes are not yet available because they would affect existing links.
+              </p>
+            </div>
+            <.button variant="primary" phx-disable-with="Saving...">Save changes</.button>
+          </.form>
+
+          <dl
+            :if={!@organization_owner?}
+            id="organization-settings-readonly"
+            class="grid gap-5 sm:grid-cols-2"
+          >
+            <div>
+              <dt class="text-sm text-base-content/55">Name</dt>
+              <dd class="mt-1 font-medium text-base-content">{@current_scope.organization.name}</dd>
+            </div>
+            <div>
+              <dt class="text-sm text-base-content/55">Slug</dt>
+              <dd class="mt-1 font-mono text-sm text-base-content">
+                {@current_scope.organization.slug}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      </div>
+    </Layouts.app>
+    """
+  end
+
   attr :scope, :map, required: true
   attr :active, :atom, required: true
 
@@ -307,6 +414,15 @@ defmodule TextbinWeb.UI.OrganizationLive do
         >
           Members
         </.link>
+        <.link
+          navigate={organization_settings_path(@scope.organization)}
+          class={[
+            "btn btn-sm",
+            if(@active == :settings, do: "btn-primary", else: "btn-ghost")
+          ]}
+        >
+          Settings
+        </.link>
       </nav>
     </header>
     """
@@ -348,6 +464,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
   defp organization_members_path(organization), do: "/o/#{organization.slug}/members"
+  defp organization_settings_path(organization), do: "/o/#{organization.slug}/settings"
 
   defp workspace_path(organization, workspace),
     do: "/w/#{organization.slug}/#{workspace.slug}/pastes"

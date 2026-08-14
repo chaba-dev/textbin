@@ -41,7 +41,8 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
   test "requires authentication", context do
     for path <- [
           organization_path(context.organization),
-          organization_members_path(context.organization)
+          organization_members_path(context.organization),
+          organization_settings_path(context.organization)
         ] do
       assert {:error, {:redirect, %{to: redirected_path}}} = live(build_conn(), path)
 
@@ -58,6 +59,11 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     assert has_element?(
              view,
              "#organization-navigation a[href='#{organization_members_path(context.organization)}']"
+           )
+
+    assert has_element?(
+             view,
+             "#organization-navigation a[href='#{organization_settings_path(context.organization)}']"
            )
 
     for workspace <- [context.default_workspace, context.workspace] do
@@ -176,12 +182,91 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     assert Repo.reload!(target).role == "admin"
   end
 
+  test "organization owners update the display name while the slug stays read-only", context do
+    {:ok, view, _html} = live(context.conn, organization_settings_path(context.organization))
+
+    assert has_element?(view, "#organization-settings-page")
+    assert has_element?(view, "#organization-settings-form")
+    assert has_element?(view, "#organization-slug[disabled]")
+    refute has_element?(view, "#organization-settings-form input[name='organization[slug]']")
+
+    view
+    |> form("#organization-settings-form", %{"organization" => %{"name" => "Acme Labs"}})
+    |> render_submit()
+
+    assert Repo.reload!(context.organization).name == "Acme Labs"
+    assert Repo.reload!(context.organization).slug == context.organization.slug
+    assert has_element?(view, "#organization-heading", "Acme Labs")
+  end
+
+  test "organization members view read-only settings and cannot forge an update", context do
+    membership = add_organization_member(context, user_fixture())
+    conn = log_in_user(build_conn(), membership.user)
+    {:ok, view, _html} = live(conn, organization_settings_path(context.organization))
+
+    assert has_element?(view, "#organization-settings-readonly", context.organization.name)
+    refute has_element?(view, "#organization-settings-form")
+
+    render_click(view, "update_settings", %{"organization" => %{"name" => "Forged"}})
+
+    assert Repo.reload!(context.organization).name == context.organization.name
+  end
+
+  test "settings event cannot update an organization from another organization page", context do
+    {:ok, view, _html} = live(context.conn, organization_path(context.organization))
+
+    render_click(view, "update_settings", %{"organization" => %{"name" => "Forged"}})
+
+    assert Repo.reload!(context.organization).name == context.organization.name
+  end
+
+  test "mounted settings page reauthorizes an owner after demotion", context do
+    {:ok, view, _html} = live(context.conn, organization_settings_path(context.organization))
+    second_owner = user_fixture()
+
+    {:ok, second_owner_memberships} =
+      Organizations.add_organization_member(
+        context.owner_scope,
+        context.organization,
+        second_owner
+      )
+
+    {:ok, _second_owner_membership} =
+      Organizations.change_organization_member_role(
+        context.owner_scope,
+        second_owner_memberships.organization,
+        "owner"
+      )
+
+    first_owner_membership =
+      Repo.get_by!(OrganizationMembership,
+        organization_id: context.organization.id,
+        user_id: context.owner.id
+      )
+
+    assert {:ok, _demoted_membership} =
+             Organizations.change_organization_member_role(
+               user_scope_fixture(second_owner),
+               first_owner_membership,
+               "admin"
+             )
+
+    view
+    |> form("#organization-settings-form", %{
+      "organization" => %{"name" => "Stale owner edit"}
+    })
+    |> render_submit()
+
+    assert Repo.reload!(context.organization).name == context.organization.name
+  end
+
   test "conceals organizations the user has not joined", context do
     outsider_conn = build_conn() |> log_in_user(user_fixture())
 
     for path <- [
           organization_path(context.organization),
-          organization_members_path(context.organization)
+          organization_members_path(context.organization),
+          organization_settings_path(context.organization)
         ] do
       assert_raise Ecto.NoResultsError, fn -> live(outsider_conn, path) end
     end
@@ -199,6 +284,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
   defp organization_members_path(organization), do: "/o/#{organization.slug}/members"
+  defp organization_settings_path(organization), do: "/o/#{organization.slug}/settings"
 
   defp add_organization_member(context, user) do
     {:ok, memberships} =
