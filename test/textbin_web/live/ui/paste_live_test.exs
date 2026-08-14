@@ -39,6 +39,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert has_element?(view, "#paste-form")
     assert has_element?(view, "#paste_audience[disabled] option[value='unlisted']")
+    refute has_element?(view, "#organization-overview-link")
 
     view
     |> form("#paste-form", %{
@@ -71,8 +72,15 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       Pastes.create_paste(user_scope_fixture(), %{data: "other user data"})
 
     {path, {:ok, view, _html}} = live_personal_workspace(conn, user)
+    organization = Organizations.get_personal_organization!(user)
 
     assert has_element?(view, "#pastes-list")
+
+    assert has_element?(
+             view,
+             "#organization-overview-link[href='/o/#{organization.slug}']"
+           )
+
     assert has_element?(view, "##{stream_id(paste)}", paste.id)
     assert has_element?(view, "##{stream_id(paste)}", "elixir")
     assert has_element?(view, "#paste-audience-#{paste.id}", "Workspace")
