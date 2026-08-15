@@ -25,6 +25,12 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+[workspace.metadata.dist.github-custom-runners]
+global = "blacksmith-2vcpu-ubuntu-2404"
+x86_64-unknown-linux-gnu = "blacksmith-2vcpu-ubuntu-2404"
+aarch64-unknown-linux-gnu = "blacksmith-2vcpu-ubuntu-2404-arm"
+x86_64-pc-windows-msvc = "blacksmith-2vcpu-windows-2025"
+
 [profile.dist]
 inherits = "release"
 lto = "thin"
