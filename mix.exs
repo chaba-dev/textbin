@@ -98,7 +98,7 @@ defmodule Textbin.MixProject do
       test: [
         "ecto.create --quiet",
         "ecto.migrate --quiet",
-        "cmd node --test assets/js/navigation_dialog_test.mjs",
+        "cmd node --test assets/js/navigation_dialog_test.mjs assets/js/dismissible_dropdowns_test.mjs",
         "test"
       ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
