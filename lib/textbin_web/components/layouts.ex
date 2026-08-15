@@ -271,6 +271,12 @@ defmodule TextbinWeb.Layouts do
           <.icon name="hero-building-office-2" class="size-4.5" /> Organization overview
         </.link>
         <.link
+          navigate={organization_workspaces_path(@scope.organization)}
+          class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
+        >
+          <.icon name="hero-squares-2x2" class="size-4.5" /> Manage workspaces
+        </.link>
+        <.link
           navigate={~p"/orgs"}
           class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
         >
@@ -357,6 +363,12 @@ defmodule TextbinWeb.Layouts do
               icon="hero-user-group"
               label="Manage members"
               active={@active == {:organization, :members}}
+            />
+            <.sidebar_link
+              navigate={organization_workspaces_path(@scope.organization)}
+              icon="hero-squares-2x2"
+              label="Manage workspaces"
+              active={@active == {:organization, :workspaces}}
             />
             <.sidebar_link
               navigate={organization_settings_path(@scope.organization)}
@@ -599,6 +611,7 @@ defmodule TextbinWeb.Layouts do
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
   defp organization_members_path(organization), do: "/o/#{organization.slug}/members"
+  defp organization_workspaces_path(organization), do: "/o/#{organization.slug}/workspaces"
   defp organization_settings_path(organization), do: "/o/#{organization.slug}/settings"
 
   defp workspace_path(organization, workspace, page),
