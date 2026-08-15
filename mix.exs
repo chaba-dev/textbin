@@ -95,7 +95,12 @@ defmodule Textbin.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       "ecto.migration": ["ecto.migrate", "ecto.dump"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      test: [
+        "ecto.create --quiet",
+        "ecto.migrate --quiet",
+        "cmd node --test assets/js/navigation_dialog_test.mjs",
+        "test"
+      ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind textbin", "esbuild textbin"],
       "assets.deploy": [

@@ -59,6 +59,7 @@
             yamllint
             pkg-config
             openssl
+            nodejs_22
             shfmt
             shellcheck
             git-cliff
