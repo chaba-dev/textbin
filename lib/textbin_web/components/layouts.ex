@@ -77,7 +77,7 @@ defmodule TextbinWeb.Layouts do
 
         <dialog
           id="mobile-navigation-dialog"
-          class="m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none border-0 border-r border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
+          class="m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none overflow-hidden border-0 border-r border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
           aria-label="Application navigation"
         >
           <div class="flex h-full min-h-0 flex-col p-4">
@@ -117,14 +117,18 @@ defmodule TextbinWeb.Layouts do
           </div>
         </aside>
 
-        <main id="application-content" class="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
+        <main
+          id="main-content"
+          tabindex="-1"
+          class="min-w-0 flex-1 scroll-mt-20 px-4 py-8 sm:px-6 lg:px-10 lg:py-10"
+        >
           <div class="mx-auto max-w-6xl space-y-4">
             {render_slot(@inner_block)}
           </div>
         </main>
       </div>
     <% else %>
-      <main class="px-4 py-20 sm:px-6 lg:px-8">
+      <main id="main-content" tabindex="-1" class="scroll-mt-20 px-4 py-20 sm:px-6 lg:px-8">
         <div class="mx-auto max-w-7xl space-y-4">
           {render_slot(@inner_block)}
         </div>
@@ -305,7 +309,7 @@ defmodule TextbinWeb.Layouts do
           <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
         </a>
       </div>
-      <div class="flex-none">
+      <div class="min-w-0 flex-none">
         <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">
           <%= unless @current_scope do %>
             <li>
@@ -315,10 +319,16 @@ defmodule TextbinWeb.Layouts do
           <li>
             <%= if @current_scope do %>
               <details class="relative">
-                <summary class="btn btn-ghost max-w-56 cursor-pointer list-none truncate">
-                  {account_label(@current_scope)}
+                <summary
+                  class="btn btn-ghost w-10 cursor-pointer list-none px-0 sm:w-auto sm:max-w-56 sm:px-4"
+                  aria-label={"Open account menu for #{account_label(@current_scope)}"}
+                >
+                  <.icon name="hero-user-circle" class="size-5 shrink-0" />
+                  <span class="sr-only sm:not-sr-only sm:truncate">
+                    {account_label(@current_scope)}
+                  </span>
                 </summary>
-                <div class="absolute right-0 z-20 mt-2 w-56 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+                <div class="absolute right-0 z-20 mt-2 max-h-[calc(100dvh-5rem)] w-[min(14rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
                   <div class="truncate px-3 py-2 text-xs text-base-content/60">
                     {account_label(@current_scope)}
                   </div>

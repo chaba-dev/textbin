@@ -62,6 +62,7 @@ const NavigationDialog = {
   mounted() {
     const dialogId = this.el.dataset.dialogId
     this.returnFocusTo = null
+    this.desktopViewport = window.matchMedia("(min-width: 64rem)")
 
     this.dialog = () => document.getElementById(dialogId)
 
@@ -113,13 +114,21 @@ const NavigationDialog = {
       if (event.target.id === dialogId) this.finishClose()
     }
 
+    this.handleViewportChange = event => {
+      const dialog = this.dialog()
+
+      if (event.matches && dialog?.open) dialog.close()
+    }
+
     document.addEventListener("click", this.handleClick)
     document.addEventListener("close", this.handleClose, true)
+    this.desktopViewport.addEventListener("change", this.handleViewportChange)
   },
 
   destroyed() {
     document.removeEventListener("click", this.handleClick)
     document.removeEventListener("close", this.handleClose, true)
+    this.desktopViewport.removeEventListener("change", this.handleViewportChange)
     this.finishClose()
   },
 }

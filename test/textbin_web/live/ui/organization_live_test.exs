@@ -111,7 +111,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
              "button#mobile-sidebar-open[aria-controls='mobile-navigation-dialog'][aria-expanded='false'][data-navigation-dialog-open]"
            )
 
-    assert has_element?(view, "dialog#mobile-navigation-dialog")
+    assert has_element?(view, "dialog#mobile-navigation-dialog.overflow-hidden")
 
     assert has_element?(
              view,
@@ -119,6 +119,12 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
            )
 
     refute has_element?(view, "input#mobile-sidebar-toggle")
+  end
+
+  test "application shell exposes a keyboard focus target for bypass navigation", context do
+    {:ok, view, _html} = live(context.conn, organization_path(context.organization))
+
+    assert has_element?(view, "main#main-content[tabindex='-1']")
   end
 
   test "organization menu remains scrollable and identifies its active destination", context do
