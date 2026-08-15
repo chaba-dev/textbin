@@ -41,6 +41,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
   test "requires authentication", context do
     for path <- [
           "/orgs",
+          "/orgs/new",
           organization_path(context.organization),
           organization_members_path(context.organization),
           organization_settings_path(context.organization)
@@ -56,6 +57,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     personal_organization = Organizations.get_personal_organization!(context.owner)
 
     assert has_element?(view, "#organizations-index")
+    assert has_element?(view, "#new-organization-link[href='/orgs/new']")
 
     assert has_element?(
              view,
@@ -68,6 +70,58 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
              "#organizations-list a[href='#{organization_path(personal_organization)}']",
              personal_organization.name
            )
+  end
+
+  test "creates a team organization", context do
+    slug = "product-team-#{System.unique_integer([:positive])}"
+    {:ok, view, _html} = live(context.conn, "/orgs/new")
+
+    assert has_element?(view, "#new-organization-page")
+    assert has_element?(view, "#organization-form")
+    assert has_element?(view, "#back-to-organizations[href='/orgs']")
+
+    view
+    |> form("#organization-form", %{
+      "organization" => %{"name" => "Product Team", "slug" => slug}
+    })
+    |> render_submit()
+
+    assert_redirect(view, "/o/#{slug}")
+
+    assert {:ok, scope} =
+             Organizations.resolve_organization_scope_by_slug(context.owner_scope, slug)
+
+    assert scope.organization.name == "Product Team"
+    assert scope.organization.kind == "team"
+    assert scope.organization_membership.role == "owner"
+
+    assert Enum.any?(
+             Organizations.list_joined_workspaces(scope, scope.organization),
+             & &1.is_default
+           )
+  end
+
+  test "validates organization details and preserves server errors", context do
+    {:ok, view, _html} = live(context.conn, "/orgs/new")
+
+    view
+    |> form("#organization-form", %{
+      "organization" => %{"name" => "Product Team", "slug" => "Not Valid"}
+    })
+    |> render_change()
+
+    assert has_element?(view, "#organization-form", "has invalid format")
+
+    view
+    |> form("#organization-form", %{
+      "organization" => %{
+        "name" => "Duplicate organization",
+        "slug" => context.organization.slug
+      }
+    })
+    |> render_submit()
+
+    assert has_element?(view, "#organization-form", "has already been taken")
   end
 
   test "sidebar keeps a long workspace list scrollable", context do

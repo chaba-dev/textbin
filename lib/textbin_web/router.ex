@@ -80,6 +80,7 @@ defmodule TextbinWeb.Router do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
       live "/orgs", UI.OrganizationLive, :index
+      live "/orgs/new", UI.OrganizationLive, :new
       live "/o/:organization_slug", UI.OrganizationLive, :show
       live "/o/:organization_slug/members", UI.OrganizationLive, :members
       live "/o/:organization_slug/settings", UI.OrganizationLive, :settings
