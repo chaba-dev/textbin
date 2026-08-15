@@ -38,6 +38,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {:ok, view, _html} = live(recycle(conn), path)
 
     assert has_element?(view, "#paste-form")
+    assert has_element?(view, "#pastes-heading.sr-only", "Pastes")
     assert has_element?(view, "#paste_audience[disabled] option[value='unlisted']")
     refute has_element?(view, "#organization-overview-link")
 
