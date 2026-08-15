@@ -24,6 +24,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/textbin"
 import topbar from "../vendor/topbar"
+import {installDismissibleDropdowns} from "./dismissible_dropdowns.mjs"
 import NavigationDialog from "./navigation_dialog.mjs"
 
 const CopyToClipboard = {
@@ -65,6 +66,8 @@ const liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
   hooks: {...colocatedHooks, CopyToClipboard, NavigationDialog},
 })
+
+installDismissibleDropdowns(document)
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})

@@ -190,6 +190,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
   test "organization menu remains scrollable and identifies its active destination", context do
     {:ok, overview_view, _html} = live(context.conn, organization_path(context.organization))
 
+    assert has_element?(overview_view, "#organization-menu[data-dropdown]")
     assert has_element?(overview_view, "#organization-menu-panel.overflow-y-auto")
 
     assert has_element?(
