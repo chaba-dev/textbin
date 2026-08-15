@@ -72,7 +72,7 @@ Review the generated version, changelog, notes, and comparison. Do not manually
 edit the generated release branch; the next `main` push replaces it.
 
 The release PR uses `dist` to build and execute the packaged CLI for Linux
-x86-64 and ARM64, macOS Intel and Apple Silicon, and Windows x86-64. Separate
+x86-64 and ARM64, macOS Apple Silicon, and Windows x86-64. Separate
 container checks build and execute the production server image for
 `linux/amd64` and `linux/arm64`. Every artifact must report the version in the
 release PR title. Require the stable aggregate checks **CLI release gate** and
@@ -123,13 +123,12 @@ truth for both release-PR dry runs and tagged releases:
 |----------|-------------|---------|
 | Linux x86-64 | `x86_64-unknown-linux-gnu` | `.tar.xz` |
 | Linux ARM64 | `aarch64-unknown-linux-gnu` | `.tar.xz` |
-| macOS Intel | `x86_64-apple-darwin` | `.tar.xz` |
 | macOS Apple Silicon | `aarch64-apple-darwin` | `.tar.xz` |
 | Windows x86-64 | `x86_64-pc-windows-msvc` | `.zip` |
 
 The GitHub Release also contains per-archive checksums, a combined checksum
-file, and shell and PowerShell installers. Windows ARM64 and 32-bit platforms
-are not currently release targets.
+file, and shell and PowerShell installers. Intel macOS, Windows ARM64, and
+32-bit platforms are not currently release targets.
 
 ## Local preview
 

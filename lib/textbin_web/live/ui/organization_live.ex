@@ -20,6 +20,13 @@ defmodule TextbinWeb.UI.OrganizationLive do
      )}
   end
 
+  def handle_params(_params, _uri, %{assigns: %{live_action: :new}} = socket) do
+    {:noreply,
+     socket
+     |> assign(:page_title, "Create organization")
+     |> assign_organization_form()}
+  end
+
   def handle_params(%{"organization_slug" => organization_slug}, _uri, socket) do
     scope = resolve_organization_scope!(socket.assigns.current_scope, organization_slug)
     workspaces = Organizations.list_joined_workspaces(scope, scope.organization)
@@ -61,6 +68,39 @@ defmodule TextbinWeb.UI.OrganizationLive do
   end
 
   @impl true
+  def handle_event(
+        "validate_organization",
+        %{"organization" => organization_params},
+        %{assigns: %{live_action: :new}} = socket
+      ) do
+    form =
+      %Organization{kind: "team"}
+      |> Organization.changeset(organization_params)
+      |> to_form(action: :validate)
+
+    {:noreply, assign(socket, :organization_form, form)}
+  end
+
+  def handle_event(
+        "create_organization",
+        %{"organization" => organization_params},
+        %{assigns: %{live_action: :new}} = socket
+      ) do
+    case Organizations.create_organization(socket.assigns.current_scope, organization_params) do
+      {:ok, organization} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Organization created")
+         |> push_navigate(to: organization_path(organization))}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :organization_form, to_form(changeset, action: :insert))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Organization could not be created")}
+    end
+  end
+
   def handle_event(
         "add_member",
         %{"member" => %{"email" => email}},
@@ -162,12 +202,23 @@ defmodule TextbinWeb.UI.OrganizationLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div id="organizations-index" class="space-y-8">
-        <header class="max-w-2xl">
-          <p class="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Account</p>
-          <h1 class="mt-2 text-3xl font-semibold tracking-tight text-base-content">Organizations</h1>
-          <p class="mt-3 text-sm leading-6 text-base-content/60">
-            Choose an organization to view its workspaces and manage access.
-          </p>
+        <header class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div class="max-w-2xl">
+            <p class="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Account</p>
+            <h1 class="mt-2 text-3xl font-semibold tracking-tight text-base-content">
+              Organizations
+            </h1>
+            <p class="mt-3 text-sm leading-6 text-base-content/60">
+              Choose an organization to view its workspaces and manage access.
+            </p>
+          </div>
+          <.link
+            id="new-organization-link"
+            navigate={~p"/orgs/new"}
+            class="btn btn-primary w-full sm:w-auto"
+          >
+            <.icon name="hero-plus" class="size-4" /> New organization
+          </.link>
         </header>
 
         <div
@@ -203,6 +254,97 @@ defmodule TextbinWeb.UI.OrganizationLive do
               />
             </div>
           </.link>
+        </div>
+      </div>
+    </Layouts.app>
+    """
+  end
+
+  def render(%{live_action: :new} = assigns) do
+    ~H"""
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <div id="new-organization-page" class="mx-auto max-w-5xl">
+        <.link
+          id="back-to-organizations"
+          navigate={~p"/orgs"}
+          class="group inline-flex items-center gap-2 text-sm font-medium text-base-content/60 transition hover:text-base-content"
+        >
+          <.icon
+            name="hero-arrow-left"
+            class="size-4 transition group-hover:-translate-x-0.5"
+          /> Organizations
+        </.link>
+
+        <div class="mt-6 grid overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm lg:grid-cols-[0.8fr_1.2fr]">
+          <aside class="border-b border-base-300 bg-base-200/50 p-5 sm:p-8 lg:border-b-0 lg:border-r">
+            <div class="flex items-center gap-3">
+              <div class="flex size-10 items-center justify-center rounded-xl bg-primary/12 text-primary sm:size-12 sm:rounded-2xl">
+                <.icon name="hero-building-office-2" class="size-5 sm:size-6" />
+              </div>
+              <p class="text-sm font-semibold uppercase tracking-[0.14em] text-primary">
+                Team space
+              </p>
+            </div>
+            <h1 class="mt-5 text-2xl font-semibold tracking-tight text-base-content sm:mt-8 sm:text-3xl">
+              Create an organization
+            </h1>
+            <p class="mt-3 text-sm leading-6 text-base-content/60 sm:mt-4">
+              Bring people and workspaces together under one shared organization. You’ll become
+              its owner and can invite teammates next.
+            </p>
+            <div class="mt-8 hidden items-start gap-3 rounded-xl border border-base-300 bg-base-100/70 p-4 lg:flex">
+              <.icon name="hero-squares-2x2" class="mt-0.5 size-5 shrink-0 text-primary" />
+              <p class="text-sm leading-6 text-base-content/60">
+                A default workspace is created automatically so your team can start immediately.
+              </p>
+            </div>
+          </aside>
+
+          <section class="p-6 sm:p-8 lg:p-10">
+            <div class="max-w-xl">
+              <h2 class="text-lg font-semibold text-base-content">Organization details</h2>
+              <p class="mt-1 text-sm text-base-content/60">
+                Choose a recognizable name and a URL-friendly slug.
+              </p>
+
+              <.form
+                for={@organization_form}
+                id="organization-form"
+                phx-change="validate_organization"
+                phx-submit="create_organization"
+                class="mt-7 space-y-5"
+              >
+                <.input
+                  field={@organization_form[:name]}
+                  type="text"
+                  label="Organization name"
+                  placeholder="Acme Engineering"
+                  autocomplete="organization"
+                  required
+                />
+                <div>
+                  <.input
+                    field={@organization_form[:slug]}
+                    type="text"
+                    label="Slug"
+                    placeholder="acme-engineering"
+                    spellcheck="false"
+                    required
+                  />
+                  <p class="mt-1.5 text-xs leading-5 text-base-content/50">
+                    Use lowercase letters, numbers, and hyphens. Your organization will live at <span class="font-mono text-base-content/70">/o/your-slug</span>.
+                  </p>
+                </div>
+
+                <div class="flex flex-col-reverse gap-3 pt-3 sm:flex-row sm:justify-end">
+                  <.link navigate={~p"/orgs"} class="btn btn-ghost">Cancel</.link>
+                  <.button variant="primary" phx-disable-with="Creating...">
+                    Create organization
+                  </.button>
+                </div>
+              </.form>
+            </div>
+          </section>
         </div>
       </div>
     </Layouts.app>
@@ -491,6 +633,11 @@ defmodule TextbinWeb.UI.OrganizationLive do
   end
 
   defp role_action_label(role), do: "Make #{role}"
+
+  defp assign_organization_form(socket) do
+    form = %Organization{kind: "team"} |> Organization.changeset(%{}) |> to_form()
+    assign(socket, :organization_form, form)
+  end
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
 
