@@ -137,9 +137,23 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
              "More"
            )
 
-    assert has_element?(view, "dialog#mobile-navigation-dialog.overflow-hidden")
-    assert has_element?(view, "#mobile-navigation-title", "Navigation")
+    assert has_element?(view, "dialog#mobile-navigation-dialog.overflow-hidden.rounded-2xl")
+    assert has_element?(view, "#mobile-navigation-title", "More")
     assert has_element?(view, "#mobile-sidebar-navigation.h-auto")
+    assert has_element?(view, "#mobile-organization-context", context.organization.name)
+    refute has_element?(view, "#mobile-organization-icon")
+
+    assert has_element?(
+             view,
+             "#mobile-account-navigation a[href='/users/settings']",
+             "Account settings"
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-account-navigation a[href='/users/log-out']",
+             "Log out"
+           )
 
     assert has_element?(
              view,

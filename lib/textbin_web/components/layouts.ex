@@ -56,10 +56,10 @@ defmodule TextbinWeb.Layouts do
         >
         </div>
 
-        <div class="flex shrink-0 items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-3 lg:hidden">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <.icon name="hero-building-office-2" class="size-4.5" />
-          </div>
+        <div
+          id="mobile-organization-context"
+          class="flex shrink-0 items-center border-b border-base-300 bg-base-100 px-4 py-3 lg:hidden"
+        >
           <div class="min-w-0">
             <p class="truncate text-sm font-semibold text-base-content">
               {@current_scope.organization.name}
@@ -72,13 +72,13 @@ defmodule TextbinWeb.Layouts do
 
         <dialog
           id="mobile-navigation-dialog"
-          class="m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none overflow-hidden border-0 border-r border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
+          class="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] top-auto m-0 h-[min(72dvh,40rem)] max-h-[calc(100dvh-6rem)] w-auto max-w-none overflow-hidden rounded-2xl border border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
           aria-labelledby="mobile-navigation-title"
         >
           <div class="flex h-full min-h-0 flex-col p-4">
             <div class="mb-3 flex items-center justify-between gap-3">
               <p id="mobile-navigation-title" class="text-sm font-semibold text-base-content">
-                Navigation
+                More
               </p>
               <button
                 type="button"
@@ -365,6 +365,40 @@ defmodule TextbinWeb.Layouts do
           </div>
         </div>
       </div>
+
+      <section
+        :if={@compact}
+        id="mobile-account-navigation"
+        class="border-t border-base-300 pt-5"
+        aria-labelledby="mobile-account-heading"
+      >
+        <div class="flex items-center justify-between gap-3 px-2">
+          <div class="min-w-0">
+            <p id="mobile-account-heading" class="text-xs font-semibold text-base-content/55">
+              Account
+            </p>
+            <p class="mt-1 truncate text-sm font-medium text-base-content">
+              {account_label(@scope)}
+            </p>
+          </div>
+          <.theme_toggle />
+        </div>
+        <div class="mt-3 space-y-1">
+          <.link
+            href={~p"/users/settings"}
+            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
+          >
+            <.icon name="hero-user-circle" class="size-4.5" /> Account settings
+          </.link>
+          <.link
+            href={~p"/users/log-out"}
+            method="delete"
+            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-error transition hover:bg-error/10"
+          >
+            <.icon name="hero-arrow-right-start-on-rectangle" class="size-4.5" /> Log out
+          </.link>
+        </div>
+      </section>
     </nav>
     """
   end
@@ -408,7 +442,10 @@ defmodule TextbinWeb.Layouts do
           <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
         </a>
       </div>
-      <div class="min-w-0 flex-none">
+      <div class={[
+        "min-w-0 flex-none",
+        application_shell?(@current_scope) && "hidden lg:block"
+      ]}>
         <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">
           <%= unless @current_scope do %>
             <li>
