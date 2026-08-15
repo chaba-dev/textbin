@@ -72,6 +72,24 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
              view,
              "#sidebar-navigation a[href='#{workspace_path(context, "settings")}']"
            )
+
+    assert has_element?(
+             view,
+             "#mobile-bottom-navigation a[href='#{workspace_path(context, "pastes")}']",
+             "Pastes"
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-bottom-navigation a[href='#{workspace_path(context, "members")}'][aria-current='page']",
+             "Members"
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-bottom-navigation a[href='#{workspace_path(context, "settings")}']",
+             "Settings"
+           )
   end
 
   test "workspace owners add, promote, and remove members", context do
