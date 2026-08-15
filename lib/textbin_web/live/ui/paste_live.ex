@@ -103,13 +103,6 @@ defmodule TextbinWeb.UI.PasteLive do
     end
   end
 
-  def handle_event("switch_workspace", %{"workspace" => %{"id" => workspace_id}}, socket) do
-    case Map.fetch(socket.assigns.workspace_destinations, workspace_id) do
-      {:ok, path} -> {:noreply, push_navigate(socket, to: path)}
-      :error -> {:noreply, socket}
-    end
-  end
-
   def handle_event("validate", %{"paste" => paste_params}, socket) do
     form =
       socket.assigns.current_scope
@@ -156,34 +149,16 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   defp assign_workspace_navigation(socket, scope) do
-    workspaces =
-      scope
-      |> Organizations.list_available_organizations()
-      |> Enum.flat_map(fn organization ->
-        Enum.map(Organizations.list_joined_workspaces(scope, organization), &{organization, &1})
-      end)
-
-    workspace_options =
-      Enum.map(workspaces, fn {organization, workspace} ->
-        {"#{organization.name} / #{workspace.name}", workspace.id}
-      end)
-
-    workspace_destinations =
-      Map.new(workspaces, fn {organization, workspace} ->
-        {workspace.id, workspace_pastes_path(organization.slug, workspace.slug)}
-      end)
-
     socket
     |> assign(:current_scope, scope)
-    |> assign(:workspace_options, workspace_options)
-    |> assign(:workspace_destinations, workspace_destinations)
-    |> assign(:workspace_switcher_form, to_form(%{"id" => scope.workspace.id}, as: :workspace))
+    |> assign(:navigation_workspaces, navigation_workspaces(scope))
   end
 
   defp show_paste(socket, scope, paste) do
     {:noreply,
      socket
      |> assign(:current_scope, scope)
+     |> assign(:navigation_workspaces, navigation_workspaces(scope))
      |> assign(:page_title, "Paste #{paste.id}")
      |> assign(:paste, paste)
      |> assign(:text_content?, text_content?(paste))
@@ -200,14 +175,6 @@ defmodule TextbinWeb.UI.PasteLive do
 
   defp paste_index_path(_scope), do: ~p"/pastes"
 
-  defp workspace_members_path(%{organization: organization, workspace: workspace}),
-    do: "/w/#{organization.slug}/#{workspace.slug}/members"
-
-  defp workspace_settings_path(%{organization: organization, workspace: workspace}),
-    do: "/w/#{organization.slug}/#{workspace.slug}/settings"
-
-  defp organization_path(organization), do: "/o/#{organization.slug}"
-
   defp resolve_shared_paste_scope(nil, _paste), do: nil
 
   defp resolve_shared_paste_scope(scope, paste) do
@@ -216,6 +183,12 @@ defmodule TextbinWeb.UI.PasteLive do
       {:error, :not_found} -> scope
     end
   end
+
+  defp navigation_workspaces(%{organization: organization} = scope)
+       when not is_nil(organization),
+       do: Organizations.list_joined_workspaces(scope, organization)
+
+  defp navigation_workspaces(_scope), do: []
 
   defp assign_paste_form(socket) do
     new_paste = Pastes.prepare_paste(socket.assigns.current_scope)

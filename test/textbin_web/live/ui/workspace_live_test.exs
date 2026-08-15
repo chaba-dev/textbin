@@ -65,12 +65,12 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
 
     assert has_element?(
              view,
-             "#workspace-page-navigation a[href='#{workspace_path(context, "pastes")}']"
+             "#sidebar-navigation a[href='#{workspace_path(context, "pastes")}']"
            )
 
     assert has_element?(
              view,
-             "#workspace-page-navigation a[href='#{workspace_path(context, "settings")}']"
+             "#sidebar-navigation a[href='#{workspace_path(context, "settings")}']"
            )
   end
 

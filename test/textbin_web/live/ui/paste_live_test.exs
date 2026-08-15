@@ -78,7 +78,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     assert has_element?(
              view,
-             "#organization-overview-link[href='/o/#{organization.slug}']"
+             "#organization-menu a[href='/o/#{organization.slug}']"
            )
 
     assert has_element?(view, "##{stream_id(paste)}", paste.id)
@@ -171,7 +171,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     refute Repo.get_by(Paste, workspace_id: workspace.id, data: "created after revocation")
   end
 
-  test "switching workspaces navigates to a server-owned URL and clears the previous stream", %{
+  test "sidebar workspace navigation loads the selected workspace", %{
     conn: conn,
     scope: scope
   } do
@@ -186,19 +186,20 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     {:ok, view, _html} = live(conn, workspace_path(organization, first_workspace))
     assert has_element?(view, "##{stream_id(first_paste)}")
 
+    destination = workspace_path(organization, second_workspace)
+
     redirect =
       view
-      |> form("#workspace-switcher", %{"workspace" => %{"id" => second_workspace.id}})
-      |> render_change()
+      |> element("#sidebar-navigation-workspaces a[href='#{destination}']")
+      |> render_click()
 
-    destination = workspace_path(organization, second_workspace)
     assert_redirect(view, destination)
     {:ok, switched_view, _html} = follow_redirect(redirect, conn, destination)
     assert has_element?(switched_view, "##{stream_id(second_paste)}")
     refute has_element?(switched_view, "##{stream_id(first_paste)}")
   end
 
-  test "workspace navigation includes joined workspaces across organizations but not unjoined ones",
+  test "organization index switches organizations and the sidebar lists only joined workspaces",
        %{
          conn: conn,
          scope: scope
@@ -222,15 +223,23 @@ defmodule TextbinWeb.UI.PasteLiveTest do
         is_default: false
       })
 
-    # Removing the creator memberships simulates workspaces visible through
-    # discovery but unavailable in the active workspace switcher.
+    # Removing the creator memberships simulates discoverable workspaces that
+    # must remain unavailable in the active organization's sidebar.
     Repo.delete_all(Ecto.assoc(hidden_open, :memberships))
 
+    {:ok, organizations_view, _html} = live(conn, "/orgs")
+
+    assert has_element?(
+             organizations_view,
+             "#organizations-list a[href='/o/#{organization.slug}']",
+             "Navigation team"
+           )
+
     {:ok, view, _html} = live(conn, workspace_path(organization, default_workspace))
-    assert has_element?(view, "#workspace-switcher option", "Personal / Default")
-    assert has_element?(view, "#workspace-switcher option", "Navigation team / Default")
-    refute has_element?(view, "#workspace-switcher option[value='#{hidden_open.id}']")
-    refute has_element?(view, "#workspace-switcher option[value='#{hidden_private.id}']")
+    assert has_element?(view, "#sidebar-navigation-workspaces", "Default")
+    refute has_element?(view, "#sidebar-navigation-workspaces", "Personal")
+    refute has_element?(view, "#sidebar-navigation-workspaces", "Discoverable")
+    refute has_element?(view, "#sidebar-navigation-workspaces", "Hidden")
 
     for workspace <- [hidden_open, hidden_private] do
       assert_raise Ecto.NoResultsError, fn ->

@@ -9,17 +9,29 @@ defmodule TextbinWeb.UI.OrganizationLive do
   def mount(_params, _session, socket), do: {:ok, socket}
 
   @impl true
+  def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
+    {:noreply,
+     socket
+     |> assign(:page_title, "Organizations")
+     |> stream(
+       :organizations,
+       Organizations.list_available_organizations(socket.assigns.current_scope),
+       reset: true
+     )}
+  end
+
   def handle_params(%{"organization_slug" => organization_slug}, _uri, socket) do
     scope = resolve_organization_scope!(socket.assigns.current_scope, organization_slug)
+    workspaces = Organizations.list_joined_workspaces(scope, scope.organization)
 
     socket =
       socket
       |> assign(:current_scope, scope)
       |> assign(:page_title, scope.organization.name)
+      |> assign(:navigation_workspaces, workspaces)
 
     case socket.assigns.live_action do
       :show ->
-        workspaces = Organizations.list_joined_workspaces(scope, scope.organization)
         {:noreply, stream(socket, :workspaces, workspaces, reset: true)}
 
       :members ->
@@ -146,11 +158,67 @@ defmodule TextbinWeb.UI.OrganizationLive do
   def handle_event("update_settings", _params, socket), do: {:noreply, socket}
 
   @impl true
-  def render(%{live_action: :show} = assigns) do
+  def render(%{live_action: :index} = assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <div id="organizations-index" class="space-y-8">
+        <header class="max-w-2xl">
+          <p class="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Account</p>
+          <h1 class="mt-2 text-3xl font-semibold tracking-tight text-base-content">Organizations</h1>
+          <p class="mt-3 text-sm leading-6 text-base-content/60">
+            Choose an organization to view its workspaces and manage access.
+          </p>
+        </header>
+
+        <div
+          id="organizations-list"
+          phx-update="stream"
+          class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          <div
+            id="organizations-empty"
+            class="hidden rounded-xl border border-dashed border-base-300 p-10 text-center text-sm text-base-content/55 only:block sm:col-span-2 lg:col-span-3"
+          >
+            You do not belong to any organizations.
+          </div>
+          <.link
+            :for={{id, organization} <- @streams.organizations}
+            id={id}
+            navigate={organization_path(organization)}
+            class="group rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+          >
+            <div class="flex items-start gap-4">
+              <div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <.icon name="hero-building-office-2" class="size-5" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <h2 class="truncate font-semibold text-base-content">{organization.name}</h2>
+                <p class="mt-1 truncate font-mono text-xs text-base-content/45">
+                  /o/{organization.slug}
+                </p>
+              </div>
+              <.icon
+                name="hero-arrow-right"
+                class="mt-1 size-4 text-base-content/30 transition group-hover:translate-x-0.5 group-hover:text-primary"
+              />
+            </div>
+          </.link>
+        </div>
+      </div>
+    </Layouts.app>
+    """
+  end
+
+  def render(%{live_action: :show} = assigns) do
+    ~H"""
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_workspaces={@navigation_workspaces}
+      active_navigation={{:organization, :overview}}
+    >
       <div id="organization-overview" class="space-y-8">
-        <.organization_header scope={@current_scope} active={:overview} />
+        <.organization_header scope={@current_scope} title="Overview" />
 
         <section class="rounded-xl border border-base-300 bg-base-100 shadow-sm">
           <div class="border-b border-base-300 px-5 py-4 sm:px-6">
@@ -217,9 +285,14 @@ defmodule TextbinWeb.UI.OrganizationLive do
 
   def render(%{live_action: :members} = assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_workspaces={@navigation_workspaces}
+      active_navigation={{:organization, :members}}
+    >
       <div id="organization-members-page" class="space-y-8">
-        <.organization_header scope={@current_scope} active={:members} />
+        <.organization_header scope={@current_scope} title="Members" />
 
         <section
           :if={@organization_manager?}
@@ -306,9 +379,14 @@ defmodule TextbinWeb.UI.OrganizationLive do
 
   def render(%{live_action: :settings} = assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_workspaces={@navigation_workspaces}
+      active_navigation={{:organization, :settings}}
+    >
       <div id="organization-settings-page" class="space-y-8">
-        <.organization_header scope={@current_scope} active={:settings} />
+        <.organization_header scope={@current_scope} title="Settings" />
 
         <section class="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm sm:p-6">
           <div class="mb-6">
@@ -365,65 +443,20 @@ defmodule TextbinWeb.UI.OrganizationLive do
   end
 
   attr :scope, :map, required: true
-  attr :active, :atom, required: true
+  attr :title, :string, required: true
 
   defp organization_header(assigns) do
     ~H"""
-    <header class="space-y-5">
-      <div class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div class="flex items-start gap-4">
-          <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <.icon name="hero-building-office-2" class="size-6" />
-          </div>
-          <div>
-            <p class="text-sm font-medium uppercase tracking-wide text-base-content/55">
-              {organization_kind_label(@scope.organization)}
-            </p>
-            <h1
-              id="organization-heading"
-              class="mt-1 text-3xl font-semibold tracking-tight text-base-content"
-            >
-              {@scope.organization.name}
-            </h1>
-            <p class="mt-2 font-mono text-sm text-base-content/55">
-              /o/{@scope.organization.slug}
-            </p>
-          </div>
-        </div>
-        <span class="badge badge-outline capitalize">
-          {@scope.organization_membership.role}
-        </span>
+    <header>
+      <div>
+        <p class="text-sm font-medium text-base-content/55">{@scope.organization.name}</p>
+        <h1
+          id="organization-heading"
+          class="mt-1 text-3xl font-semibold tracking-tight text-base-content"
+        >
+          {@title}
+        </h1>
       </div>
-
-      <nav id="organization-navigation" class="flex flex-wrap gap-2" aria-label="Organization">
-        <.link
-          navigate={organization_path(@scope.organization)}
-          class={[
-            "btn btn-sm",
-            if(@active == :overview, do: "btn-primary", else: "btn-ghost")
-          ]}
-        >
-          Overview
-        </.link>
-        <.link
-          navigate={organization_members_path(@scope.organization)}
-          class={[
-            "btn btn-sm",
-            if(@active == :members, do: "btn-primary", else: "btn-ghost")
-          ]}
-        >
-          Members
-        </.link>
-        <.link
-          navigate={organization_settings_path(@scope.organization)}
-          class={[
-            "btn btn-sm",
-            if(@active == :settings, do: "btn-primary", else: "btn-ghost")
-          ]}
-        >
-          Settings
-        </.link>
-      </nav>
     </header>
     """
   end
@@ -434,9 +467,6 @@ defmodule TextbinWeb.UI.OrganizationLive do
       {:error, :not_found} -> raise Ecto.NoResultsError, queryable: Organization
     end
   end
-
-  defp organization_kind_label(%Organization{kind: "personal"}), do: "Personal organization"
-  defp organization_kind_label(_organization), do: "Organization"
 
   defp available_role_changes(
          %{user: %{id: actor_id}, organization_membership: %{role: "owner"}},
@@ -463,8 +493,6 @@ defmodule TextbinWeb.UI.OrganizationLive do
   defp role_action_label(role), do: "Make #{role}"
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
-  defp organization_members_path(organization), do: "/o/#{organization.slug}/members"
-  defp organization_settings_path(organization), do: "/o/#{organization.slug}/settings"
 
   defp workspace_path(organization, workspace),
     do: "/w/#{organization.slug}/#{workspace.slug}/pastes"

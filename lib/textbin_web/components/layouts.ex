@@ -31,17 +31,262 @@ defmodule TextbinWeb.Layouts do
     default: nil,
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
 
+  attr :navigation_workspaces, :list,
+    default: [],
+    doc: "workspaces available in the active organization"
+
+  attr :active_navigation, :any,
+    default: nil,
+    doc: "the active organization or workspace navigation destination"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-7xl space-y-4">
-        {render_slot(@inner_block)}
+    <%= if application_shell?(@current_scope) do %>
+      <div id="application-shell" class="min-h-[calc(100vh-4rem)] bg-base-200/45 lg:flex">
+        <div
+          id="navigation-dialog-controller"
+          phx-hook="NavigationDialog"
+          phx-update="ignore"
+          data-dialog-id="mobile-navigation-dialog"
+        >
+        </div>
+
+        <div class="flex items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-3 lg:hidden">
+          <button
+            type="button"
+            id="mobile-sidebar-open"
+            class="btn btn-square btn-ghost btn-sm"
+            aria-label="Open navigation"
+            aria-controls="mobile-navigation-dialog"
+            aria-expanded="false"
+            data-navigation-dialog-open
+          >
+            <.icon name="hero-bars-3" class="size-5" />
+          </button>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold text-base-content">
+              {@current_scope.organization.name}
+            </p>
+            <p :if={@current_scope.workspace} class="truncate text-xs text-base-content/55">
+              {@current_scope.workspace.name}
+            </p>
+          </div>
+        </div>
+
+        <dialog
+          id="mobile-navigation-dialog"
+          class="m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none border-0 border-r border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
+          aria-label="Application navigation"
+        >
+          <div class="flex h-full min-h-0 flex-col p-4">
+            <div class="mb-3 flex justify-end">
+              <button
+                type="button"
+                class="btn btn-square btn-ghost btn-sm"
+                aria-label="Close navigation"
+                data-navigation-dialog-close
+                autofocus
+              >
+                <.icon name="hero-x-mark" class="size-5" />
+              </button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-visible">
+              <.application_sidebar
+                id="mobile-sidebar-navigation"
+                scope={@current_scope}
+                workspaces={@navigation_workspaces}
+                active={@active_navigation}
+              />
+            </div>
+          </div>
+        </dialog>
+
+        <aside
+          id="application-sidebar"
+          class="sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col border-r border-base-300 bg-base-100 p-5 lg:flex"
+        >
+          <div class="min-h-0 flex-1 overflow-visible">
+            <.application_sidebar
+              id="sidebar-navigation"
+              scope={@current_scope}
+              workspaces={@navigation_workspaces}
+              active={@active_navigation}
+            />
+          </div>
+        </aside>
+
+        <main id="application-content" class="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
+          <div class="mx-auto max-w-6xl space-y-4">
+            {render_slot(@inner_block)}
+          </div>
+        </main>
       </div>
-    </main>
+    <% else %>
+      <main class="px-4 py-20 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-7xl space-y-4">
+          {render_slot(@inner_block)}
+        </div>
+      </main>
+    <% end %>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :scope, :map, required: true
+  attr :workspaces, :list, required: true
+  attr :active, :any, default: nil
+
+  defp application_sidebar(assigns) do
+    ~H"""
+    <nav id={@id} class="flex h-full min-h-0 flex-col" aria-label="Application">
+      <div class="border-b border-base-300 pb-5">
+        <details id={organization_menu_id(@id)} class="group relative">
+          <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl p-2 transition hover:bg-base-200">
+            <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+              <.icon name="hero-building-office-2" class="size-5" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-semibold text-base-content">{@scope.organization.name}</p>
+              <p class="mt-0.5 truncate font-mono text-xs text-base-content/45">
+                /o/{@scope.organization.slug}
+              </p>
+            </div>
+            <.icon
+              name="hero-chevron-down"
+              class="size-4 shrink-0 text-base-content/40 transition group-open:rotate-180"
+            />
+          </summary>
+          <div
+            id={organization_menu_panel_id(@id)}
+            class="absolute left-0 right-0 z-20 mt-2 max-h-[min(20rem,calc(100dvh-8rem))] overflow-y-auto overscroll-contain rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl"
+          >
+            <p class="px-3 py-2 text-xs font-medium capitalize text-base-content/50">
+              {@scope.organization_membership.role}
+            </p>
+            <.sidebar_link
+              navigate={organization_path(@scope.organization)}
+              icon="hero-squares-2x2"
+              label="Overview"
+              active={@active == {:organization, :overview}}
+            />
+            <.sidebar_link
+              navigate={organization_members_path(@scope.organization)}
+              icon="hero-user-group"
+              label="Manage members"
+              active={@active == {:organization, :members}}
+            />
+            <.sidebar_link
+              navigate={organization_settings_path(@scope.organization)}
+              icon="hero-cog-6-tooth"
+              label="Organization settings"
+              active={@active == {:organization, :settings}}
+            />
+            <div class="my-1 border-t border-base-300"></div>
+            <.link
+              navigate={~p"/orgs"}
+              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
+            >
+              <.icon name="hero-arrows-right-left" class="size-4" /> Switch organization
+            </.link>
+          </div>
+        </details>
+      </div>
+
+      <div class="flex min-h-0 flex-1 flex-col py-5">
+        <div class="mb-2 flex items-center justify-between gap-3 px-2">
+          <p class="text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/40">
+            Workspaces
+          </p>
+          <span class="rounded-full bg-base-200 px-2 py-0.5 text-[0.6875rem] font-semibold text-base-content/50">
+            {length(@workspaces)}
+          </span>
+        </div>
+        <div
+          id={"#{@id}-workspaces"}
+          class="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1"
+        >
+          <p :if={@workspaces == []} class="px-2 py-3 text-sm leading-5 text-base-content/50">
+            No joined workspaces.
+          </p>
+          <.link
+            :for={workspace <- @workspaces}
+            navigate={workspace_path(@scope.organization, workspace, "pastes")}
+            class={[
+              "group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition",
+              if(active_workspace?(@scope, workspace),
+                do: "bg-primary/10 font-semibold text-primary",
+                else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
+              )
+            ]}
+          >
+            <span class={[
+              "size-2 rounded-full border",
+              if(active_workspace?(@scope, workspace),
+                do: "border-primary bg-primary",
+                else: "border-base-content/25 bg-base-100 group-hover:border-base-content/45"
+              )
+            ]}>
+            </span>
+            <span class="min-w-0 flex-1 truncate">{workspace.name}</span>
+            <.icon :if={workspace.is_default} name="hero-star" class="size-3.5 opacity-55" />
+          </.link>
+        </div>
+
+        <div :if={@scope.workspace} class="mt-5 border-t border-base-300 pt-5">
+          <p class="mb-2 truncate px-2 text-xs font-semibold text-base-content/55">
+            {@scope.workspace.name}
+          </p>
+          <div class="space-y-1">
+            <.sidebar_link
+              navigate={workspace_path(@scope.organization, @scope.workspace, "pastes")}
+              icon="hero-document-text"
+              label="Pastes"
+              active={@active == {:workspace, :pastes}}
+            />
+            <.sidebar_link
+              navigate={workspace_path(@scope.organization, @scope.workspace, "members")}
+              icon="hero-user-group"
+              label="Members"
+              active={@active == {:workspace, :members}}
+            />
+            <.sidebar_link
+              navigate={workspace_path(@scope.organization, @scope.workspace, "settings")}
+              icon="hero-cog-6-tooth"
+              label="Settings"
+              active={@active == {:workspace, :settings}}
+            />
+          </div>
+        </div>
+      </div>
+    </nav>
+    """
+  end
+
+  attr :navigate, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :active, :boolean, default: false
+
+  defp sidebar_link(assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      aria-current={@active && "page"}
+      class={[
+        "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition",
+        if(@active,
+          do: "bg-primary/10 text-primary",
+          else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
+        )
+      ]}
+    >
+      <.icon name={@icon} class="size-4.5 shrink-0" />
+      <span>{@label}</span>
+    </.link>
     """
   end
 
@@ -51,19 +296,14 @@ defmodule TextbinWeb.Layouts do
 
   def app_header(assigns) do
     ~H"""
-    <header id="app-header" class="navbar gap-4 px-4 sm:px-6 lg:px-8">
-      <div class="flex flex-1 items-center gap-8">
+    <header
+      id="app-header"
+      class="navbar sticky top-0 z-30 h-16 min-h-16 gap-4 border-b border-base-300 bg-base-100/95 px-4 backdrop-blur sm:px-6 lg:px-8"
+    >
+      <div class="flex flex-1 items-center">
         <a href="/" class="flex w-fit items-center">
           <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
         </a>
-        <%= if @current_scope do %>
-          <.link
-            href={~p"/pastes"}
-            class="text-sm font-medium text-base-content/70 hover:text-base-content"
-          >
-            Pastes
-          </.link>
-        <% end %>
       </div>
       <div class="flex-none">
         <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">
@@ -138,6 +378,31 @@ defmodule TextbinWeb.Layouts do
     do: Textbin.Accounts.User.guest?(user)
 
   defp guest_scope?(_scope), do: false
+
+  defp application_shell?(%{
+         user: %Textbin.Accounts.User{} = user,
+         organization: %Textbin.Organizations.Organization{},
+         organization_membership: %Textbin.Organizations.OrganizationMembership{}
+       }),
+       do: not Textbin.Accounts.User.guest?(user)
+
+  defp application_shell?(_scope), do: false
+
+  defp active_workspace?(%{workspace: %{id: workspace_id}}, %{id: workspace_id}), do: true
+  defp active_workspace?(_scope, _workspace), do: false
+
+  defp organization_menu_id("sidebar-navigation"), do: "organization-menu"
+  defp organization_menu_id(id), do: "#{id}-organization-menu"
+
+  defp organization_menu_panel_id("sidebar-navigation"), do: "organization-menu-panel"
+  defp organization_menu_panel_id(id), do: "#{id}-organization-menu-panel"
+
+  defp organization_path(organization), do: "/o/#{organization.slug}"
+  defp organization_members_path(organization), do: "/o/#{organization.slug}/members"
+  defp organization_settings_path(organization), do: "/o/#{organization.slug}/settings"
+
+  defp workspace_path(organization, workspace, page),
+    do: "/w/#{organization.slug}/#{workspace.slug}/#{page}"
 
   @doc """
   Shows the flash group with standard titles and content.

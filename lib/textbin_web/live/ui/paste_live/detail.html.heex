@@ -1,4 +1,9 @@
-<Layouts.app flash={@flash} current_scope={@current_scope}>
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  navigation_workspaces={@navigation_workspaces}
+  active_navigation={{:workspace, :pastes}}
+>
   <div class="space-y-8">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div class="space-y-2">
