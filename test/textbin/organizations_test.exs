@@ -1246,6 +1246,15 @@ defmodule Textbin.OrganizationsTest do
       assert %{slug: ["has invalid format"]} = errors_on(changeset)
       refute Repo.get_by(Workspace, organization_id: context.organization.id, name: "Private")
 
+      assert {:error, duplicate_changeset} =
+               Organizations.create_workspace(
+                 Scope.for_user(context.owner),
+                 context.organization,
+                 %{name: "Duplicate", slug: "default", visibility: "open"}
+               )
+
+      assert %{slug: ["has already been taken"]} = errors_on(duplicate_changeset)
+
       assert {:error, :unauthorized} =
                Organizations.create_workspace(
                  Scope.for_user(context.member),

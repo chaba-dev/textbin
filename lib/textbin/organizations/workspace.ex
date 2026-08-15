@@ -42,7 +42,7 @@ defmodule Textbin.Organizations.Workspace do
     |> validate_inclusion(:visibility, @visibilities)
     |> validate_inclusion(:external_sharing_policy, @external_sharing_policies)
     |> validate_default_visibility()
-    |> unique_constraint([:organization_id, :slug])
+    |> unique_constraint(:slug, name: :workspaces_organization_id_slug_index)
     |> unique_constraint(:organization_id, name: :workspaces_one_default_per_organization)
     |> foreign_key_constraint(:organization_id)
     |> foreign_key_constraint(:created_by_id)
