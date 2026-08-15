@@ -98,7 +98,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     end
   end
 
-  test "mobile navigation exposes a modal dialog with explicit controls", context do
+  test "mobile navigation exposes primary destinations and a modal overflow menu", context do
     {:ok, view, _html} = live(context.conn, organization_path(context.organization))
 
     assert has_element?(
@@ -108,14 +108,69 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "button#mobile-sidebar-open[aria-controls='mobile-navigation-dialog'][aria-expanded='false'][data-navigation-dialog-open]"
+             "#mobile-bottom-navigation.shrink-0.border-t[aria-label='Mobile primary']"
            )
 
-    assert has_element?(view, "dialog#mobile-navigation-dialog.overflow-hidden")
+    refute has_element?(view, "#mobile-bottom-navigation.fixed")
 
     assert has_element?(
              view,
-             "#mobile-navigation-scroll-region.overflow-x-hidden.overflow-y-auto.overscroll-contain"
+             "#mobile-bottom-navigation a[href='#{organization_path(context.organization)}'][aria-current='page']",
+             "Overview"
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-bottom-navigation a[href='#{organization_members_path(context.organization)}']",
+             "Members"
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-bottom-navigation a[href='#{organization_settings_path(context.organization)}']",
+             "Settings"
+           )
+
+    assert has_element?(
+             view,
+             "button#mobile-navigation-more[aria-controls='mobile-navigation-dialog'][aria-expanded='false'][data-navigation-dialog-open]",
+             "More"
+           )
+
+    assert has_element?(view, "dialog#mobile-navigation-dialog.overflow-hidden.rounded-2xl")
+    assert has_element?(view, "#mobile-navigation-title", "More")
+    assert has_element?(view, "#mobile-more-navigation")
+    refute has_element?(view, "#mobile-organization-context")
+
+    assert has_element?(
+             view,
+             "#mobile-more-navigation a[href='#{workspace_path(context.organization, context.default_workspace)}']",
+             context.default_workspace.name
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-more-navigation a[href='#{organization_path(context.organization)}']",
+             "Organization overview"
+           )
+
+    assert has_element?(view, "#mobile-more-navigation a[href='/orgs']", "Switch organization")
+
+    assert has_element?(
+             view,
+             "#mobile-account-navigation a[href='/users/settings']",
+             "Account settings"
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-account-navigation a[href='/users/log-out']",
+             "Log out"
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-navigation-scroll-region.overflow-y-auto.overscroll-contain"
            )
 
     assert has_element?(
@@ -123,13 +178,13 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
              "#mobile-navigation-dialog button[data-navigation-dialog-close]"
            )
 
-    refute has_element?(view, "input#mobile-sidebar-toggle")
+    refute has_element?(view, "#mobile-sidebar-open")
   end
 
-  test "application shell exposes a keyboard focus target for bypass navigation", context do
+  test "application shell scrolls content above the docked mobile navigation", context do
     {:ok, view, _html} = live(context.conn, organization_path(context.organization))
 
-    assert has_element?(view, "main#main-content[tabindex='-1']")
+    assert has_element?(view, "main#main-content.overflow-y-auto[tabindex='-1']")
   end
 
   test "organization menu remains scrollable and identifies its active destination", context do
@@ -157,7 +212,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     assert has_element?(view, "#organization-overview")
     assert has_element?(view, "#organization-heading", "Overview")
     assert has_element?(view, "#application-sidebar", context.organization.name)
-    assert has_element?(view, "#mobile-sidebar-open")
+    assert has_element?(view, "#mobile-bottom-navigation")
     assert has_element?(view, "#organization-menu")
 
     assert has_element?(
