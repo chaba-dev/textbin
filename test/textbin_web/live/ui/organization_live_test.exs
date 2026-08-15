@@ -108,8 +108,10 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "#mobile-bottom-navigation[aria-label='Mobile primary']"
+             "#mobile-bottom-navigation.shrink-0.border-t[aria-label='Mobile primary']"
            )
+
+    refute has_element?(view, "#mobile-bottom-navigation.fixed")
 
     assert has_element?(
              view,
@@ -152,10 +154,10 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     refute has_element?(view, "#mobile-sidebar-open")
   end
 
-  test "application shell exposes a keyboard focus target for bypass navigation", context do
+  test "application shell scrolls content above the docked mobile navigation", context do
     {:ok, view, _html} = live(context.conn, organization_path(context.organization))
 
-    assert has_element?(view, "main#main-content.pb-28[tabindex='-1']")
+    assert has_element?(view, "main#main-content.overflow-y-auto[tabindex='-1']")
   end
 
   test "organization menu remains scrollable and identifies its active destination", context do

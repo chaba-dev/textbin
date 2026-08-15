@@ -44,7 +44,10 @@ defmodule TextbinWeb.Layouts do
   def app(assigns) do
     ~H"""
     <%= if application_shell?(@current_scope) do %>
-      <div id="application-shell" class="min-h-[calc(100vh-4rem)] bg-base-200/45 lg:flex">
+      <div
+        id="application-shell"
+        class="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden bg-base-200/45 lg:h-auto lg:min-h-[calc(100vh-4rem)] lg:flex-row lg:overflow-visible"
+      >
         <div
           id="navigation-dialog-controller"
           phx-hook="NavigationDialog"
@@ -53,7 +56,7 @@ defmodule TextbinWeb.Layouts do
         >
         </div>
 
-        <div class="flex items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-3 lg:hidden">
+        <div class="flex shrink-0 items-center gap-3 border-b border-base-300 bg-base-100 px-4 py-3 lg:hidden">
           <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <.icon name="hero-building-office-2" class="size-4.5" />
           </div>
@@ -119,7 +122,7 @@ defmodule TextbinWeb.Layouts do
         <main
           id="main-content"
           tabindex="-1"
-          class="min-w-0 flex-1 scroll-mt-20 px-4 pb-28 pt-8 sm:px-6 lg:px-10 lg:py-10"
+          class="min-h-0 min-w-0 flex-1 scroll-mt-20 overflow-y-auto overscroll-contain px-4 py-8 sm:px-6 lg:overflow-visible lg:px-10 lg:py-10"
         >
           <div class="mx-auto max-w-6xl space-y-4">
             {render_slot(@inner_block)}
@@ -148,7 +151,7 @@ defmodule TextbinWeb.Layouts do
     <nav
       id="mobile-bottom-navigation"
       aria-label="Mobile primary"
-      class="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto grid max-w-md grid-cols-4 gap-1 rounded-2xl border border-base-300 bg-base-100/95 p-1.5 shadow-2xl shadow-base-content/15 backdrop-blur-xl lg:hidden"
+      class="z-20 grid w-full shrink-0 grid-cols-4 gap-1 border-t border-base-300 bg-base-100 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden"
     >
       <%= if @scope.workspace do %>
         <.mobile_navigation_link
