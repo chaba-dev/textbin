@@ -139,9 +139,22 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(view, "dialog#mobile-navigation-dialog.overflow-hidden.rounded-2xl")
     assert has_element?(view, "#mobile-navigation-title", "More")
-    assert has_element?(view, "#mobile-sidebar-navigation.h-auto")
-    assert has_element?(view, "#mobile-organization-context", context.organization.name)
-    refute has_element?(view, "#mobile-organization-icon")
+    assert has_element?(view, "#mobile-more-navigation")
+    refute has_element?(view, "#mobile-organization-context")
+
+    assert has_element?(
+             view,
+             "#mobile-more-navigation a[href='#{workspace_path(context.organization, context.default_workspace)}']",
+             context.default_workspace.name
+           )
+
+    assert has_element?(
+             view,
+             "#mobile-more-navigation a[href='#{organization_path(context.organization)}']",
+             "Organization overview"
+           )
+
+    assert has_element?(view, "#mobile-more-navigation a[href='/orgs']", "Switch organization")
 
     assert has_element?(
              view,
@@ -157,7 +170,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "#mobile-navigation-scroll-region.overflow-x-hidden.overflow-y-auto.overscroll-contain"
+             "#mobile-navigation-scroll-region.overflow-y-auto.overscroll-contain"
            )
 
     assert has_element?(

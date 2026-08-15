@@ -90,6 +90,16 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
              "#mobile-bottom-navigation a[href='#{workspace_path(context, "settings")}']",
              "Settings"
            )
+
+    refute has_element?(
+             view,
+             "#mobile-more-navigation a[href='#{workspace_path(context, "members")}']"
+           )
+
+    refute has_element?(
+             view,
+             "#mobile-more-navigation a[href='#{workspace_path(context, "settings")}']"
+           )
   end
 
   test "workspace owners add, promote, and remove members", context do

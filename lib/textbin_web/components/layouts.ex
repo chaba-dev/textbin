@@ -56,26 +56,12 @@ defmodule TextbinWeb.Layouts do
         >
         </div>
 
-        <div
-          id="mobile-organization-context"
-          class="flex shrink-0 items-center border-b border-base-300 bg-base-100 px-4 py-3 lg:hidden"
-        >
-          <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-base-content">
-              {@current_scope.organization.name}
-            </p>
-            <p :if={@current_scope.workspace} class="truncate text-xs text-base-content/55">
-              {@current_scope.workspace.name}
-            </p>
-          </div>
-        </div>
-
         <dialog
           id="mobile-navigation-dialog"
-          class="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] top-auto m-0 h-[min(72dvh,40rem)] max-h-[calc(100dvh-6rem)] w-auto max-w-none overflow-hidden rounded-2xl border border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
+          class="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] top-auto m-0 h-auto max-h-[calc(100dvh-6rem)] w-auto max-w-none overflow-hidden rounded-2xl border border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
           aria-labelledby="mobile-navigation-title"
         >
-          <div class="flex h-full min-h-0 flex-col p-4">
+          <div class="flex max-h-[calc(100dvh-6rem)] min-h-0 flex-col p-4">
             <div class="mb-3 flex items-center justify-between gap-3">
               <p id="mobile-navigation-title" class="text-sm font-semibold text-base-content">
                 More
@@ -94,12 +80,9 @@ defmodule TextbinWeb.Layouts do
               id="mobile-navigation-scroll-region"
               class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
             >
-              <.application_sidebar
-                id="mobile-sidebar-navigation"
+              <.mobile_more_navigation
                 scope={@current_scope}
                 workspaces={@navigation_workspaces}
-                active={@active_navigation}
-                compact
               />
             </div>
           </div>
@@ -233,19 +216,112 @@ defmodule TextbinWeb.Layouts do
     """
   end
 
+  attr :scope, :map, required: true
+  attr :workspaces, :list, required: true
+
+  defp mobile_more_navigation(assigns) do
+    ~H"""
+    <nav id="mobile-more-navigation" class="space-y-4" aria-label="More navigation">
+      <section aria-labelledby="mobile-workspaces-heading">
+        <div class="mb-2 flex items-center justify-between gap-3 px-2">
+          <p
+            id="mobile-workspaces-heading"
+            class="text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/45"
+          >
+            Workspaces
+          </p>
+          <span class="rounded-full bg-base-200 px-2 py-0.5 text-[0.6875rem] font-semibold text-base-content/50">
+            {length(@workspaces)}
+          </span>
+        </div>
+        <div class="space-y-1">
+          <p :if={@workspaces == []} class="px-2 py-2 text-sm text-base-content/55">
+            No joined workspaces.
+          </p>
+          <.link
+            :for={workspace <- @workspaces}
+            navigate={workspace_path(@scope.organization, workspace, "pastes")}
+            class={[
+              "group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition",
+              if(active_workspace?(@scope, workspace),
+                do: "bg-primary/10 font-semibold text-primary",
+                else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
+              )
+            ]}
+          >
+            <span class={[
+              "size-2 rounded-full border",
+              if(active_workspace?(@scope, workspace),
+                do: "border-primary bg-primary",
+                else: "border-base-content/25 bg-base-100"
+              )
+            ]}>
+            </span>
+            <span class="min-w-0 flex-1 truncate">{workspace.name}</span>
+            <.icon :if={workspace.is_default} name="hero-star" class="size-3.5 opacity-55" />
+          </.link>
+        </div>
+      </section>
+
+      <div class="space-y-1 border-t border-base-300 pt-3">
+        <.link
+          navigate={organization_path(@scope.organization)}
+          class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
+        >
+          <.icon name="hero-building-office-2" class="size-4.5" /> Organization overview
+        </.link>
+        <.link
+          navigate={~p"/orgs"}
+          class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
+        >
+          <.icon name="hero-arrows-right-left" class="size-4.5" /> Switch organization
+        </.link>
+      </div>
+
+      <section
+        id="mobile-account-navigation"
+        class="border-t border-base-300 pt-4"
+        aria-labelledby="mobile-account-heading"
+      >
+        <div class="flex items-center justify-between gap-3 px-2">
+          <div class="min-w-0">
+            <p id="mobile-account-heading" class="text-xs font-semibold text-base-content/55">
+              Account
+            </p>
+            <p class="mt-1 truncate text-sm font-medium text-base-content">
+              {account_label(@scope)}
+            </p>
+          </div>
+          <.theme_toggle />
+        </div>
+        <div class="mt-3 space-y-1">
+          <.link
+            href={~p"/users/settings"}
+            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
+          >
+            <.icon name="hero-user-circle" class="size-4.5" /> Account settings
+          </.link>
+          <.link
+            href={~p"/users/log-out"}
+            method="delete"
+            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-error transition hover:bg-error/10"
+          >
+            <.icon name="hero-arrow-right-start-on-rectangle" class="size-4.5" /> Log out
+          </.link>
+        </div>
+      </section>
+    </nav>
+    """
+  end
+
   attr :id, :string, required: true
   attr :scope, :map, required: true
   attr :workspaces, :list, required: true
   attr :active, :any, default: nil
-  attr :compact, :boolean, default: false
 
   defp application_sidebar(assigns) do
     ~H"""
-    <nav
-      id={@id}
-      class={["flex min-h-0 flex-col", if(@compact, do: "h-auto", else: "h-full")]}
-      aria-label="Application"
-    >
+    <nav id={@id} class="flex h-full min-h-0 flex-col" aria-label="Application">
       <div class="border-b border-base-300 pb-5">
         <details id={organization_menu_id(@id)} class="group relative">
           <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl p-2 transition hover:bg-base-200">
@@ -365,40 +441,6 @@ defmodule TextbinWeb.Layouts do
           </div>
         </div>
       </div>
-
-      <section
-        :if={@compact}
-        id="mobile-account-navigation"
-        class="border-t border-base-300 pt-5"
-        aria-labelledby="mobile-account-heading"
-      >
-        <div class="flex items-center justify-between gap-3 px-2">
-          <div class="min-w-0">
-            <p id="mobile-account-heading" class="text-xs font-semibold text-base-content/55">
-              Account
-            </p>
-            <p class="mt-1 truncate text-sm font-medium text-base-content">
-              {account_label(@scope)}
-            </p>
-          </div>
-          <.theme_toggle />
-        </div>
-        <div class="mt-3 space-y-1">
-          <.link
-            href={~p"/users/settings"}
-            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
-          >
-            <.icon name="hero-user-circle" class="size-4.5" /> Account settings
-          </.link>
-          <.link
-            href={~p"/users/log-out"}
-            method="delete"
-            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-error transition hover:bg-error/10"
-          >
-            <.icon name="hero-arrow-right-start-on-rectangle" class="size-4.5" /> Log out
-          </.link>
-        </div>
-      </section>
     </nav>
     """
   end
@@ -437,10 +479,22 @@ defmodule TextbinWeb.Layouts do
       id="app-header"
       class="navbar sticky top-0 z-30 h-16 min-h-16 gap-4 border-b border-base-300 bg-base-100/95 px-4 backdrop-blur sm:px-6 lg:px-8"
     >
-      <div class="flex flex-1 items-center">
-        <a href="/" class="flex w-fit items-center">
+      <div class="flex min-w-0 flex-1 items-center gap-4">
+        <a href="/" class="flex w-fit shrink-0 items-center">
           <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
         </a>
+        <div
+          :if={application_shell?(@current_scope)}
+          id="mobile-header-context"
+          class="ml-auto min-w-0 max-w-[55vw] text-right lg:hidden"
+        >
+          <p class="truncate text-sm font-semibold text-base-content">
+            {@current_scope.organization.name}
+          </p>
+          <p :if={@current_scope.workspace} class="truncate text-xs text-base-content/55">
+            {@current_scope.workspace.name}
+          </p>
+        </div>
       </div>
       <div class={[
         "min-w-0 flex-none",
