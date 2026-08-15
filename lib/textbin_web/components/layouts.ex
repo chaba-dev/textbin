@@ -92,7 +92,10 @@ defmodule TextbinWeb.Layouts do
                 <.icon name="hero-x-mark" class="size-5" />
               </button>
             </div>
-            <div class="min-h-0 flex-1 overflow-visible">
+            <div
+              id="mobile-navigation-scroll-region"
+              class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
+            >
               <.application_sidebar
                 id="mobile-sidebar-navigation"
                 scope={@current_scope}

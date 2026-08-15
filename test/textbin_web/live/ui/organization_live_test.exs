@@ -115,6 +115,11 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
+             "#mobile-navigation-scroll-region.overflow-x-hidden.overflow-y-auto.overscroll-contain"
+           )
+
+    assert has_element?(
+             view,
              "#mobile-navigation-dialog button[data-navigation-dialog-close]"
            )
 
