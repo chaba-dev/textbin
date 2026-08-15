@@ -323,7 +323,7 @@ defmodule TextbinWeb.Layouts do
     ~H"""
     <nav id={@id} class="flex h-full min-h-0 flex-col" aria-label="Application">
       <div class="border-b border-base-300 pb-5">
-        <details id={organization_menu_id(@id)} class="group relative">
+        <details id={organization_menu_id(@id)} class="group relative" data-dropdown>
           <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl p-2 transition hover:bg-base-200">
             <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
               <.icon name="hero-building-office-2" class="size-5" />
@@ -508,7 +508,7 @@ defmodule TextbinWeb.Layouts do
           <% end %>
           <li>
             <%= if @current_scope do %>
-              <details class="relative">
+              <details id="account-menu" class="relative" data-dropdown>
                 <summary
                   class="btn btn-ghost w-10 cursor-pointer list-none px-0 sm:w-auto sm:max-w-56 sm:px-4"
                   aria-label={"Open account menu for #{account_label(@current_scope)}"}
