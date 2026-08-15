@@ -24,7 +24,7 @@ jobs:
       (github.event.pull_request.base.ref == github.event.repository.default_branch &&
       github.event.pull_request.head.ref == 'release/next' &&
       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       manifest: ${{ steps.plan.outputs.manifest }}
       prerelease: ${{ steps.version.outputs.prerelease }}
@@ -232,7 +232,7 @@ jobs:
   build-installers:
     name: Build CLI installers and checksums
     needs: [plan, build-cli]
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
 
@@ -283,7 +283,7 @@ jobs:
     name: CLI release gate
     needs: [plan, build-cli, build-installers]
     if: always()
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
 
     steps:
       - name: Require the complete release matrix
