@@ -83,6 +83,7 @@ defmodule TextbinWeb.Layouts do
               <.mobile_more_navigation
                 scope={@current_scope}
                 workspaces={@navigation_workspaces}
+                active={@active_navigation}
               />
             </div>
           </div>
@@ -179,7 +180,13 @@ defmodule TextbinWeb.Layouts do
       <button
         type="button"
         id="mobile-navigation-more"
-        class="flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[0.6875rem] font-semibold text-base-content/60 transition hover:bg-base-200 hover:text-base-content aria-expanded:bg-primary/10 aria-expanded:text-primary"
+        class={[
+          "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[0.6875rem] font-semibold transition aria-expanded:bg-primary/10 aria-expanded:text-primary",
+          if(more_navigation_active?(@active),
+            do: "bg-primary/10 text-primary",
+            else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+          )
+        ]}
         aria-label="Open more navigation"
         aria-controls="mobile-navigation-dialog"
         aria-expanded="false"
@@ -218,6 +225,7 @@ defmodule TextbinWeb.Layouts do
 
   attr :scope, :map, required: true
   attr :workspaces, :list, required: true
+  attr :active, :any, default: nil
 
   defp mobile_more_navigation(assigns) do
     ~H"""
@@ -275,6 +283,20 @@ defmodule TextbinWeb.Layouts do
           class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
         >
           <.icon name="hero-squares-2x2" class="size-4.5" /> Manage workspaces
+        </.link>
+        <.link
+          :if={organization_owner?(@scope)}
+          navigate={organization_audit_log_path(@scope.organization)}
+          aria-current={@active == {:organization, :audit_log} && "page"}
+          class={[
+            "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition",
+            if(@active == {:organization, :audit_log},
+              do: "bg-primary/10 text-primary",
+              else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
+            )
+          ]}
+        >
+          <.icon name="hero-shield-check" class="size-4.5" /> Audit log
         </.link>
         <.link
           navigate={~p"/orgs"}
@@ -369,6 +391,13 @@ defmodule TextbinWeb.Layouts do
               icon="hero-squares-2x2"
               label="Manage workspaces"
               active={@active == {:organization, :workspaces}}
+            />
+            <.sidebar_link
+              :if={organization_owner?(@scope)}
+              navigate={organization_audit_log_path(@scope.organization)}
+              icon="hero-shield-check"
+              label="Audit log"
+              active={@active == {:organization, :audit_log}}
             />
             <.sidebar_link
               navigate={organization_settings_path(@scope.organization)}
@@ -603,6 +632,12 @@ defmodule TextbinWeb.Layouts do
   defp active_workspace?(%{workspace: %{id: workspace_id}}, %{id: workspace_id}), do: true
   defp active_workspace?(_scope, _workspace), do: false
 
+  defp more_navigation_active?(active),
+    do: active in [{:organization, :workspaces}, {:organization, :audit_log}]
+
+  defp organization_owner?(%{organization_membership: %{role: "owner"}}), do: true
+  defp organization_owner?(_scope), do: false
+
   defp organization_menu_id("sidebar-navigation"), do: "organization-menu"
   defp organization_menu_id(id), do: "#{id}-organization-menu"
 
@@ -610,6 +645,7 @@ defmodule TextbinWeb.Layouts do
   defp organization_menu_panel_id(id), do: "#{id}-organization-menu-panel"
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
+  defp organization_audit_log_path(organization), do: "/o/#{organization.slug}/audit-log"
   defp organization_members_path(organization), do: "/o/#{organization.slug}/members"
   defp organization_workspaces_path(organization), do: "/o/#{organization.slug}/workspaces"
   defp organization_settings_path(organization), do: "/o/#{organization.slug}/settings"
