@@ -570,7 +570,14 @@ defmodule Textbin.AccountsTest do
       assert %Paste{created_by_user_id: nil, data: "team data remains"} =
                Repo.get(Paste, team_paste.id)
 
-      assert %AuditEvent{actor_user_id: actor_user_id} =
+      assert %AuditEvent{
+               actor_user_id: actor_user_id,
+               metadata: %{
+                 "actor_email" => actor_email,
+                 "target_email" => target_email,
+                 "reason" => "account_deleted"
+               }
+             } =
                Repo.get_by!(AuditEvent,
                  organization_id: organization.id,
                  action: "organization.membership.removed",
@@ -578,6 +585,8 @@ defmodule Textbin.AccountsTest do
                )
 
       assert actor_user_id == owner.id
+      assert actor_email == owner.email
+      assert target_email == owner.email
     end
 
     test "requires transfer when the user is the final owner of a team workspace" do

@@ -5,6 +5,7 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
   import Textbin.AccountsFixtures
 
   alias Textbin.Organizations
+  alias Textbin.Accounts.User
   alias Textbin.Organizations.OrganizationMembership
   alias Textbin.Repo
 
@@ -68,7 +69,33 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
              "Audit log"
            )
 
-    assert has_element?(view, "#mobile-navigation-more.bg-primary\\/10")
+    assert has_element?(view, "#mobile-navigation-more[aria-current='page']")
+  end
+
+  test "keeps actor, target, and workspace labels from the time of the event", context do
+    actor_email = context.owner.email
+    target_email = context.member.email
+
+    assert {:ok, _membership} =
+             Organizations.add_workspace_member(
+               context.owner_scope,
+               context.workspace,
+               context.member
+             )
+
+    Repo.update!(User.email_changeset(context.owner, %{email: unique_user_email()}))
+    Repo.update!(User.email_changeset(context.member, %{email: unique_user_email()}))
+
+    {:ok, view, _html} = live(context.conn, audit_log_path(context.organization))
+
+    assert has_element?(view, "#audit-events article", actor_email)
+    assert has_element?(view, "#audit-events article", target_email)
+
+    assert has_element?(
+             view,
+             "#audit-events article",
+             "Granted member access to #{target_email} in “#{context.workspace.name}”."
+           )
   end
 
   test "admins cannot access or see owner-only audit navigation", context do
@@ -163,6 +190,41 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
     |> render_click()
 
     assert_redirect(view, organization_path(context.organization))
+  end
+
+  test "loading another page conceals events after organization access is revoked", context do
+    for index <- 1..25 do
+      {:ok, _workspace} =
+        Organizations.create_workspace(context.owner_scope, context.organization, %{
+          name: "Revocation event #{index}",
+          slug: "revocation-event-#{index}",
+          visibility: "open"
+        })
+    end
+
+    assert {:ok, _membership} =
+             Organizations.change_organization_member_role(
+               context.owner_scope,
+               context.member_membership,
+               "owner"
+             )
+
+    {:ok, view, _html} = live(context.conn, audit_log_path(context.organization))
+    assert has_element?(view, "#load-more-audit-events")
+
+    first_owner_membership =
+      Repo.get_by!(OrganizationMembership,
+        organization_id: context.organization.id,
+        user_id: context.owner.id
+      )
+
+    Repo.delete!(first_owner_membership)
+
+    view
+    |> element("#load-more-audit-events")
+    |> render_click()
+
+    assert_redirect(view, ~p"/orgs")
   end
 
   test "conceals audit logs for organizations the user has not joined", context do

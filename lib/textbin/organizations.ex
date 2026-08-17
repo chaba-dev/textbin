@@ -1345,6 +1345,8 @@ defmodule Textbin.Organizations do
   end
 
   defp record_audit(organization_id, actor_user_id, action, target_type, target_id, metadata) do
+    metadata = snapshot_audit_metadata(metadata, actor_user_id, target_type, target_id)
+
     %AuditEvent{}
     |> AuditEvent.changeset(%{
       organization_id: organization_id,
@@ -1358,6 +1360,61 @@ defmodule Textbin.Organizations do
     |> case do
       {:ok, _event} -> :ok
       {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  # Audit labels are snapshots: mutable or deleted records must not rewrite historical context.
+  defp snapshot_audit_metadata(metadata, actor_user_id, target_type, target_id) do
+    metadata
+    |> put_audit_label("actor_email", user_email(actor_user_id))
+    |> put_target_audit_label(target_type, target_id)
+    |> put_workspace_audit_label()
+  end
+
+  defp put_target_audit_label(metadata, "user", target_id),
+    do: put_audit_label(metadata, "target_email", user_email(target_id))
+
+  defp put_target_audit_label(metadata, "workspace", target_id) do
+    name =
+      case Repo.get(Workspace, target_id) do
+        %Workspace{name: name} -> name
+        nil -> metadata["name"]
+      end
+
+    put_audit_label(metadata, "target_name", name)
+  end
+
+  defp put_target_audit_label(metadata, "organization", target_id) do
+    name =
+      case Repo.get(Organization, target_id) do
+        %Organization{name: name} -> name
+        nil -> nil
+      end
+
+    put_audit_label(metadata, "target_name", name)
+  end
+
+  defp put_target_audit_label(metadata, _target_type, _target_id), do: metadata
+
+  defp put_workspace_audit_label(%{"workspace_id" => workspace_id} = metadata) do
+    name =
+      case Repo.get(Workspace, workspace_id) do
+        %Workspace{name: name} -> name
+        nil -> nil
+      end
+
+    put_audit_label(metadata, "workspace_name", name)
+  end
+
+  defp put_workspace_audit_label(metadata), do: metadata
+
+  defp put_audit_label(metadata, _key, nil), do: metadata
+  defp put_audit_label(metadata, key, value), do: Map.put_new(metadata, key, value)
+
+  defp user_email(user_id) do
+    case Repo.get(User, user_id) do
+      %User{email: email} -> email
+      nil -> nil
     end
   end
 

@@ -188,6 +188,7 @@ defmodule TextbinWeb.Layouts do
           )
         ]}
         aria-label="Open more navigation"
+        aria-current={more_navigation_active?(@active) && "page"}
         aria-controls="mobile-navigation-dialog"
         aria-expanded="false"
         data-navigation-dialog-open

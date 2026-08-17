@@ -56,7 +56,7 @@ defmodule TextbinWeb.UI.AuditLogLive do
         {:noreply, deny_access(socket)}
 
       {:error, :not_found} ->
-        {:noreply, put_flash(socket, :error, "More audit events could not be loaded")}
+        {:noreply, conceal_access(socket)}
     end
   end
 
@@ -119,7 +119,7 @@ defmodule TextbinWeb.UI.AuditLogLive do
                     {Calendar.strftime(event.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
                   </time>
                 </div>
-                <p class="mt-1 text-sm leading-6 text-base-content/65">
+                <p class="mt-1 break-words text-sm leading-6 text-base-content/65">
                   {event_description(event)}
                 </p>
                 <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-base-content/50">
@@ -127,10 +127,16 @@ defmodule TextbinWeb.UI.AuditLogLive do
                     <.icon name="hero-user-circle" class="size-4 shrink-0" />
                     <span class="break-all">{actor_label(event)}</span>
                   </span>
-                  <span class="inline-flex items-center gap-1.5" title={event.target_id}>
-                    <.icon name="hero-cursor-arrow-rays" class="size-4" />
-                    <span class="capitalize">{event.target_type}</span>
-                    <span class="font-mono">{short_id(event.target_id)}</span>
+                  <span class="inline-flex min-w-0 items-center gap-1.5" title={event.target_id}>
+                    <.icon name="hero-cursor-arrow-rays" class="size-4 shrink-0" />
+                    <span class="break-all">{target_label(event)}</span>
+                  </span>
+                  <span
+                    :if={workspace_label(event)}
+                    class="inline-flex items-center gap-1.5"
+                  >
+                    <.icon name="hero-squares-2x2" class="size-4 shrink-0" />
+                    <span class="break-words">{workspace_label(event)}</span>
                   </span>
                 </div>
               </div>
@@ -174,8 +180,26 @@ defmodule TextbinWeb.UI.AuditLogLive do
     |> push_navigate(to: organization_path(socket.assigns.current_scope.organization))
   end
 
+  defp conceal_access(socket) do
+    socket
+    |> assign(:next_cursor, nil)
+    |> stream(:audit_events, [], reset: true)
+    |> put_flash(:error, "The organization could not be found")
+    |> push_navigate(to: ~p"/orgs")
+  end
+
+  defp actor_label(%AuditEvent{metadata: %{"actor_email" => email}}), do: email
   defp actor_label(%AuditEvent{actor: %User{email: email}}), do: email
   defp actor_label(%AuditEvent{actor_user_id: id}), do: "Deleted user · #{short_id(id)}"
+
+  defp target_label(%AuditEvent{metadata: %{"target_email" => email}}), do: email
+  defp target_label(%AuditEvent{metadata: %{"target_name" => name}}), do: name
+
+  defp target_label(%AuditEvent{target_type: type, target_id: id}),
+    do: "#{String.capitalize(type)} · #{short_id(id)}"
+
+  defp workspace_label(%AuditEvent{metadata: %{"workspace_name" => name}}), do: name
+  defp workspace_label(_event), do: nil
 
   defp event_title("workspace.created"), do: "Workspace created"
   defp event_title("workspace.deleted"), do: "Workspace deleted"
@@ -231,12 +255,21 @@ defmodule TextbinWeb.UI.AuditLogLive do
        when action in ["organization.membership.removed", "workspace.membership.removed"],
        do: "A #{role} left voluntarily."
 
-  defp event_description(%AuditEvent{
-         action: action,
-         metadata: %{"role" => role}
-       })
-       when action in ["organization.membership.added", "workspace.membership.added"],
-       do: "Granted #{role} access to a member."
+  defp event_description(
+         %AuditEvent{
+           action: "workspace.membership.added",
+           metadata: %{"role" => role} = metadata
+         } = event
+       ),
+       do: "Granted #{role} access to #{target_label(event)}#{workspace_description(metadata)}."
+
+  defp event_description(
+         %AuditEvent{
+           action: "organization.membership.added",
+           metadata: %{"role" => role}
+         } = event
+       ),
+       do: "Granted #{role} access to #{target_label(event)}."
 
   defp event_description(%AuditEvent{
          action: action,
@@ -299,6 +332,9 @@ defmodule TextbinWeb.UI.AuditLogLive do
 
   defp visibility_article("open"), do: "an"
   defp visibility_article(_visibility), do: "a"
+
+  defp workspace_description(%{"workspace_name" => name}), do: " in “#{name}”"
+  defp workspace_description(_metadata), do: ""
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
 end
