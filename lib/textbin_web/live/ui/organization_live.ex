@@ -363,11 +363,20 @@ defmodule TextbinWeb.UI.OrganizationLive do
         <.organization_header scope={@current_scope} title="Overview" />
 
         <section class="rounded-xl border border-base-300 bg-base-100 shadow-sm">
-          <div class="border-b border-base-300 px-5 py-4 sm:px-6">
-            <h2 class="text-lg font-semibold text-base-content">Workspaces</h2>
-            <p class="mt-1 text-sm text-base-content/60">
-              Workspaces in this organization that you have joined.
-            </p>
+          <div class="flex flex-col gap-4 border-b border-base-300 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div>
+              <h2 class="text-lg font-semibold text-base-content">Workspaces</h2>
+              <p class="mt-1 text-sm text-base-content/60">
+                Workspaces in this organization that you have joined.
+              </p>
+            </div>
+            <.link
+              id="manage-workspaces-link"
+              navigate={organization_workspaces_path(@current_scope.organization)}
+              class="btn btn-sm btn-ghost w-full sm:w-auto"
+            >
+              Manage workspaces <.icon name="hero-arrow-right" class="size-4" />
+            </.link>
           </div>
 
           <div
@@ -640,6 +649,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
   end
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
+  defp organization_workspaces_path(organization), do: "/o/#{organization.slug}/workspaces"
 
   defp workspace_path(organization, workspace),
     do: "/w/#{organization.slug}/#{workspace.slug}/pastes"

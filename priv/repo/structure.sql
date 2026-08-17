@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict d2Kca5aP8CA1b0dmbtfbdgBrYgBf1SlPA7bk82WA5USx94XSpmpC5iUAzYa6cqc
+\restrict BUtNx9FO4R4TMffHZBZ7wa2crgdiJE761OheRYvpLlLJeBdLxhSGMd2MCJQoevK
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -38,6 +38,22 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: audit_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_events (
+    id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    actor_user_id uuid NOT NULL,
+    action character varying(255) NOT NULL,
+    target_type character varying(255) NOT NULL,
+    target_id uuid NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    inserted_at timestamp without time zone NOT NULL
+);
+
+
+--
 -- Name: organization_memberships; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -64,6 +80,7 @@ CREATE TABLE public.organizations (
     personal_owner_id uuid,
     inserted_at timestamp(0) without time zone NOT NULL,
     updated_at timestamp(0) without time zone NOT NULL,
+    deletion_requested_at timestamp without time zone,
     CONSTRAINT organizations_kind_check CHECK (((kind)::text = ANY ((ARRAY['personal'::character varying, 'team'::character varying])::text[]))),
     CONSTRAINT organizations_personal_owner_check CHECK (((((kind)::text = 'personal'::text) AND (personal_owner_id IS NOT NULL)) OR (((kind)::text = 'team'::text) AND (personal_owner_id IS NULL))))
 );
@@ -178,10 +195,19 @@ CREATE TABLE public.workspaces (
     inserted_at timestamp(0) without time zone NOT NULL,
     updated_at timestamp(0) without time zone NOT NULL,
     external_sharing_policy character varying(255) DEFAULT 'disabled'::character varying NOT NULL,
+    deletion_requested_at timestamp without time zone,
     CONSTRAINT workspaces_default_visibility_check CHECK (((NOT is_default) OR ((visibility)::text = 'open'::text))),
     CONSTRAINT workspaces_external_sharing_policy_check CHECK (((external_sharing_policy)::text = ANY ((ARRAY['disabled'::character varying, 'unlisted'::character varying, 'public'::character varying])::text[]))),
     CONSTRAINT workspaces_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['open'::character varying, 'private'::character varying])::text[])))
 );
+
+
+--
+-- Name: audit_events audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -257,6 +283,27 @@ ALTER TABLE ONLY public.workspaces
 
 
 --
+-- Name: audit_events_actor_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audit_events_actor_user_id_index ON public.audit_events USING btree (actor_user_id);
+
+
+--
+-- Name: audit_events_organization_id_inserted_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audit_events_organization_id_inserted_at_index ON public.audit_events USING btree (organization_id, inserted_at);
+
+
+--
+-- Name: audit_events_target_type_target_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audit_events_target_type_target_id_index ON public.audit_events USING btree (target_type, target_id);
+
+
+--
 -- Name: organization_memberships_organization_id_user_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -268,6 +315,13 @@ CREATE UNIQUE INDEX organization_memberships_organization_id_user_id_index ON pu
 --
 
 CREATE INDEX organization_memberships_user_id_index ON public.organization_memberships USING btree (user_id);
+
+
+--
+-- Name: organizations_deletion_requested_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX organizations_deletion_requested_at_index ON public.organizations USING btree (deletion_requested_at) WHERE (deletion_requested_at IS NOT NULL);
 
 
 --
@@ -376,6 +430,13 @@ CREATE UNIQUE INDEX workspace_memberships_workspace_id_user_id_index ON public.w
 
 
 --
+-- Name: workspaces_deletion_requested_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workspaces_deletion_requested_at_index ON public.workspaces USING btree (deletion_requested_at) WHERE (deletion_requested_at IS NOT NULL);
+
+
+--
 -- Name: workspaces_one_default_per_organization; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -481,7 +542,7 @@ ALTER TABLE ONLY public.workspaces
 -- PostgreSQL database dump complete
 --
 
-\unrestrict d2Kca5aP8CA1b0dmbtfbdgBrYgBf1SlPA7bk82WA5USx94XSpmpC5iUAzYa6cqc
+\unrestrict BUtNx9FO4R4TMffHZBZ7wa2crgdiJE761OheRYvpLlLJeBdLxhSGMd2MCJQoevK
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -500,3 +561,6 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260810090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260810120000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260812120000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260813230000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260814080000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260814081000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260814082000);

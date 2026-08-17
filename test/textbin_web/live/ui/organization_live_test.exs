@@ -43,6 +43,8 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
           "/orgs",
           "/orgs/new",
           organization_path(context.organization),
+          organization_workspaces_path(context.organization),
+          organization_new_workspace_path(context.organization),
           organization_members_path(context.organization),
           organization_settings_path(context.organization)
         ] do
@@ -208,6 +210,12 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
              "Organization overview"
            )
 
+    assert has_element?(
+             view,
+             "#mobile-more-navigation a[href='#{organization_workspaces_path(context.organization)}']",
+             "Manage workspaces"
+           )
+
     assert has_element?(view, "#mobile-more-navigation a[href='/orgs']", "Switch organization")
 
     assert has_element?(
@@ -272,8 +280,19 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
+             "#manage-workspaces-link[href='#{organization_workspaces_path(context.organization)}']"
+           )
+
+    assert has_element?(
+             view,
              "#organization-menu a[href='#{organization_members_path(context.organization)}']",
              "Manage members"
+           )
+
+    assert has_element?(
+             view,
+             "#organization-menu a[href='#{organization_workspaces_path(context.organization)}']",
+             "Manage workspaces"
            )
 
     assert has_element?(
@@ -481,6 +500,8 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     for path <- [
           organization_path(context.organization),
+          organization_workspaces_path(context.organization),
+          organization_new_workspace_path(context.organization),
           organization_members_path(context.organization),
           organization_settings_path(context.organization)
         ] do
@@ -500,6 +521,11 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
   defp organization_path(organization), do: "/o/#{organization.slug}"
   defp organization_members_path(organization), do: "/o/#{organization.slug}/members"
+  defp organization_workspaces_path(organization), do: "/o/#{organization.slug}/workspaces"
+
+  defp organization_new_workspace_path(organization),
+    do: "/o/#{organization.slug}/workspaces/new"
+
   defp organization_settings_path(organization), do: "/o/#{organization.slug}/settings"
 
   defp add_organization_member(context, user) do
