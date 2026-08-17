@@ -4,9 +4,9 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
   import Phoenix.LiveViewTest
   import Textbin.AccountsFixtures
 
-  alias Textbin.Organizations
   alias Textbin.Accounts.User
-  alias Textbin.Organizations.OrganizationMembership
+  alias Textbin.Organizations
+  alias Textbin.Organizations.{AuditEvent, OrganizationMembership}
   alias Textbin.Repo
 
   setup %{conn: conn} do
@@ -96,6 +96,27 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
              "#audit-events article",
              "Granted member access to #{target_email} in “#{context.workspace.name}”."
            )
+  end
+
+  test "uses an immutable ID fallback for events without snapshot labels", context do
+    event =
+      Repo.insert!(%AuditEvent{
+        organization_id: context.organization.id,
+        actor_user_id: context.owner.id,
+        action: "legacy.event",
+        target_type: "workspace",
+        target_id: context.workspace.id,
+        metadata: %{}
+      })
+
+    current_email = unique_user_email()
+    Repo.update!(User.email_changeset(context.owner, %{email: current_email}))
+
+    {:ok, view, _html} = live(context.conn, audit_log_path(context.organization))
+    selector = "#audit-events article[id$='#{event.id}']"
+
+    assert has_element?(view, selector, "User · #{String.slice(context.owner.id, 0, 8)}")
+    refute has_element?(view, selector, current_email)
   end
 
   test "admins cannot access or see owner-only audit navigation", context do

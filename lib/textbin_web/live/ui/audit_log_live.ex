@@ -1,7 +1,6 @@
 defmodule TextbinWeb.UI.AuditLogLive do
   use TextbinWeb, :live_view
 
-  alias Textbin.Accounts.User
   alias Textbin.Organizations
   alias Textbin.Organizations.{AuditEvent, Organization}
 
@@ -189,8 +188,7 @@ defmodule TextbinWeb.UI.AuditLogLive do
   end
 
   defp actor_label(%AuditEvent{metadata: %{"actor_email" => email}}), do: email
-  defp actor_label(%AuditEvent{actor: %User{email: email}}), do: email
-  defp actor_label(%AuditEvent{actor_user_id: id}), do: "Deleted user · #{short_id(id)}"
+  defp actor_label(%AuditEvent{actor_user_id: id}), do: "User · #{short_id(id)}"
 
   defp target_label(%AuditEvent{metadata: %{"target_email" => email}}), do: email
   defp target_label(%AuditEvent{metadata: %{"target_name" => name}}), do: name

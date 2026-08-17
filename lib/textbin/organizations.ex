@@ -299,7 +299,7 @@ defmodule Textbin.Organizations do
          true <- Policy.organization_owner?(actor),
          {:ok, query} <- audit_event_page_query(organization_id, cursor) do
       events = Repo.all(from event in query, limit: ^(limit + 1))
-      page_events = events |> Enum.take(limit) |> Repo.preload(:actor)
+      page_events = Enum.take(events, limit)
 
       {:ok,
        %{

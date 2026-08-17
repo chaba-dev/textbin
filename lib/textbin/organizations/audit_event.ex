@@ -13,11 +13,6 @@ defmodule Textbin.Organizations.AuditEvent do
     field :target_type, :string
     field :target_id, :binary_id
     field :metadata, :map, default: %{}
-
-    belongs_to :actor, Textbin.Accounts.User,
-      foreign_key: :actor_user_id,
-      define_field: false
-
     timestamps(updated_at: false, type: :utc_datetime_usec)
   end
 
