@@ -1,8 +1,6 @@
 defmodule TextbinWeb.UserLive.Settings do
   use TextbinWeb, :live_view
 
-  on_mount {TextbinWeb.UserAuth, :require_sudo_mode}
-
   alias Textbin.Accounts
 
   @impl true
