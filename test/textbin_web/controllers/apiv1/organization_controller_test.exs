@@ -169,8 +169,7 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
 
     now = DateTime.utc_now()
 
-    Repo.insert_all(
-      AuditEvent,
+    inserted_events =
       for index <- 1..105 do
         %{
           id: Ecto.UUID.generate(),
@@ -183,7 +182,8 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
           inserted_at: now
         }
       end
-    )
+
+    Repo.insert_all(AuditEvent, inserted_events)
 
     bounded_conn =
       get(
@@ -196,6 +196,28 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
 
     assert length(bounded_events) == 100
     assert is_binary(bounded_cursor)
+
+    boundary_conn =
+      get(
+        context.conn,
+        ~p"/api/v1/organizations/#{context.organization.id}/audit-events?limit=100&cursor=#{bounded_cursor}"
+      )
+
+    assert %{"data" => boundary_events} = json_response(boundary_conn, 200)
+    assert length(boundary_events) >= 5
+
+    assert MapSet.disjoint?(
+             MapSet.new(bounded_events, & &1["id"]),
+             MapSet.new(boundary_events, & &1["id"])
+           )
+
+    paged_test_event_ids =
+      (bounded_events ++ boundary_events)
+      |> Enum.filter(&String.starts_with?(&1["action"], "test.event."))
+      |> Enum.map(& &1["id"])
+
+    assert paged_test_event_ids ==
+             inserted_events |> Enum.map(& &1.id) |> Enum.sort(:desc)
   end
 
   test "requires an API token" do

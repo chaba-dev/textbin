@@ -1060,7 +1060,13 @@ defmodule Textbin.OrganizationsTest do
 
       assert event = Enum.find(events, &(&1.action == "organization.name_changed"))
       assert event.actor_user_id == context.owner.id
-      assert event.metadata == %{"old" => "Original name", "new" => "New name"}
+
+      assert event.metadata == %{
+               "actor_email" => context.owner.email,
+               "target_name" => "New name",
+               "old" => "Original name",
+               "new" => "New name"
+             }
     end
 
     test "rejects invalid names", context do
