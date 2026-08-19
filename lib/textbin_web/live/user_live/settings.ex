@@ -213,23 +213,23 @@ defmodule TextbinWeb.UserLive.Settings do
 
   def handle_event("update_email", params, socket) do
     %{"user" => user_params} = params
-    user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
 
-    case Accounts.change_user_email(user, user_params) do
-      %{valid?: true} = changeset ->
-        Accounts.deliver_user_update_email_instructions(
-          Ecto.Changeset.apply_action!(changeset, :insert),
-          user.email,
-          &url(~p"/users/settings/confirm-email/#{&1}")
-        )
+    with_sudo_mode(socket, fn user ->
+      case Accounts.change_user_email(user, user_params) do
+        %{valid?: true} = changeset ->
+          Accounts.deliver_user_update_email_instructions(
+            Ecto.Changeset.apply_action!(changeset, :insert),
+            user.email,
+            &url(~p"/users/settings/confirm-email/#{&1}")
+          )
 
-        info = "A link to confirm your email change has been sent to the new address."
-        {:noreply, socket |> put_flash(:info, info)}
+          info = "A link to confirm your email change has been sent to the new address."
+          {:noreply, put_flash(socket, :info, info)}
 
-      changeset ->
-        {:noreply, assign(socket, :email_form, to_form(changeset, action: :insert))}
-    end
+        changeset ->
+          {:noreply, assign(socket, :email_form, to_form(changeset, action: :insert))}
+      end
+    end)
   end
 
   def handle_event("validate_password", params, socket) do
@@ -246,21 +246,20 @@ defmodule TextbinWeb.UserLive.Settings do
 
   def handle_event("update_password", params, socket) do
     %{"user" => user_params} = params
-    user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
 
-    case Accounts.change_user_password(user, user_params) do
-      %{valid?: true} = changeset ->
-        {:noreply, assign(socket, trigger_submit: true, password_form: to_form(changeset))}
+    with_sudo_mode(socket, fn user ->
+      case Accounts.change_user_password(user, user_params) do
+        %{valid?: true} = changeset ->
+          {:noreply, assign(socket, trigger_submit: true, password_form: to_form(changeset))}
 
-      changeset ->
-        {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
-    end
+        changeset ->
+          {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
+      end
+    end)
   end
 
   def handle_event("update_paste_defaults", %{"user" => user_params}, socket) do
     user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
 
     case Accounts.update_user_paste_defaults(user, user_params) do
       {:ok, user} ->
@@ -278,37 +277,48 @@ defmodule TextbinWeb.UserLive.Settings do
   end
 
   def handle_event("create_api_token", %{"api_token" => api_token_params}, socket) do
-    user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
+    with_sudo_mode(socket, fn user ->
+      case Accounts.create_user_api_token(user, api_token_params) do
+        {:ok, {token, _user_token}} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "API token created.")
+           |> assign(:api_token_form, to_form(%{"name" => ""}, as: :api_token))
+           |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
+           |> assign(:new_api_token, token)}
 
-    case Accounts.create_user_api_token(user, api_token_params) do
-      {:ok, {token, _user_token}} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "API token created.")
-         |> assign(:api_token_form, to_form(%{"name" => ""}, as: :api_token))
-         |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
-         |> assign(:new_api_token, token)}
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Could not create API token.")}
-    end
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not create API token.")}
+      end
+    end)
   end
 
   def handle_event("delete_api_token", %{"id" => token_id}, socket) do
+    with_sudo_mode(socket, fn user ->
+      case Accounts.delete_user_api_token(user, token_id) do
+        :ok ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "API token revoked.")
+           |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
+           |> assign(:new_api_token, nil)}
+
+        {:error, :not_found} ->
+          {:noreply, put_flash(socket, :error, "API token not found.")}
+      end
+    end)
+  end
+
+  defp with_sudo_mode(socket, callback) do
     user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
 
-    case Accounts.delete_user_api_token(user, token_id) do
-      :ok ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "API token revoked.")
-         |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
-         |> assign(:new_api_token, nil)}
-
-      {:error, :not_found} ->
-        {:noreply, put_flash(socket, :error, "API token not found.")}
+    if Accounts.sudo_mode?(user) do
+      callback.(user)
+    else
+      {:noreply,
+       socket
+       |> put_flash(:error, "You must re-authenticate to change sensitive account settings.")
+       |> push_navigate(to: ~p"/users/log-in")}
     end
   end
 

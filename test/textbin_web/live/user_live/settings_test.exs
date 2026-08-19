@@ -87,6 +87,19 @@ defmodule TextbinWeb.UserLive.SettingsTest do
       assert result =~ "Change Email"
       assert result =~ "did not change"
     end
+
+    test "requires recent authentication when changing email", %{conn: conn, user: user} do
+      conn = log_in_user(conn, user, token_authenticated_at: old_authentication())
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      assert {:error, {:live_redirect, %{to: path}}} =
+               lv
+               |> form("#email_form", %{"user" => %{"email" => unique_user_email()}})
+               |> render_submit()
+
+      assert path == ~p"/users/log-in"
+      assert Accounts.get_user_by_email(user.email)
+    end
   end
 
   describe "update password form" do
@@ -158,6 +171,24 @@ defmodule TextbinWeb.UserLive.SettingsTest do
       assert result =~ "should be at least 12 character(s)"
       assert result =~ "does not match password"
     end
+
+    test "requires recent authentication when changing password", %{conn: conn, user: user} do
+      conn = log_in_user(conn, user, token_authenticated_at: old_authentication())
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      assert {:error, {:live_redirect, %{to: path}}} =
+               lv
+               |> form("#password_form", %{
+                 "user" => %{
+                   "email" => user.email,
+                   "password" => valid_user_password(),
+                   "password_confirmation" => valid_user_password()
+                 }
+               })
+               |> render_submit()
+
+      assert path == ~p"/users/log-in"
+    end
   end
 
   describe "paste defaults form" do
@@ -177,6 +208,17 @@ defmodule TextbinWeb.UserLive.SettingsTest do
         |> render_submit()
 
       assert result =~ "Paste defaults updated."
+      assert Accounts.get_user!(user.id).default_paste_ttl == "1h"
+    end
+
+    test "updates default paste expiration with an old session", %{conn: conn, user: user} do
+      conn = log_in_user(conn, user, token_authenticated_at: old_authentication())
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      lv
+      |> form("#paste_defaults_form", %{"user" => %{"default_paste_ttl" => "1h"}})
+      |> render_submit()
+
       assert Accounts.get_user!(user.id).default_paste_ttl == "1h"
     end
   end
@@ -215,6 +257,34 @@ defmodule TextbinWeb.UserLive.SettingsTest do
 
       refute has_element?(lv, "#api-token-#{user_token.id}")
       assert has_element?(lv, "#api-token-empty")
+    end
+
+    test "requires recent authentication to create an API token", %{conn: conn, user: user} do
+      conn = log_in_user(conn, user, token_authenticated_at: old_authentication())
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      assert {:error, {:live_redirect, %{to: path}}} =
+               lv
+               |> form("#api_token_form", %{"api_token" => %{"name" => "CLI"}})
+               |> render_submit()
+
+      assert path == ~p"/users/log-in"
+      assert Accounts.list_user_api_tokens(user) == []
+    end
+
+    test "requires recent authentication to revoke an API token", %{conn: conn, user: user} do
+      {:ok, {_raw_token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
+      conn = log_in_user(conn, user, token_authenticated_at: old_authentication())
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      assert {:error, {:live_redirect, %{to: path}}} =
+               lv
+               |> element("#delete-api-token-#{user_token.id}")
+               |> render_click()
+
+      assert path == ~p"/users/log-in"
+      assert [persisted_token] = Accounts.list_user_api_tokens(user)
+      assert persisted_token.id == user_token.id
     end
   end
 
@@ -266,5 +336,9 @@ defmodule TextbinWeb.UserLive.SettingsTest do
       assert %{"error" => message} = flash
       assert message == "You must log in to access this page."
     end
+  end
+
+  defp old_authentication do
+    DateTime.add(DateTime.utc_now(:second), -21, :minute)
   end
 end

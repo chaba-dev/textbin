@@ -135,4 +135,33 @@ defmodule TextbinWeb.UserSessionControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Logged out successfully"
     end
   end
+
+  describe "POST /users/update-password" do
+    test "does not update the password without recent authentication", %{conn: conn, user: user} do
+      user = set_password(user)
+      old_password = valid_user_password()
+      new_password = "a completely different password"
+
+      conn =
+        conn
+        |> log_in_user(user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
+        )
+        |> post(~p"/users/update-password", %{
+          "user" => %{
+            "email" => user.email,
+            "password" => new_password,
+            "password_confirmation" => new_password
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+               "You must re-authenticate to change sensitive account settings."
+
+      assert Accounts.get_user_by_email_and_password(user.email, old_password)
+      refute Accounts.get_user_by_email_and_password(user.email, new_password)
+    end
+  end
 end
