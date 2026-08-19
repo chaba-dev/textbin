@@ -169,11 +169,16 @@ defmodule Textbin.Accounts do
   If the token matches, the user email is updated and the token is deleted.
   """
   def update_user_email(user, token) do
-    context = "change:#{user.email}"
-
     Repo.transact(fn ->
-      with {:ok, query} <- UserToken.verify_change_email_token_query(token, context),
-           %UserToken{sent_to: email} <- Repo.one(query),
+      with %User{} = user <-
+             Repo.one(
+               from(candidate in User, where: candidate.id == ^user.id, lock: "FOR UPDATE")
+             ),
+           context = "change:#{user.email}",
+           {:ok, query} <-
+             UserToken.verify_change_email_token_query(token, context, user.id),
+           %UserToken{id: token_id, sent_to: email} <- Repo.one(query),
+           {1, nil} <- Repo.delete_all(from(UserToken, where: [id: ^token_id])),
            {:ok, user} <- Repo.update(User.email_changeset(user, %{email: email})),
            {_count, _result} <-
              Repo.delete_all(from(UserToken, where: [user_id: ^user.id, context: ^context])) do

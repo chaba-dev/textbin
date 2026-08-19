@@ -46,18 +46,27 @@ defmodule TextbinWeb.UserSessionController do
     end
   end
 
-  def update_password(conn, %{"user" => user_params} = params) do
+  def update_password(conn, %{"user" => user_params}) do
     user = conn.assigns.current_scope.user
 
     if Accounts.sudo_mode?(user) do
-      {:ok, {_user, expired_tokens}} = Accounts.update_user_password(user, user_params)
+      case Accounts.update_user_password(user, user_params) do
+        {:ok, {updated_user, expired_tokens}} ->
+          # The password change itself establishes fresh authentication without
+          # trusting client-posted identity fields to look the user up again.
+          updated_user = %{updated_user | authenticated_at: DateTime.utc_now(:second)}
+          UserAuth.disconnect_sessions(expired_tokens)
 
-      # disconnect all existing LiveViews with old sessions
-      UserAuth.disconnect_sessions(expired_tokens)
+          conn
+          |> put_flash(:info, "Password updated successfully!")
+          |> put_session(:user_return_to, ~p"/users/settings")
+          |> UserAuth.log_in_user(updated_user, %{})
 
-      conn
-      |> put_session(:user_return_to, ~p"/users/settings")
-      |> create(params, "Password updated successfully!")
+        {:error, _changeset} ->
+          conn
+          |> put_flash(:error, "Could not update password.")
+          |> redirect(to: ~p"/users/settings")
+      end
     else
       conn
       |> put_flash(:error, "You must re-authenticate to change sensitive account settings.")

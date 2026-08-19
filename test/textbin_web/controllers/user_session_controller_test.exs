@@ -137,6 +137,44 @@ defmodule TextbinWeb.UserSessionControllerTest do
   end
 
   describe "POST /users/update-password" do
+    test "returns to settings when password attributes are invalid", %{conn: conn, user: user} do
+      user = set_password(user)
+      old_password = valid_user_password()
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/users/update-password", %{
+          "user" => %{
+            "password" => "short",
+            "password_confirmation" => "different"
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/users/settings"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Could not update password."
+      assert Accounts.get_user_by_email_and_password(user.email, old_password)
+    end
+
+    test "updates the password without trusting a posted email", %{conn: conn, user: user} do
+      user = set_password(user)
+      new_password = "a completely different password"
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/users/update-password", %{
+          "user" => %{
+            "password" => new_password,
+            "password_confirmation" => new_password
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/users/settings"
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Password updated successfully"
+      assert Accounts.get_user_by_email_and_password(user.email, new_password)
+    end
+
     test "does not update the password without recent authentication", %{conn: conn, user: user} do
       user = set_password(user)
       old_password = valid_user_password()
