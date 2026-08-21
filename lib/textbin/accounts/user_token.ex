@@ -158,13 +158,14 @@ defmodule Textbin.Accounts.UserToken do
   database and if it has not expired (after @change_email_validity_in_days).
   The context must always start with "change:".
   """
-  def verify_change_email_token_query(token, "change:" <> _ = context) do
+  def verify_change_email_token_query(token, "change:" <> _ = context, user_id) do
     case Base.url_decode64(token, padding: false) do
       {:ok, decoded_token} ->
         hashed_token = :crypto.hash(@hash_algorithm, decoded_token)
 
         query =
           from token in by_token_and_context_query(hashed_token, context),
+            where: token.user_id == ^user_id,
             where: token.inserted_at > ago(@change_email_validity_in_days, "day")
 
         {:ok, query}

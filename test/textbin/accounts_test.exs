@@ -178,10 +178,14 @@ defmodule Textbin.AccountsTest do
     end
 
     test "does not update email if user email changed", %{user: user, token: token} do
-      assert Accounts.update_user_email(%{user | email: "current@example.com"}, token) ==
+      user
+      |> change(email: "current@example.com")
+      |> Repo.update!()
+
+      assert Accounts.update_user_email(user, token) ==
                {:error, :transaction_aborted}
 
-      assert Repo.get!(User, user.id).email == user.email
+      assert Repo.get!(User, user.id).email == "current@example.com"
       assert Repo.get_by(UserToken, user_id: user.id)
     end
 
@@ -193,6 +197,51 @@ defmodule Textbin.AccountsTest do
 
       assert Repo.get!(User, user.id).email == user.email
       assert Repo.get_by(UserToken, user_id: user.id)
+    end
+
+    test "does not accept another user's token", %{user: user} do
+      other_user = user_fixture()
+      other_email = unique_user_email()
+
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_update_email_instructions(
+            %{other_user | email: other_email},
+            user.email,
+            url
+          )
+        end)
+
+      assert Accounts.update_user_email(user, token) == {:error, :transaction_aborted}
+      assert Repo.get!(User, user.id).email == user.email
+      assert Repo.get!(User, other_user.id).email == other_user.email
+    end
+
+    test "only the first of two competing confirmations succeeds", %{user: user} do
+      first_email = unique_user_email()
+      second_email = unique_user_email()
+
+      first_token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_update_email_instructions(
+            %{user | email: first_email},
+            user.email,
+            url
+          )
+        end)
+
+      second_token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_update_email_instructions(
+            %{user | email: second_email},
+            user.email,
+            url
+          )
+        end)
+
+      assert {:ok, %{email: ^first_email}} = Accounts.update_user_email(user, first_token)
+      assert Accounts.update_user_email(user, second_token) == {:error, :transaction_aborted}
+      assert Repo.get!(User, user.id).email == first_email
     end
   end
 
