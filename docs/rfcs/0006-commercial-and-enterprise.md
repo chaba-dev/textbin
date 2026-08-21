@@ -1,4 +1,10 @@
-# Commercial and enterprise specification
+---
+rfc: 0006
+title: Commercial and enterprise
+status: Draft
+---
+
+# RFC 0006: Commercial and enterprise
 
 ## Goal
 
@@ -54,11 +60,11 @@ are not published until monitoring and incident response can measure them.
 
 ## Acceptance criteria
 
-- Entitlements are deterministic, auditable, and resilient to duplicated or
+- [ ] Entitlements are deterministic, auditable, and resilient to duplicated or
   reordered billing webhooks.
-- Billing failures cannot grant authority or expose another organization's data.
-- OIDC, SAML, and SCIM identities are tenant-scoped and cannot be claimed by an
+- [ ] Billing failures cannot grant authority or expose another organization's data.
+- [ ] OIDC, SAML, and SCIM identities are tenant-scoped and cannot be claimed by an
   unrelated organization.
-- Custom-domain verification and certificate renewal fail closed.
-- Exports are authorized at download time and expire automatically.
-- Published SLA measurements match the actual monitoring definition.
+- [ ] Custom-domain verification and certificate renewal fail closed.
+- [ ] Exports are authorized at download time and expire automatically.
+- [ ] Published SLA measurements match the actual monitoring definition.

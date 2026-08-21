@@ -1,4 +1,10 @@
-# Advanced developer workflows specification
+---
+rfc: 0007
+title: Advanced developer workflows
+status: Draft
+---
+
+# RFC 0007: Advanced developer workflows
 
 ## Goal
 
@@ -66,13 +72,13 @@ the source command and preserves raw bytes until the upload boundary.
 
 ## Acceptance criteria
 
-- Redaction tests include false positives, encoded secrets, large input, and
+- [ ] Redaction tests include false positives, encoded secrets, large input, and
   adversarial custom expressions.
-- CI behavior is deterministic without a TTY and never prints tokens.
-- Bundles reject traversal, duplicate paths, archive bombs, and over-limit
+- [ ] CI behavior is deterministic without a TTY and never prints tokens.
+- [ ] Bundles reject traversal, duplicate paths, archive bombs, and over-limit
   manifests before finalization.
-- Diff authorization and resource limits are enforced server-side.
-- Interrupted migration resumes without duplicate content.
-- Client-side encryption ships only after its envelope and key-sharing model
+- [ ] Diff authorization and resource limits are enforced server-side.
+- [ ] Interrupted migration resumes without duplicate content.
+- [ ] Client-side encryption ships only after its envelope and key-sharing model
   receive an explicit security review.
-- Integration helpers introduce no new server-side trust boundary.
+- [ ] Integration helpers introduce no new server-side trust boundary.

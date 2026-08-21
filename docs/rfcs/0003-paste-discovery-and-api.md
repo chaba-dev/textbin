@@ -1,4 +1,10 @@
-# Paste discovery and API contract specification
+---
+rfc: 0003
+title: Paste discovery and API contract
+status: Draft
+---
+
+# RFC 0003: Paste discovery and API contract
 
 ## Goal
 
@@ -62,12 +68,12 @@ an SDK supported.
 
 ## Acceptance criteria
 
-- Viewer metadata, readable sizes, and line anchors work for anonymous shared
+- [ ] Viewer metadata, readable sizes, and line anchors work for anonymous shared
   and authenticated private views without weakening authorization.
-- Dashboard and API filters can be combined and retain stable cursor ordering.
-- Search cannot reveal the existence or metadata of an unauthorized paste.
-- Every CLI command's `--json` output is machine-readable and covered by
+- [ ] Dashboard and API filters can be combined and retain stable cursor ordering.
+- [ ] Search cannot reveal the existence or metadata of an unauthorized paste.
+- [ ] Every CLI command's `--json` output is machine-readable and covered by
   compatibility tests.
-- API create/show responses contain canonical and raw URLs.
-- Oversized JSON is rejected before full decoding.
-- OpenAPI validation and server contract tests run in CI.
+- [ ] API create/show responses contain canonical and raw URLs.
+- [ ] Oversized JSON is rejected before full decoding.
+- [ ] OpenAPI validation and server contract tests run in CI.

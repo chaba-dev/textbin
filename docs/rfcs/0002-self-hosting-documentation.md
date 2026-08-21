@@ -1,4 +1,10 @@
-# Self-hosting documentation specification
+---
+rfc: 0002
+title: Self-hosting documentation
+status: Draft
+---
+
+# RFC 0002: Self-hosting documentation
 
 ## Goal
 
@@ -45,12 +51,12 @@ scheduling are operator responsibilities.
 
 ## Acceptance criteria
 
-- A fresh operator can identify every required external dependency and durable
+- [ ] A fresh operator can identify every required external dependency and durable
   path from the guide alone.
-- Local-storage and S3-compatible deployments each have a complete configuration
+- [ ] Local-storage and S3-compatible deployments each have a complete configuration
   example and verification procedure.
-- The documented migration, admin-bootstrap, backup, restore, and upgrade
+- [ ] The documented migration, admin-bootstrap, backup, restore, and upgrade
   commands execute against the published release image.
-- Documentation clearly separates supported runtime contracts from illustrative
+- [ ] Documentation clearly separates supported runtime contracts from illustrative
   orchestration examples.
-- A restore drill verifies both metadata and external paste content.
+- [ ] A restore drill verifies both metadata and external paste content.

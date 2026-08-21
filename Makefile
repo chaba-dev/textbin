@@ -16,6 +16,10 @@ rs-test:
 .PHONY: lint
 lint: ex-lint rs-lint
 
+.PHONY: check-rfcs
+check-rfcs:
+	./scripts/check-rfc-status.sh
+
 .PHONY: ex-lint
 ex-lint:
 	mix credo

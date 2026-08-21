@@ -1,4 +1,10 @@
-# Hosted safety and operations specification
+---
+rfc: 0004
+title: Hosted safety and operations
+status: Draft
+---
+
+# RFC 0004: Hosted safety and operations
 
 ## Goal
 
@@ -63,12 +69,12 @@ policy can be finalized.
 
 ## Acceptance criteria
 
-- Limits are enforced consistently across browser, raw API, JSON API, and CLI
+- [ ] Limits are enforced consistently across browser, raw API, JSON API, and CLI
   traffic.
-- Tests cover proxy trust, distributed-limit behavior, retry headers, and key
+- [ ] Tests cover proxy trust, distributed-limit behavior, retry headers, and key
   isolation.
-- Reports can be submitted without exposing reporter identity publicly and can
+- [ ] Reports can be submitted without exposing reporter identity publicly and can
   be resolved only by platform admins.
-- Logs and traces pass tests that reject known secret and content fields.
-- Metrics avoid unbounded labels and expose background cleanup failures.
-- A documented hosted restore drill proves both database and blob recovery.
+- [ ] Logs and traces pass tests that reject known secret and content fields.
+- [ ] Metrics avoid unbounded labels and expose background cleanup failures.
+- [ ] A documented hosted restore drill proves both database and blob recovery.

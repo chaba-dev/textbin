@@ -1,4 +1,10 @@
-# Workspace collaboration specification
+---
+rfc: 0005
+title: Workspace collaboration
+status: Draft
+---
+
+# RFC 0005: Workspace collaboration
 
 ## Goal
 
@@ -52,13 +58,13 @@ error and never falls back to a personal workspace silently.
 
 ## Acceptance criteria
 
-- Invitation token theft alone is insufficient when the authenticated email
+- [ ] Invitation token theft alone is insufficient when the authenticated email
   does not match the invitation.
-- Concurrent acceptance, revocation, and role changes preserve one membership
+- [ ] Concurrent acceptance, revocation, and role changes preserve one membership
   and current authorization policy.
-- Workspace defaults are enforced identically for browser, user-token, and
+- [ ] Workspace defaults are enforced identically for browser, user-token, and
   workspace-token creation.
-- Workspace tokens cannot cross workspace boundaries or exercise ungranted
+- [ ] Workspace tokens cannot cross workspace boundaries or exercise ungranted
   scopes.
-- CLI profile selection never redirects a command to another workspace without
+- [ ] CLI profile selection never redirects a command to another workspace without
   explicit user action.

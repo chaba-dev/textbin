@@ -1,4 +1,10 @@
-# Administration specification
+---
+rfc: 0001
+title: Administration
+status: Draft
+---
+
+# RFC 0001: Administration
 
 ## Goal
 
@@ -85,15 +91,15 @@ for the platform log.
 
 ## Acceptance criteria
 
-- A non-admin cannot mount an admin route or obtain admin data by calling a
+- [ ] A non-admin cannot mount an admin route or obtain admin data by calling a
   context function directly.
-- Organization owners and admins have no platform authority unless separately
+- [ ] Organization owners and admins have no platform authority unless separately
   granted it.
-- An operator can grant the first platform administrator from a release without
+- [ ] An operator can grant the first platform administrator from a release without
   manipulating the database manually.
-- Every privilege change, suspension, restoration, and administrative deletion
+- [ ] Every privilege change, suspension, restoration, and administrative deletion
   is audited.
-- Concurrent attempts cannot remove the final platform administrator.
-- Admin list queries are paginated, scoped in SQL, and do not load paste bodies.
-- Authorization, final-admin concurrency, reauthentication, and audit behavior
+- [ ] Concurrent attempts cannot remove the final platform administrator.
+- [ ] Admin list queries are paginated, scoped in SQL, and do not load paste bodies.
+- [ ] Authorization, final-admin concurrency, reauthentication, and audit behavior
   have context and LiveView tests.
