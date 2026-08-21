@@ -10,8 +10,7 @@ proposal; it does not commit the project to delivery or delivery order.
 | [0003: Paste discovery and API contract](0003-paste-discovery-and-api.md) | Draft | Metadata, viewer polish, filters, search, JSON output, OpenAPI, and SDKs |
 | [0004: Hosted safety and operations](0004-hosted-safety-and-operations.md) | Draft | Limits, rate limiting, abuse controls, telemetry, tracing, and backups |
 | [0005: Workspace collaboration](0005-workspace-collaboration.md) | Draft | Invitations, defaults, workspace tokens, and CLI workflows |
-| [0006: Commercial and enterprise](0006-commercial-and-enterprise.md) | Draft | Billing, paid limits, SSO, SCIM, domains, compliance, and support |
-| [0007: Advanced developer workflows](0007-advanced-developer-workflows.md) | Draft | Redaction, CI helpers, bundles, diffs, migration, encryption, and integrations |
+| [0006: Advanced developer workflows](0006-advanced-developer-workflows.md) | Draft | Redaction, CI helpers, bundles, diffs, migration, encryption, and integrations |
 
 Run `./scripts/check-rfc-status.sh` to validate RFC numbering, metadata, status,
 and acceptance-checklist progress. Supported statuses are `Draft`, `Accepted`,

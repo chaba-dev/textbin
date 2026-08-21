@@ -1,10 +1,10 @@
 ---
-rfc: 0007
+rfc: 0006
 title: Advanced developer workflows
 status: Draft
 ---
 
-# RFC 0007: Advanced developer workflows
+# RFC 0006: Advanced developer workflows
 
 ## Goal
 
