@@ -1,0 +1,61 @@
+:authors: Darwin D Wu <darwin67@users.noreply.github.com>
+:state: discussion
+:discussion: https://github.com/chaba-dev/textbin/pull/54
+:labels: software, process
+
+= RFD 5 Workspace collaboration
+
+== Goal
+
+Complete team workflows around the existing organization, workspace, role, and
+workspace-owned paste model.
+
+== Invitations
+
+Organization owners and admins can invite an email address to an organization
+with an initial organization role. Workspace owners can invite an existing
+organization member to their workspace. Invitations are single-use, expire,
+store only a token hash, and can be revoked before acceptance.
+
+Acceptance rechecks the inviter's authority and target organization/workspace at
+transaction time. Existing memberships produce an idempotent result rather than
+duplicates. Invitation emails and pages do not reveal private organization data
+before authentication and email matching.
+
+== Workspace defaults
+
+Each workspace can define default visibility and expiration plus an optional
+maximum expiration. Creation applies defaults server-side when values are
+absent and rejects values outside workspace policy. Defaults never retroactively
+change existing pastes.
+
+Only workspace owners can change workspace defaults. Organization admins do not
+implicitly override workspace-owner policy unless that authority is separately
+specified.
+
+== Workspace API tokens
+
+Workspace tokens represent automation owned by a workspace rather than a user.
+They have a name, token hash, creator, last-used timestamp, optional expiration,
+and explicit scopes. The raw token is shown once. Revoking the creator's
+membership does not silently revoke a workspace-owned token; token lifecycle is
+managed explicitly by workspace owners.
+
+The first scopes are paste read, paste create, and paste delete. A token cannot
+manage members, invitations, roles, billing, or other tokens.
+
+== CLI workflows
+
+The CLI can list accessible organizations and workspaces, select a default per
+profile, override it per command, and clearly display the active destination
+before destructive actions. Stored selections use immutable IDs while showing
+human-readable names.
+
+Workspace create/show/delete/list/search use the same public API contract as
+other clients. A stale or unauthorized selected workspace returns an actionable
+error and never falls back to a personal workspace silently.
+
+== Implementation
+
+Progress against this proposal is tracked in the
+link:IMPLEMENTATION.org[RFD 5 implementation checklist].

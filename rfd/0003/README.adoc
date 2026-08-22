@@ -1,0 +1,71 @@
+:authors: Darwin D Wu <darwin67@users.noreply.github.com>
+:state: discussion
+:discussion: https://github.com/chaba-dev/textbin/pull/54
+:labels: software, api
+
+= RFD 3 Paste discovery and API contract
+
+== Goal
+
+Complete the everyday paste workflow and define one stable API contract used by
+the web application, CLI, and generated clients.
+
+== Paste metadata and viewer
+
+Pastes gain optional `title` and `filename` metadata with bounded lengths and no
+path semantics. The browser viewer displays title or filename, human-readable
+size, and stable line anchors. Anchors update the URL fragment without changing
+the paste and remain usable when syntax highlighting is disabled.
+
+Binary pastes remain downloads and are never interpreted as HTML. Metadata in
+headers and download filenames is escaped according to the relevant protocol.
+
+== Dashboard filters, list, recent, and search
+
+Owner-visible lists support cursor pagination and filters for syntax,
+visibility, expiration state, creator, and workspace. `recent` is the newest
+active subset of `list`, not a separate persistence model.
+
+Search is introduced in this order:
+
+. exact/prefix metadata search over title and filename;
+. PostgreSQL full-text search for eligible text paste bodies;
+. tags and advanced filters only after their data model is specified.
+
+Every query is restricted to workspaces and pastes the current scope may read.
+Private content never enters a public search index. Public discovery, if added,
+is a separate feature and indexes only public pastes.
+
+== CLI JSON and canonical URLs
+
+Create, show, delete, list, recent, and search support `--json`. JSON mode writes
+one documented JSON value to stdout and diagnostics to stderr. It disables
+color, browser opening, and human formatting.
+
+Paste representations include canonical `url` and `raw_url` values generated
+from endpoint configuration. Dates use RFC 3339 UTC strings, IDs remain strings,
+and absent optional values are consistently `null` or omitted as defined by the
+OpenAPI schema.
+
+== Request limits
+
+The Plug JSON parser limit is no greater than the application paste limit plus a
+small documented metadata allowance. Oversized requests are rejected before
+the complete JSON body is decoded. Raw and multipart paths enforce the same
+content limit while streaming.
+
+== OpenAPI and clients
+
+OpenAPI covers authentication, token management, paste CRUD, list/recent/search,
+raw content, organizations, workspaces, memberships, and invitations. The
+document is versioned with the server and checked for drift in CI.
+
+The CLI consumes the stable v1 behavior rather than private endpoints. A
+generated TypeScript client is the first supported SDK. Go and Python clients
+are deferred until there is demonstrated demand; generation alone does not make
+an SDK supported.
+
+== Implementation
+
+Progress against this proposal is tracked in the
+link:IMPLEMENTATION.org[RFD 3 implementation checklist].

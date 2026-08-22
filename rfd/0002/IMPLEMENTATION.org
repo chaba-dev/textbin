@@ -1,0 +1,13 @@
+#+TITLE: RFD 0002 implementation checklist
+
+Implements [[file:README.adoc][RFD 2: Self-hosting documentation]].
+
+- [ ] A fresh operator can identify every required external dependency and durable
+  path from the guide alone.
+- [ ] Local-storage and S3-compatible deployments each have a complete configuration
+  example and verification procedure.
+- [ ] The documented migration, admin-bootstrap, backup, restore, and upgrade
+  commands execute against the published release image.
+- [ ] Documentation clearly separates supported runtime contracts from illustrative
+  orchestration examples.
+- [ ] A restore drill verifies both metadata and external paste content.
