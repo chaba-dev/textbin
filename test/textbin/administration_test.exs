@@ -5,6 +5,7 @@ defmodule Textbin.AdministrationTest do
   alias Textbin.Accounts.{Scope, User, UserToken}
   alias Textbin.Administration
   alias Textbin.Administration.PlatformAuditEvent
+  alias Textbin.Organizations
   alias Textbin.Release
 
   import Textbin.AccountsFixtures
@@ -66,19 +67,38 @@ defmodule Textbin.AdministrationTest do
       assert {:error, :forbidden} = Administration.authorize_platform_admin(scope)
     end
 
-    test "organization roles and stale platform fields grant no authority" do
-      user = user_fixture()
-      stale = %{user | platform_role: "admin"}
+    test "organization owners and admins have no platform authority" do
+      owner = user_fixture()
+      organization_admin = user_fixture()
+      target = user_fixture()
 
-      assert {:error, :forbidden} =
-               Administration.authorize_platform_admin(Scope.for_user(stale))
+      assert {:ok, organization} =
+               Organizations.create_organization(Scope.for_user(owner), %{
+                 name: "Platform isolation",
+                 slug: "platform-isolation-#{System.unique_integer([:positive])}"
+               })
 
-      assert {:error, :forbidden} =
-               Administration.grant_platform_admin(
-                 Scope.for_user(stale),
-                 user_fixture(),
-                 "not authorized"
+      assert {:ok, memberships} =
+               Organizations.add_organization_member(
+                 Scope.for_user(owner),
+                 organization,
+                 organization_admin
                )
+
+      assert {:ok, _membership} =
+               Organizations.change_organization_member_role(
+                 Scope.for_user(owner),
+                 memberships.organization,
+                 "admin"
+               )
+
+      for user <- [owner, organization_admin] do
+        scope = Scope.for_user(%{user | authenticated_at: DateTime.utc_now(:second)})
+        assert {:error, :forbidden} = Administration.authorize_platform_admin(scope)
+
+        assert {:error, :forbidden} =
+                 Administration.grant_platform_admin(scope, target, "not authorized")
+      end
     end
   end
 
