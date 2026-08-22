@@ -38,6 +38,16 @@ defmodule Textbin.AccountsTest do
       assert %User{id: ^id} =
                Accounts.get_user_by_email_and_password(user.email, valid_user_password())
     end
+
+    test "does not return a suspended user with a valid password" do
+      user = user_fixture() |> set_password()
+
+      Repo.update_all(from(candidate in User, where: candidate.id == ^user.id),
+        set: [suspended_at: DateTime.utc_now(:second)]
+      )
+
+      refute Accounts.get_user_by_email_and_password(user.email, valid_user_password())
+    end
   end
 
   describe "get_user!/1" do

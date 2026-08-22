@@ -42,8 +42,9 @@ defmodule Textbin.Accounts do
   def get_user_by_email_and_password(email, password)
       when is_binary(email) and is_binary(password) do
     user = Repo.get_by(User, email: email)
+    valid_password? = User.valid_password?(user, password)
 
-    if user && is_nil(user.suspended_at) && User.valid_password?(user, password), do: user
+    if valid_password? && match?(%User{suspended_at: nil}, user), do: user
   end
 
   @doc """
