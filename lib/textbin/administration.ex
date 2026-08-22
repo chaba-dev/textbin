@@ -29,18 +29,7 @@ defmodule Textbin.Administration do
 
   @doc false
   def authorize_account_deletion(%Scope{user: %User{id: user_id}} = scope) do
-    case Repo.transact(fn ->
-           with :ok <- lock_authority_changes(),
-                %User{suspended_at: nil} = user <- lock_user(user_id),
-                :ok <- require_account_deletion_reauthentication(scope, user),
-                :ok <- preserve_active_admin(user.id, user.platform_role) do
-             {:ok, :authorized}
-           else
-             nil -> {:error, :not_found}
-             %User{} -> {:error, :not_found}
-             error -> error
-           end
-         end) do
+    case Repo.transact(fn -> authorize_account_deletion_in_transaction(scope, user_id) end) do
       {:ok, :authorized} -> :ok
       error -> error
     end
@@ -77,54 +66,17 @@ defmodule Textbin.Administration do
   @doc "Bootstraps or recovers platform authority through an audited release RPC."
   def bootstrap_platform_admin(email) when is_binary(email) do
     email = email |> String.trim() |> String.downcase()
-
-    Repo.transact(fn ->
-      with :ok <- lock_authority_changes(),
-           %User{} = user <- lock_user_by_email(email),
-           :ok <- eligible_admin_target(user) do
-        result =
-          if user.platform_role == @platform_admin_role, do: :already_present, else: :granted
-
-        with {:ok, user} <- put_platform_role(user, @platform_admin_role),
-             :ok <-
-               record_bootstrap_audit(user, result) do
-          {:ok, result}
-        end
-      else
-        nil -> {:error, :not_found}
-        error -> error
-      end
-    end)
+    Repo.transact(fn -> bootstrap_platform_admin_in_transaction(email) end)
   end
 
   @doc "Grants platform authority to an eligible user."
   def grant_platform_admin(scope, target, reason, opts \\ []) do
     with {:ok, reason} <- normalize_reason(reason),
          {:ok, target_id} <- user_id(target) do
-      authority_transaction(scope, fn actor ->
-        with %User{} = target <- lock_user(target_id),
-             :ok <- eligible_admin_target(target) do
-          if target.platform_role == @platform_admin_role do
-            {:ok, :already_present}
-          else
-            with {:ok, target} <- put_platform_role(target, @platform_admin_role),
-                 :ok <-
-                   record_user_audit(
-                     actor,
-                     "platform.admin.granted",
-                     target,
-                     reason,
-                     %{"previous_role" => nil, "new_role" => @platform_admin_role},
-                     opts
-                   ) do
-              {:ok, target}
-            end
-          end
-        else
-          nil -> {:error, :not_found}
-          error -> error
-        end
-      end)
+      authority_transaction(
+        scope,
+        &grant_platform_admin_in_transaction(&1, target_id, reason, opts)
+      )
     end
   end
 
@@ -132,26 +84,10 @@ defmodule Textbin.Administration do
   def revoke_platform_admin(scope, target, reason, opts \\ []) do
     with {:ok, reason} <- normalize_reason(reason),
          {:ok, target_id} <- user_id(target) do
-      authority_transaction(scope, fn actor ->
-        with %User{platform_role: @platform_admin_role} = target <- lock_user(target_id),
-             :ok <- preserve_active_admin(target.id, target.platform_role),
-             {:ok, target} <- put_platform_role(target, nil),
-             :ok <-
-               record_user_audit(
-                 actor,
-                 "platform.admin.revoked",
-                 target,
-                 reason,
-                 %{"previous_role" => @platform_admin_role, "new_role" => nil},
-                 opts
-               ) do
-          {:ok, target}
-        else
-          nil -> {:error, :not_found}
-          %User{} -> {:error, :not_found}
-          error -> error
-        end
-      end)
+      authority_transaction(
+        scope,
+        &revoke_platform_admin_in_transaction(&1, target_id, reason, opts)
+      )
     end
   end
 
@@ -161,32 +97,16 @@ defmodule Textbin.Administration do
          {:ok, target_id} <- user_id(target),
          {:ok, replacement_id} <- user_id(replacement),
          :ok <- distinct_users(target_id, replacement_id) do
-      authority_transaction(scope, fn actor ->
-        with %User{platform_role: @platform_admin_role} = target <- lock_user(target_id),
-             %User{} = replacement <- lock_user(replacement_id),
-             :ok <- eligible_admin_target(replacement),
-             {:ok, replacement} <- maybe_grant_replacement(actor, replacement, reason, opts),
-             {:ok, target} <- put_platform_role(target, nil),
-             :ok <-
-               record_user_audit(
-                 actor,
-                 "platform.admin.revoked",
-                 target,
-                 reason,
-                 %{
-                   "previous_role" => @platform_admin_role,
-                   "new_role" => nil,
-                   "replacement_user_id" => replacement.id
-                 },
-                 opts
-               ) do
-          {:ok, %{revoked: target, replacement: replacement}}
-        else
-          nil -> {:error, :not_found}
-          %User{} -> {:error, :not_found}
-          error -> error
-        end
-      end)
+      authority_transaction(
+        scope,
+        &transfer_platform_admin_in_transaction(
+          &1,
+          target_id,
+          replacement_id,
+          reason,
+          opts
+        )
+      )
     end
   end
 
@@ -196,32 +116,10 @@ defmodule Textbin.Administration do
       with {:ok, reason} <- normalize_reason(reason),
            {:ok, target_id} <- user_id(target),
            :ok <- not_self(scope, target_id) do
-        authority_transaction(scope, fn actor ->
-          with %User{} = target <- lock_user(target_id),
-               :ok <- not_suspended(target),
-               :ok <- preserve_active_admin(target.id, target.platform_role),
-               tokens <- Repo.all_by(UserToken, user_id: target.id),
-               {:ok, target} <-
-                 target
-                 |> Ecto.Changeset.change(suspended_at: DateTime.utc_now(:second))
-                 |> Repo.update(),
-               {_count, nil} <-
-                 Repo.delete_all(from token in UserToken, where: token.user_id == ^target.id),
-               :ok <-
-                 record_user_audit(
-                   actor,
-                   "platform.account.suspended",
-                   target,
-                   reason,
-                   %{},
-                   opts
-                 ) do
-            {:ok, {target, tokens}}
-          else
-            nil -> {:error, :not_found}
-            error -> error
-          end
-        end)
+        authority_transaction(
+          scope,
+          &suspend_user_in_transaction(&1, target_id, reason, opts)
+        )
       end
 
     disconnect_suspended_sessions(result)
@@ -231,28 +129,172 @@ defmodule Textbin.Administration do
   def restore_user(scope, target, reason, opts \\ []) do
     with {:ok, reason} <- normalize_reason(reason),
          {:ok, target_id} <- user_id(target) do
-      authority_transaction(scope, fn actor ->
-        with %User{suspended_at: %DateTime{}} = target <- lock_user(target_id),
-             {:ok, target} <-
-               target
-               |> Ecto.Changeset.change(suspended_at: nil)
-               |> Repo.update(),
-             :ok <-
-               record_user_audit(
-                 actor,
-                 "platform.account.restored",
-                 target,
-                 reason,
-                 %{},
-                 opts
-               ) do
-          {:ok, target}
-        else
-          nil -> {:error, :not_found}
-          %User{} -> {:error, :not_found}
-          error -> error
-        end
-      end)
+      authority_transaction(scope, &restore_user_in_transaction(&1, target_id, reason, opts))
+    end
+  end
+
+  defp authorize_account_deletion_in_transaction(scope, user_id) do
+    with :ok <- lock_authority_changes(),
+         %User{suspended_at: nil} = user <- lock_user(user_id),
+         :ok <- require_account_deletion_reauthentication(scope, user),
+         :ok <- preserve_active_admin(user.id, user.platform_role) do
+      {:ok, :authorized}
+    else
+      nil -> {:error, :not_found}
+      %User{} -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp bootstrap_platform_admin_in_transaction(email) do
+    with :ok <- lock_authority_changes(),
+         %User{} = user <- lock_user_by_email(email),
+         :ok <- eligible_admin_target(user) do
+      grant_bootstrap_role(user)
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp grant_bootstrap_role(user) do
+    result = if user.platform_role == @platform_admin_role, do: :already_present, else: :granted
+
+    with {:ok, user} <- put_platform_role(user, @platform_admin_role),
+         :ok <- record_bootstrap_audit(user, result) do
+      {:ok, result}
+    end
+  end
+
+  defp grant_platform_admin_in_transaction(actor, target_id, reason, opts) do
+    with %User{} = target <- lock_user(target_id),
+         :ok <- eligible_admin_target(target) do
+      grant_platform_role(actor, target, reason, opts)
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp grant_platform_role(_actor, %User{platform_role: @platform_admin_role}, _reason, _opts),
+    do: {:ok, :already_present}
+
+  defp grant_platform_role(actor, target, reason, opts) do
+    with {:ok, target} <- put_platform_role(target, @platform_admin_role),
+         :ok <-
+           record_user_audit(
+             actor,
+             "platform.admin.granted",
+             target,
+             reason,
+             %{"previous_role" => nil, "new_role" => @platform_admin_role},
+             opts
+           ) do
+      {:ok, target}
+    end
+  end
+
+  defp revoke_platform_admin_in_transaction(actor, target_id, reason, opts) do
+    with %User{platform_role: @platform_admin_role} = target <- lock_user(target_id),
+         :ok <- preserve_active_admin(target.id, target.platform_role),
+         {:ok, target} <- put_platform_role(target, nil),
+         :ok <-
+           record_user_audit(
+             actor,
+             "platform.admin.revoked",
+             target,
+             reason,
+             %{"previous_role" => @platform_admin_role, "new_role" => nil},
+             opts
+           ) do
+      {:ok, target}
+    else
+      nil -> {:error, :not_found}
+      %User{} -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp transfer_platform_admin_in_transaction(actor, target_id, replacement_id, reason, opts) do
+    with %User{platform_role: @platform_admin_role} = target <- lock_user(target_id),
+         %User{} = replacement <- lock_user(replacement_id),
+         :ok <- eligible_admin_target(replacement),
+         {:ok, replacement} <- maybe_grant_replacement(actor, replacement, reason, opts),
+         {:ok, target} <- put_platform_role(target, nil),
+         :ok <- record_transfer_revocation(actor, target, replacement, reason, opts) do
+      {:ok, %{revoked: target, replacement: replacement}}
+    else
+      nil -> {:error, :not_found}
+      %User{} -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp record_transfer_revocation(actor, target, replacement, reason, opts) do
+    record_user_audit(
+      actor,
+      "platform.admin.revoked",
+      target,
+      reason,
+      %{
+        "previous_role" => @platform_admin_role,
+        "new_role" => nil,
+        "replacement_user_id" => replacement.id
+      },
+      opts
+    )
+  end
+
+  defp suspend_user_in_transaction(actor, target_id, reason, opts) do
+    with %User{} = target <- lock_user(target_id),
+         :ok <- not_suspended(target),
+         :ok <- preserve_active_admin(target.id, target.platform_role),
+         tokens <- Repo.all_by(UserToken, user_id: target.id),
+         {:ok, target} <- suspend_account(target),
+         {_count, nil} <-
+           Repo.delete_all(from token in UserToken, where: token.user_id == ^target.id),
+         :ok <-
+           record_user_audit(
+             actor,
+             "platform.account.suspended",
+             target,
+             reason,
+             %{},
+             opts
+           ) do
+      {:ok, {target, tokens}}
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp suspend_account(target) do
+    target
+    |> Ecto.Changeset.change(suspended_at: DateTime.utc_now(:second))
+    |> Repo.update()
+  end
+
+  defp restore_user_in_transaction(actor, target_id, reason, opts) do
+    with %User{suspended_at: %DateTime{}} = target <- lock_user(target_id),
+         {:ok, target} <-
+           target
+           |> Ecto.Changeset.change(suspended_at: nil)
+           |> Repo.update(),
+         :ok <-
+           record_user_audit(
+             actor,
+             "platform.account.restored",
+             target,
+             reason,
+             %{},
+             opts
+           ) do
+      {:ok, target}
+    else
+      nil -> {:error, :not_found}
+      %User{} -> {:error, :not_found}
+      error -> error
     end
   end
 

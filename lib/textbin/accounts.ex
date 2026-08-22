@@ -477,23 +477,24 @@ defmodule Textbin.Accounts do
   end
 
   defp insert_token_for_active_user(user_id, build_token) do
-    Repo.transact(fn ->
-      case Repo.one(from user in User, where: user.id == ^user_id, lock: "FOR UPDATE") do
-        %User{suspended_at: nil} = user ->
-          {encoded_token, user_token} = build_token.(user)
+    Repo.transact(fn -> insert_token_in_transaction(user_id, build_token) end)
+  end
 
-          case Repo.insert(user_token) do
-            {:ok, user_token} -> {:ok, {encoded_token, user_token, user}}
-            {:error, changeset} -> {:error, changeset}
-          end
+  defp insert_token_in_transaction(user_id, build_token) do
+    case Repo.one(from user in User, where: user.id == ^user_id, lock: "FOR UPDATE") do
+      %User{suspended_at: nil} = user -> insert_built_token(user, build_token)
+      %User{} -> {:error, :suspended}
+      nil -> {:error, :suspended}
+    end
+  end
 
-        %User{} ->
-          {:error, :suspended}
+  defp insert_built_token(user, build_token) do
+    {encoded_token, user_token} = build_token.(user)
 
-        nil ->
-          {:error, :suspended}
-      end
-    end)
+    case Repo.insert(user_token) do
+      {:ok, user_token} -> {:ok, {encoded_token, user_token, user}}
+      {:error, changeset} -> {:error, changeset}
+    end
   end
 
   ## Token helper
