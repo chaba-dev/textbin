@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict BUtNx9FO4R4TMffHZBZ7wa2crgdiJE761OheRYvpLlLJeBdLxhSGMd2MCJQoevK
+\restrict 6gtWhRfmKpVJkaDO90gYdQMd8oshwcJAhZ5etVA7wO4LV6cIsOJfb8kQjX2kxyN
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -31,6 +31,19 @@ CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 --
 
 COMMENT ON EXTENSION citext IS 'data type for case-insensitive character strings';
+
+
+--
+-- Name: prevent_platform_audit_event_changes(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_platform_audit_event_changes() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'platform audit events are append-only';
+END;
+$$;
 
 
 SET default_tablespace = '';
@@ -121,6 +134,26 @@ CREATE TABLE public.pending_uploads (
 
 
 --
+-- Name: platform_audit_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_audit_events (
+    id uuid NOT NULL,
+    actor_kind character varying(255) NOT NULL,
+    actor_user_id uuid,
+    actor_label character varying(255) NOT NULL,
+    action character varying(255) NOT NULL,
+    target_type character varying(255) NOT NULL,
+    target_id uuid NOT NULL,
+    reason text NOT NULL,
+    request_id character varying(255),
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    inserted_at timestamp without time zone NOT NULL,
+    CONSTRAINT platform_audit_events_actor_must_be_valid CHECK (((((actor_kind)::text = 'user'::text) AND (actor_user_id IS NOT NULL)) OR (((actor_kind)::text = 'bootstrap'::text) AND (actor_user_id IS NULL))))
+);
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -142,7 +175,10 @@ CREATE TABLE public.users (
     inserted_at timestamp(0) without time zone NOT NULL,
     updated_at timestamp(0) without time zone NOT NULL,
     default_paste_ttl character varying(255) DEFAULT 'never'::character varying NOT NULL,
-    kind character varying(255) DEFAULT 'registered'::character varying NOT NULL
+    kind character varying(255) DEFAULT 'registered'::character varying NOT NULL,
+    platform_role character varying(255),
+    suspended_at timestamp(0) without time zone,
+    CONSTRAINT users_platform_role_must_be_supported CHECK (((platform_role IS NULL) OR ((platform_role)::text = 'admin'::text)))
 );
 
 
@@ -240,6 +276,14 @@ ALTER TABLE ONLY public.pastes
 
 ALTER TABLE ONLY public.pending_uploads
     ADD CONSTRAINT pending_uploads_pkey PRIMARY KEY (storage_key);
+
+
+--
+-- Name: platform_audit_events platform_audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_audit_events
+    ADD CONSTRAINT platform_audit_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -381,6 +425,27 @@ CREATE INDEX pending_uploads_inserted_at_index ON public.pending_uploads USING b
 
 
 --
+-- Name: platform_audit_events_actor_user_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_audit_events_actor_user_id_index ON public.platform_audit_events USING btree (actor_user_id);
+
+
+--
+-- Name: platform_audit_events_inserted_at_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_audit_events_inserted_at_id_index ON public.platform_audit_events USING btree (inserted_at, id);
+
+
+--
+-- Name: platform_audit_events_target_type_target_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_audit_events_target_type_target_id_index ON public.platform_audit_events USING btree (target_type, target_id);
+
+
+--
 -- Name: users_email_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -392,6 +457,20 @@ CREATE UNIQUE INDEX users_email_index ON public.users USING btree (email);
 --
 
 CREATE INDEX users_kind_index ON public.users USING btree (kind);
+
+
+--
+-- Name: users_platform_role_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX users_platform_role_index ON public.users USING btree (platform_role) WHERE (platform_role IS NOT NULL);
+
+
+--
+-- Name: users_suspended_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX users_suspended_at_index ON public.users USING btree (suspended_at) WHERE (suspended_at IS NOT NULL);
 
 
 --
@@ -448,6 +527,13 @@ CREATE UNIQUE INDEX workspaces_one_default_per_organization ON public.workspaces
 --
 
 CREATE UNIQUE INDEX workspaces_organization_id_slug_index ON public.workspaces USING btree (organization_id, slug);
+
+
+--
+-- Name: platform_audit_events platform_audit_events_are_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER platform_audit_events_are_append_only BEFORE DELETE OR UPDATE ON public.platform_audit_events FOR EACH ROW EXECUTE FUNCTION public.prevent_platform_audit_event_changes();
 
 
 --
@@ -542,7 +628,7 @@ ALTER TABLE ONLY public.workspaces
 -- PostgreSQL database dump complete
 --
 
-\unrestrict BUtNx9FO4R4TMffHZBZ7wa2crgdiJE761OheRYvpLlLJeBdLxhSGMd2MCJQoevK
+\unrestrict 6gtWhRfmKpVJkaDO90gYdQMd8oshwcJAhZ5etVA7wO4LV6cIsOJfb8kQjX2kxyN
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -564,3 +650,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260813230000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814080000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814081000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814082000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260822090000);

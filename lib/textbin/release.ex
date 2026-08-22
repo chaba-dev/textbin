@@ -14,6 +14,11 @@ defmodule Textbin.Release do
     end
   end
 
+  @doc "Grants platform administration authority to a confirmed existing user."
+  def grant_platform_admin(email) when is_binary(email) do
+    Textbin.Administration.bootstrap_platform_admin(email)
+  end
+
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
   end

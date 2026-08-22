@@ -66,6 +66,7 @@ defmodule Textbin.Accounts.UserToken do
       from token in by_token_and_context_query(token, "session"),
         join: user in assoc(token, :user),
         where: token.inserted_at > ago(@session_validity_in_days, "day"),
+        where: is_nil(user.suspended_at),
         select: {%{user | authenticated_at: token.authenticated_at}, token.inserted_at}
 
     {:ok, query}
@@ -138,6 +139,7 @@ defmodule Textbin.Accounts.UserToken do
             join: user in assoc(token, :user),
             where: token.inserted_at > ago(^@magic_link_validity_in_minutes, "minute"),
             where: token.sent_to == user.email,
+            where: is_nil(user.suspended_at),
             select: {user, token}
 
         {:ok, query}
@@ -184,6 +186,7 @@ defmodule Textbin.Accounts.UserToken do
     query =
       from token in by_token_and_context_query(hashed_token, @api_token_context),
         join: user in assoc(token, :user),
+        where: is_nil(user.suspended_at),
         select: {user, token}
 
     {:ok, query}

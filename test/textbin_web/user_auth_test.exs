@@ -3,7 +3,10 @@ defmodule TextbinWeb.UserAuthTest do
 
   alias Phoenix.LiveView
   alias Textbin.Accounts
-  alias Textbin.Accounts.Scope
+  alias Textbin.Accounts.{Scope, User}
+  alias Textbin.Administration
+  alias Textbin.Repo
+  alias TextbinWeb.ForbiddenError
   alias TextbinWeb.UserAuth
 
   import Textbin.AccountsFixtures
@@ -364,6 +367,53 @@ defmodule TextbinWeb.UserAuthTest do
 
       assert updated_socket.assigns.current_scope.user.id == guest_user.id
       assert updated_socket.assigns.current_scope.user.kind == "guest"
+    end
+  end
+
+  describe "platform administration authorization" do
+    test "allows an administrator and reloads current authority", %{conn: conn, user: user} do
+      assert {:ok, :granted} = Administration.bootstrap_platform_admin(user.email)
+      user = Repo.get!(User, user.id)
+      user_token = Accounts.generate_user_session_token(user)
+      session = conn |> put_session(:user_token, user_token) |> get_session()
+
+      assert {:cont, _socket} =
+               UserAuth.on_mount(:require_platform_admin, %{}, session, %LiveView.Socket{})
+
+      Repo.update_all(User, set: [platform_role: nil])
+
+      assert_raise ForbiddenError, fn ->
+        UserAuth.on_mount(:require_platform_admin, %{}, session, %LiveView.Socket{})
+      end
+    end
+
+    test "returns forbidden for an authenticated non-admin", %{conn: conn, user: user} do
+      user_token = Accounts.generate_user_session_token(user)
+      session = conn |> put_session(:user_token, user_token) |> get_session()
+
+      assert_raise ForbiddenError, fn ->
+        UserAuth.on_mount(:require_platform_admin, %{}, session, %LiveView.Socket{})
+      end
+
+      conn = assign(conn, :current_scope, Scope.for_user(user))
+      assert_raise ForbiddenError, fn -> UserAuth.require_platform_admin(conn, []) end
+    end
+
+    test "redirects an unauthenticated LiveView to login", %{conn: conn} do
+      socket = %LiveView.Socket{
+        endpoint: TextbinWeb.Endpoint,
+        assigns: %{__changed__: %{}, flash: %{}}
+      }
+
+      assert {:halt, updated_socket} =
+               UserAuth.on_mount(
+                 :require_platform_admin,
+                 %{},
+                 get_session(conn),
+                 socket
+               )
+
+      assert updated_socket.assigns.current_scope == nil
     end
   end
 

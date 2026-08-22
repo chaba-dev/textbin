@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 EMAIL" >&2
+  exit 64
+fi
+
+export TEXTBIN_PLATFORM_ADMIN_EMAIL="$1"
+
+exec "$(dirname "$0")/textbin" rpc \
+  'Textbin.Release.grant_platform_admin(System.fetch_env!("TEXTBIN_PLATFORM_ADMIN_EMAIL"))'
