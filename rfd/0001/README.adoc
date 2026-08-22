@@ -22,9 +22,17 @@ Textbin adds a platform-level `admin` role. It is independent of organization
   must not appear as a workspace collaborator.
 * Ordinary users have no platform role. Absence of the role is the default.
 
-Platform authority is stored on the user account or in a dedicated platform
-role relation with a database constraint over supported values. Authorization
-must not depend on email addresses, configuration allowlists, or UI state.
+Platform authority is stored as a nullable `platform_role` on the user account.
+The database permits only the `admin` value; `NULL` represents an ordinary
+user. Registration, profile, and other user-controlled changesets never cast
+this field. A dedicated relation can replace the field if Textbin later gains
+multiple platform roles or delegated permissions.
+
+An active platform administrator is confirmed, not suspended, and has the
+`admin` platform role. Every authority-changing operation preserves at least
+one active platform administrator. Authorization must not depend on email
+addresses, configuration allowlists, UI state, or authority copied into a
+long-lived session.
 
 == Authentication and authorization
 
@@ -34,14 +42,26 @@ The admin LiveViews belong inside the existing
 requires a current user. A platform-admin `on_mount` hook then rejects
 non-admins before mounting the page.
 
-Context modules repeat the platform-admin check for every read and mutation so
-they remain safe when called by a controller, release task, or future API. A
-denied browser request behaves as not found unless showing an explicit forbidden
-response is operationally useful; APIs return `403` after authentication.
+The scope's user ID establishes caller identity but a user struct loaded into a
+session is not proof of current authority. Context modules query current account
+and platform-role state for every administrative read and mutation so they
+remain safe when called by a connected LiveView, controller, release task, or
+future API. Role changes notify mounted admin LiveViews so they can leave the
+panel promptly; context authorization remains the security boundary if a
+notification is delayed or missed.
 
-Destructive and privilege-changing actions require recent reauthentication.
+Unauthenticated browser requests redirect to login. An authenticated non-admin
+receives `403 Forbidden`, while an absent target receives `404 Not Found`. APIs
+return `401` without valid authentication and `403` when an authenticated caller
+lacks platform authority. Contexts represent those cases distinctly so each
+transport can map them without weakening authorization.
+
 Administrative sessions use the normal session lifetime; there is no separate
-permanent admin session or impersonation feature.
+permanent admin session or impersonation feature. The existing twenty-minute
+sudo window and supported password or magic-link login establish recent
+reauthentication. The first version does not require MFA. Adding MFA is a
+separate authentication change rather than a panel-specific password
+requirement.
 
 == Initial administrator bootstrap
 
@@ -50,39 +70,138 @@ platform-admin role to an existing, confirmed user identified by normalized
 email. Operators invoke it through the release binary. It must:
 
 . fail if the user does not exist or is not confirmed;
+. fail if the selected user is suspended;
 . lock and update the selected account transactionally;
 . report whether authority was granted or already present; and
 . append an immutable platform audit event naming the actor as the bootstrap
    mechanism.
 
 The function does not accept or print passwords. Registration and confirmation
-remain the normal account-creation path. Revoking the final platform admin is
-rejected unless a replacement is granted in the same operation.
+remain the normal account-creation path. The function remains available when
+administrators already exist so an operator with release access can recover
+administrative access without manipulating the database manually. It does not
+silently restore a suspended account.
+
+Grant, revoke, suspend, restore, and account-deletion operations serialize on a
+single PostgreSQL transaction-level advisory lock before evaluating the active
+administrator invariant. Revoking, suspending, or deleting the final active
+administrator is rejected unless an eligible replacement is granted in the
+same transactional transfer operation. Self-suspension is not available in the
+panel.
 
 == Panel scope
 
 The first admin panel provides:
 
-* installation totals and recent operational failures;
+* installation totals that can be answered efficiently from PostgreSQL;
 * user lookup by exact email or ID and account status;
 * organization and workspace lookup with membership summaries;
-* recent and largest paste metadata, without rendering content by default;
+* recent public paste metadata and largest paste metadata, without selecting or
+  rendering paste bodies;
 * abuse reports and their resolution state;
 * administrative paste deletion;
 * account suspension and restoration; and
 * platform administrator grant and revocation.
 
-Viewing paste content, impersonating users, editing user content, changing
-organization ownership, and reading bearer tokens are not part of the first
-version.
+The panel does not provide a privileged content-reading path. Administrators can
+read public content normally and can inspect an unlisted paste when a report or
+exact-ID lookup gives them its capability ID. General recent-paste discovery is
+limited to public pastes. Largest-paste results may include body-free metadata
+for every audience but do not expose an unlisted paste ID. Workspace-only
+content remains governed by workspace membership.
+
+Impersonating users, editing user content, changing organization ownership, and
+reading bearer tokens are not part of the first version. General request and
+application failures belong in structured logs and metrics defined by RFD 4;
+the panel does not become a log viewer. A future panel may show bounded, durable
+maintenance state such as failed blob cleanup attempts.
+
+== Administrative actions
+
+Administrative paste deletion requires a reason and recent reauthentication.
+In one database transaction, the context reauthorizes the actor, locks the
+paste, marks it expired, and appends its platform audit event. Expiration makes
+the paste inaccessible immediately. Existing retryable cleanup then removes its
+inline or external data and hard-deletes the row. A storage failure does not
+roll back the moderation decision or its audit record; the target ID remains in
+the platform log after cleanup.
+
+Suspension requires a reason and recent reauthentication. It records
+`suspended_at`, revokes every session and API token, and disconnects active
+sessions. Authentication queries reject suspended users, including password and
+magic-link login. Suspension preserves content, organization and workspace
+memberships, and the platform role. Restoration also requires a reason, recent
+reauthentication, and an audit event, but does not restore old tokens; the user
+must log in again.
+
+Platform-role grants and revocations require a reason and recent
+reauthentication. A grant target must be registered, confirmed, and not
+suspended. Dismissing or resolving an abuse report requires a reason and an
+audit event but does not alone require recent reauthentication. If resolution
+deletes a paste or suspends an account, the corresponding action retains its
+reauthentication requirement.
+
+[cols="2,1,1,1",options="header"]
+|===
+| Action
+| Reason
+| Recent reauthentication
+| Audit event
+
+| Read panel data or the platform audit log
+| No
+| No
+| No
+
+| Dismiss or resolve a report without another mutation
+| Yes
+| No
+| Yes
+
+| Delete a paste
+| Yes
+| Yes
+| Yes
+
+| Suspend or restore an account
+| Yes
+| Yes
+| Yes
+
+| Grant, revoke, or transfer the platform-admin role
+| Yes
+| Yes
+| Yes
+
+| Grant the role through the release bootstrap
+| Fixed mechanism reason
+| Not applicable
+| Yes
+|===
+
+RFD 4 owns report submission, the report schema and state machine, reason
+categories, rate limits, safety metrics, and the public reporting experience.
+This RFD owns platform authorization, the administrator review queue, and the
+authorized moderation actions. The administration foundation can ship before
+the RFD 4 report model; the report queue depends on that model.
 
 == Audit requirements
 
-Every administrative mutation records an append-only platform audit event with
-the actor, action, target type and ID, timestamp, request ID when available, and
-non-secret structured metadata. Bootstrap events identify the release command
-rather than inventing a user actor. Audit records never contain paste content,
-passwords, session tokens, API tokens, or storage credentials.
+Every administrative mutation records a separate, append-only platform audit
+event in the same database transaction as the durable mutation. An event stores
+the actor kind, nullable actor user ID, immutable actor label, action, target
+type and ID, timestamp, reason, request ID when available from trusted server
+context, and non-secret structured metadata such as previous and new state.
+Bootstrap events use a `bootstrap` actor kind and identify the release mechanism
+rather than inventing a user actor. Database constraints enforce valid user and
+bootstrap actor combinations.
+
+Textbin's runtime database path rejects updates and deletes of platform audit
+events. This makes events immutable through the application without claiming
+to prevent a self-hosting database owner from changing their own database.
+Audit records never contain paste content, passwords, session tokens, API
+tokens, or storage credentials. They remain cursor-paginated with a bounded
+page size.
 
 Only platform administrators can read platform audit events. Organization audit
 events remain governed by organization authorization and are not a substitute
