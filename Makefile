@@ -19,6 +19,7 @@ lint: ex-lint rs-lint
 .PHONY: check-rfcs
 check-rfcs:
 	./scripts/check-rfc-status.sh
+	./scripts/check-rfc-status-test.sh
 
 .PHONY: ex-lint
 ex-lint:
