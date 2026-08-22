@@ -247,13 +247,18 @@ defmodule Textbin.Accounts do
   @doc """
   Generates a session token.
   """
-  def generate_user_session_token(user) do
-    if active_user?(user) do
-      {token, user_token} = UserToken.build_session_token(user)
-      Repo.insert!(user_token)
-      token
-    else
-      raise ArgumentError, "cannot create a session for a suspended user"
+  def generate_user_session_token(%User{} = user) do
+    result =
+      insert_token_for_active_user(user.id, fn current_user ->
+        UserToken.build_session_token(%{
+          current_user
+          | authenticated_at: user.authenticated_at
+        })
+      end)
+
+    case result do
+      {:ok, {token, _user_token, _current_user}} -> token
+      {:error, :suspended} -> raise ArgumentError, "cannot create a session for a suspended user"
     end
   end
 
@@ -347,12 +352,15 @@ defmodule Textbin.Accounts do
   """
   def deliver_login_instructions(%User{} = user, magic_link_url_fun)
       when is_function(magic_link_url_fun, 1) do
-    if active_user?(user) do
-      {encoded_token, user_token} = UserToken.build_email_token(user, "login")
-      Repo.insert!(user_token)
-      UserNotifier.deliver_login_instructions(user, magic_link_url_fun.(encoded_token))
-    else
-      {:error, :suspended}
+    case insert_token_for_active_user(user.id, &UserToken.build_email_token(&1, "login")) do
+      {:ok, {encoded_token, _user_token, current_user}} ->
+        UserNotifier.deliver_login_instructions(
+          current_user,
+          magic_link_url_fun.(encoded_token)
+        )
+
+      {:error, :suspended} = error ->
+        error
     end
   end
 
@@ -400,16 +408,11 @@ defmodule Textbin.Accounts do
   The raw token is returned once alongside the stored token record.
   """
   def create_user_api_token(%User{} = user, attrs \\ %{}) do
-    if active_user?(user) do
-      name = api_token_name(attrs)
-      {token, user_token} = UserToken.build_api_token(user, name)
+    name = api_token_name(attrs)
 
-      case Repo.insert(user_token) do
-        {:ok, user_token} -> {:ok, {token, user_token}}
-        {:error, changeset} -> {:error, changeset}
-      end
-    else
-      {:error, :suspended}
+    case insert_token_for_active_user(user.id, &UserToken.build_api_token(&1, name)) do
+      {:ok, {token, user_token, _current_user}} -> {:ok, {token, user_token}}
+      error -> error
     end
   end
 
@@ -473,8 +476,24 @@ defmodule Textbin.Accounts do
     end
   end
 
-  defp active_user?(%User{id: user_id}) do
-    Repo.exists?(from user in User, where: user.id == ^user_id and is_nil(user.suspended_at))
+  defp insert_token_for_active_user(user_id, build_token) do
+    Repo.transact(fn ->
+      case Repo.one(from user in User, where: user.id == ^user_id, lock: "FOR UPDATE") do
+        %User{suspended_at: nil} = user ->
+          {encoded_token, user_token} = build_token.(user)
+
+          case Repo.insert(user_token) do
+            {:ok, user_token} -> {:ok, {encoded_token, user_token, user}}
+            {:error, changeset} -> {:error, changeset}
+          end
+
+        %User{} ->
+          {:error, :suspended}
+
+        nil ->
+          {:error, :suspended}
+      end
+    end)
   end
 
   ## Token helper
