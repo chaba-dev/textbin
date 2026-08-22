@@ -1,0 +1,14 @@
+#+TITLE: RFD 0006 implementation checklist
+
+Implements [[file:README.adoc][RFD 6: Advanced developer workflows]].
+
+- [ ] Redaction tests include false positives, encoded secrets, large input, and
+  adversarial custom expressions.
+- [ ] CI behavior is deterministic without a TTY and never prints tokens.
+- [ ] Bundles reject traversal, duplicate paths, archive bombs, and over-limit
+  manifests before finalization.
+- [ ] Diff authorization and resource limits are enforced server-side.
+- [ ] Interrupted migration resumes without duplicate content.
+- [ ] Client-side encryption ships only after its envelope and key-sharing model
+  receive an explicit security review.
+- [ ] Integration helpers introduce no new server-side trust boundary.

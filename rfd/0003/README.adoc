@@ -65,14 +65,7 @@ generated TypeScript client is the first supported SDK. Go and Python clients
 are deferred until there is demonstrated demand; generation alone does not make
 an SDK supported.
 
-== Acceptance criteria
+== Implementation
 
-* [ ] Viewer metadata, readable sizes, and line anchors work for anonymous shared
-  and authenticated private views without weakening authorization.
-* [ ] Dashboard and API filters can be combined and retain stable cursor ordering.
-* [ ] Search cannot reveal the existence or metadata of an unauthorized paste.
-* [ ] Every CLI command's `--json` output is machine-readable and covered by
-  compatibility tests.
-* [ ] API create/show responses contain canonical and raw URLs.
-* [ ] Oversized JSON is rejected before full decoding.
-* [ ] OpenAPI validation and server contract tests run in CI.
+Progress against this proposal is tracked in the
+link:IMPLEMENTATION.org[RFD 3 implementation checklist].

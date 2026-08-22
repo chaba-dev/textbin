@@ -32,6 +32,11 @@ pull-request URL once discussion starts. `labels` is a comma-separated set of
 searchable topics. The document is the single source of truth for this metadata;
 the index intentionally does not duplicate it.
 
+Implementation progress lives separately in `rfd/NNNN/IMPLEMENTATION.org` for
+Textbin's current RFDs. The checker also accepts `IMPLEMENTATION.md`; an RFD must
+have exactly one format. The RFD and checklist link to each other, keeping the
+design and decision record stable while implementation tasks are checked off.
+
 Run `make check-rfds` to validate source layout, metadata, state, title, and the
 checker regression fixtures.
 
@@ -46,14 +51,16 @@ checker regression fixtures.
 
 The usual path is `prediscussion` or `ideation` to `discussion`, then
 `published`, and eventually `committed`. `abandoned` is an off-ramp at any stage.
-Checklists may help organize an RFD, but they do not determine its state.
+Implementation checklist progress does not determine the RFD's state.
 
 ## Lifecycle
 
-Reserve the next unused four-digit number and create `rfd/NNNN/README.adoc` on a
-branch. Use `prediscussion` while writing or `ideation` for a topic placeholder.
-When the document is ready for review, open a pull request, set the state to
-`discussion`, and add that pull request as the discussion URL.
+Reserve the next unused four-digit number and create `rfd/NNNN/README.adoc` and
+one implementation checklist (`IMPLEMENTATION.org` or `IMPLEMENTATION.md`) on a
+branch. Cross-link the two documents. Use `prediscussion` while writing or
+`ideation` for a topic placeholder. When the document is ready for review, open
+a pull request, set the state to `discussion`, and add that pull request as the
+discussion URL.
 
 Before merging a proposal that represents project direction, move it to
 `published`. Once the described work is entirely implemented, update it to

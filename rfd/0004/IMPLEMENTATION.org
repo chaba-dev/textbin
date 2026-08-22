@@ -1,0 +1,13 @@
+#+TITLE: RFD 0004 implementation checklist
+
+Implements [[file:README.adoc][RFD 4: Hosted safety and operations]].
+
+- [ ] Limits are enforced consistently across browser, raw API, JSON API, and CLI
+  traffic.
+- [ ] Tests cover proxy trust, distributed-limit behavior, retry headers, and key
+  isolation.
+- [ ] Reports can be submitted without exposing reporter identity publicly and can
+  be resolved only by platform admins.
+- [ ] Logs and traces pass tests that reject known secret and content fields.
+- [ ] Metrics avoid unbounded labels and expose background cleanup failures.
+- [ ] A documented hosted restore drill proves both database and blob recovery.

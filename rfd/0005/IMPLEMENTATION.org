@@ -1,0 +1,14 @@
+#+TITLE: RFD 0005 implementation checklist
+
+Implements [[file:README.adoc][RFD 5: Workspace collaboration]].
+
+- [ ] Invitation token theft alone is insufficient when the authenticated email
+  does not match the invitation.
+- [ ] Concurrent acceptance, revocation, and role changes preserve one membership
+  and current authorization policy.
+- [ ] Workspace defaults are enforced identically for browser, user-token, and
+  workspace-token creation.
+- [ ] Workspace tokens cannot cross workspace boundaries or exercise ungranted
+  scopes.
+- [ ] CLI profile selection never redirects a command to another workspace without
+  explicit user action.

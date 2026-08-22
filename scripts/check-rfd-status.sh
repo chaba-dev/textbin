@@ -182,6 +182,52 @@ for entry in "${entries[@]}"; do
 		number="0"
 	fi
 
+	implementations=()
+	[[ -f "${entry}/IMPLEMENTATION.org" ]] && implementations+=("${entry}/IMPLEMENTATION.org")
+	[[ -f "${entry}/IMPLEMENTATION.md" ]] && implementations+=("${entry}/IMPLEMENTATION.md")
+
+	if [[ "${#implementations[@]}" -eq 0 ]]; then
+		printf "%smissing implementation checklist%s: %s/IMPLEMENTATION.org or IMPLEMENTATION.md\n" "${color_red}" "${color_reset}" "${entry_name}" >&2
+		failures=$((failures + 1))
+	elif [[ "${#implementations[@]}" -gt 1 ]]; then
+		printf "%smultiple implementation checklist formats%s: %s\n" "${color_red}" "${color_reset}" "${entry_name}" >&2
+		failures=$((failures + 1))
+	else
+		implementation="${implementations[0]}"
+		implementation_name="$(basename "${implementation}")"
+
+		case "${implementation_name}" in
+		IMPLEMENTATION.org)
+			expected_heading="#+TITLE: RFD ${entry_name} implementation checklist"
+			backlink="[[file:README.adoc]["
+			;;
+		IMPLEMENTATION.md)
+			expected_heading="# RFD ${entry_name} implementation checklist"
+			backlink="](README.adoc)"
+			;;
+		esac
+
+		if [[ "$(head -n 1 "${implementation}")" != "${expected_heading}" ]]; then
+			printf "%sinvalid implementation checklist heading%s: %s/%s\n" "${color_red}" "${color_reset}" "${entry_name}" "${implementation_name}" >&2
+			failures=$((failures + 1))
+		fi
+
+		if ! grep -Fq "${backlink}" "${implementation}"; then
+			printf "%simplementation checklist must link to its RFD%s: %s/%s\n" "${color_red}" "${color_reset}" "${entry_name}" "${implementation_name}" >&2
+			failures=$((failures + 1))
+		fi
+
+		if ! grep -Fq "link:${implementation_name}[" "${source}"; then
+			printf "%sRFD must link to its implementation checklist%s: %s/README.adoc\n" "${color_red}" "${color_reset}" "${entry_name}" >&2
+			failures=$((failures + 1))
+		fi
+	fi
+
+	if grep -Eq '^\* \[[ xX]\]' "${source}"; then
+		printf "%simplementation checkboxes belong in a separate implementation document%s: %s/README.adoc\n" "${color_red}" "${color_reset}" "${entry_name}" >&2
+		failures=$((failures + 1))
+	fi
+
 	parsed="$(read_rfd "${source}" "${entry_name}/README.adoc" "${number}")"
 	state="${parsed%%$'\t'*}"
 	remainder="${parsed#*$'\t'}"

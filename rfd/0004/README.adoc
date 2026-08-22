@@ -66,14 +66,7 @@ isolated environment and verify metadata-to-blob checksums. Recovery point and
 recovery time objectives must be selected before the schedule and retention
 policy can be finalized.
 
-== Acceptance criteria
+== Implementation
 
-* [ ] Limits are enforced consistently across browser, raw API, JSON API, and CLI
-  traffic.
-* [ ] Tests cover proxy trust, distributed-limit behavior, retry headers, and key
-  isolation.
-* [ ] Reports can be submitted without exposing reporter identity publicly and can
-  be resolved only by platform admins.
-* [ ] Logs and traces pass tests that reject known secret and content fields.
-* [ ] Metrics avoid unbounded labels and expose background cleanup failures.
-* [ ] A documented hosted restore drill proves both database and blob recovery.
+Progress against this proposal is tracked in the
+link:IMPLEMENTATION.org[RFD 4 implementation checklist].

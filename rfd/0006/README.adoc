@@ -69,15 +69,7 @@ existing commands. They do not shell-expand user input, silently elevate
 privileges, or add service-specific server APIs. Each helper shows or documents
 the source command and preserves raw bytes until the upload boundary.
 
-== Acceptance criteria
+== Implementation
 
-* [ ] Redaction tests include false positives, encoded secrets, large input, and
-  adversarial custom expressions.
-* [ ] CI behavior is deterministic without a TTY and never prints tokens.
-* [ ] Bundles reject traversal, duplicate paths, archive bombs, and over-limit
-  manifests before finalization.
-* [ ] Diff authorization and resource limits are enforced server-side.
-* [ ] Interrupted migration resumes without duplicate content.
-* [ ] Client-side encryption ships only after its envelope and key-sharing model
-  receive an explicit security review.
-* [ ] Integration helpers introduce no new server-side trust boundary.
+Progress against this proposal is tracked in the
+link:IMPLEMENTATION.org[RFD 6 implementation checklist].

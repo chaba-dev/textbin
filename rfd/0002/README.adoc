@@ -45,14 +45,7 @@ A minimal example may show one application process and its dependencies, but it
 must state that availability, TLS, secret management, monitoring, and backup
 scheduling are operator responsibilities.
 
-== Acceptance criteria
+== Implementation
 
-* [ ] A fresh operator can identify every required external dependency and durable
-  path from the guide alone.
-* [ ] Local-storage and S3-compatible deployments each have a complete configuration
-  example and verification procedure.
-* [ ] The documented migration, admin-bootstrap, backup, restore, and upgrade
-  commands execute against the published release image.
-* [ ] Documentation clearly separates supported runtime contracts from illustrative
-  orchestration examples.
-* [ ] A restore drill verifies both metadata and external paste content.
+Progress against this proposal is tracked in the
+link:IMPLEMENTATION.org[RFD 2 implementation checklist].
