@@ -1,5 +1,5 @@
 :authors: Darwin D Wu <darwin67@users.noreply.github.com>
-:state: discussion
+:state: published
 :discussion: https://github.com/chaba-dev/textbin/pull/54
 :labels: process, software, security
 
@@ -139,7 +139,10 @@ reauthentication. A grant target must be registered, confirmed, and not
 suspended. Dismissing or resolving an abuse report requires a reason and an
 audit event but does not alone require recent reauthentication. If resolution
 deletes a paste or suspends an account, the corresponding action retains its
-reauthentication requirement.
+reauthentication requirement. Deleting an account that carries a platform role
+uses the fixed reason `account_deleted`, requires recent reauthentication, and
+records a platform audit event in addition to enforcing the active-admin
+invariant.
 
 [cols="2,1,1,1",options="header"]
 |===
@@ -170,6 +173,11 @@ reauthentication requirement.
 
 | Grant, revoke, or transfer the platform-admin role
 | Yes
+| Yes
+| Yes
+
+| Delete an account carrying a platform role
+| Fixed `account_deleted` reason
 | Yes
 | Yes
 
