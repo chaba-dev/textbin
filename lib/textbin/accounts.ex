@@ -42,7 +42,8 @@ defmodule Textbin.Accounts do
   def get_user_by_email_and_password(email, password)
       when is_binary(email) and is_binary(password) do
     user = Repo.get_by(User, email: email)
-    if User.valid_password?(user, password), do: user
+
+    if user && is_nil(user.suspended_at) && User.valid_password?(user, password), do: user
   end
 
   @doc """
@@ -246,9 +247,13 @@ defmodule Textbin.Accounts do
   Generates a session token.
   """
   def generate_user_session_token(user) do
-    {token, user_token} = UserToken.build_session_token(user)
-    Repo.insert!(user_token)
-    token
+    if active_user?(user) do
+      {token, user_token} = UserToken.build_session_token(user)
+      Repo.insert!(user_token)
+      token
+    else
+      raise ArgumentError, "cannot create a session for a suspended user"
+    end
   end
 
   @doc """
@@ -341,9 +346,13 @@ defmodule Textbin.Accounts do
   """
   def deliver_login_instructions(%User{} = user, magic_link_url_fun)
       when is_function(magic_link_url_fun, 1) do
-    {encoded_token, user_token} = UserToken.build_email_token(user, "login")
-    Repo.insert!(user_token)
-    UserNotifier.deliver_login_instructions(user, magic_link_url_fun.(encoded_token))
+    if active_user?(user) do
+      {encoded_token, user_token} = UserToken.build_email_token(user, "login")
+      Repo.insert!(user_token)
+      UserNotifier.deliver_login_instructions(user, magic_link_url_fun.(encoded_token))
+    else
+      {:error, :suspended}
+    end
   end
 
   @doc """
@@ -353,6 +362,21 @@ defmodule Textbin.Accounts do
     Repo.delete_all(from(UserToken, where: [token: ^token, context: "session"]))
     :ok
   end
+
+  @doc "Disconnects sockets authenticated by the supplied session tokens."
+  def disconnect_sessions(tokens) do
+    Enum.each(tokens, fn %{token: token} ->
+      topic = user_session_topic(token)
+
+      Phoenix.PubSub.broadcast(
+        Textbin.PubSub,
+        topic,
+        %Phoenix.Socket.Broadcast{topic: topic, event: "disconnect", payload: %{}}
+      )
+    end)
+  end
+
+  def user_session_topic(token), do: "users_sessions:#{Base.url_encode64(token)}"
 
   ## API tokens
 
@@ -375,12 +399,16 @@ defmodule Textbin.Accounts do
   The raw token is returned once alongside the stored token record.
   """
   def create_user_api_token(%User{} = user, attrs \\ %{}) do
-    name = api_token_name(attrs)
-    {token, user_token} = UserToken.build_api_token(user, name)
+    if active_user?(user) do
+      name = api_token_name(attrs)
+      {token, user_token} = UserToken.build_api_token(user, name)
 
-    case Repo.insert(user_token) do
-      {:ok, user_token} -> {:ok, {token, user_token}}
-      {:error, changeset} -> {:error, changeset}
+      case Repo.insert(user_token) do
+        {:ok, user_token} -> {:ok, {token, user_token}}
+        {:error, changeset} -> {:error, changeset}
+      end
+    else
+      {:error, :suspended}
     end
   end
 
@@ -442,6 +470,10 @@ defmodule Textbin.Accounts do
       "" -> "API token"
       name -> String.slice(name, 0, 80)
     end
+  end
+
+  defp active_user?(%User{id: user_id}) do
+    Repo.exists?(from user in User, where: user.id == ^user_id and is_nil(user.suspended_at))
   end
 
   ## Token helper

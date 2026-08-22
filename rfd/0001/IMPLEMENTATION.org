@@ -6,21 +6,21 @@ Implements [[file:README.adoc][RFD 1: Administration]].
   context function directly.
 - [ ] Every context call reloads current platform authority, and a mounted admin
   loses panel access promptly after revocation or suspension.
-- [ ] Organization owners and admins have no platform authority unless separately
+- [X] Organization owners and admins have no platform authority unless separately
   granted it.
-- [ ] An operator can grant the first platform administrator from a release without
+- [X] An operator can grant the first platform administrator from a release without
   manipulating the database manually, and can use the same audited mechanism for
   emergency recovery.
 - [ ] Every privilege change, suspension, restoration, and administrative deletion
   is audited.
 - [ ] Administrative mutations and their audit events commit atomically, and the
   runtime database path cannot update or delete platform audit events.
-- [ ] Concurrent revocation, suspension, and account-deletion attempts cannot
+- [X] Concurrent revocation, suspension, and account-deletion attempts cannot
   remove the final active platform administrator, while one transaction can grant
   a replacement and remove the previous administrator.
-- [ ] Deleting an account that carries a platform role requires recent
+- [X] Deleting an account that carries a platform role requires recent
   reauthentication and records a platform audit event.
-- [ ] Suspension immediately invalidates browser sessions and API tokens without
+- [X] Suspension immediately invalidates browser sessions and API tokens without
   deleting memberships or content, and restoration does not revive old tokens.
 - [ ] Administrative paste deletion makes content inaccessible before retryable
   storage cleanup and remains audited when storage is unavailable.

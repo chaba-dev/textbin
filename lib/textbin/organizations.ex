@@ -10,6 +10,7 @@ defmodule Textbin.Organizations do
   import Ecto.Query, warn: false
 
   alias Textbin.Accounts.{Scope, User}
+  alias Textbin.Administration
   alias Textbin.Organizations.{AuditEvent, Organization, OrganizationMembership, Policy}
   alias Textbin.Organizations.{Workspace, WorkspaceMembership}
   alias Textbin.Pastes
@@ -693,13 +694,14 @@ defmodule Textbin.Organizations do
 
   def recover_workspace_access(_, _), do: {:error, :not_found}
 
-  def delete_account(%Scope{user: %User{id: user_id}}) do
+  def delete_account(%Scope{user: %User{id: user_id, authenticated_at: authenticated_at}} = scope) do
     ensure_transaction_owner!()
 
-    with {:ok, personal_workspace_ids} <-
+    with :ok <- Administration.authorize_account_deletion(scope),
+         {:ok, personal_workspace_ids} <-
            Repo.transact(fn -> prepare_account_deletion(user_id) end),
          :ok <- delete_workspace_pastes(personal_workspace_ids) do
-      Repo.transact(fn -> finalize_account_deletion(user_id) end)
+      Repo.transact(fn -> finalize_account_deletion(user_id, authenticated_at) end)
     end
   end
 
@@ -1565,10 +1567,12 @@ defmodule Textbin.Organizations do
     end)
   end
 
-  defp finalize_account_deletion(user_id) do
-    with {:ok, user, organizations, workspaces} <- lock_account_state(user_id),
+  defp finalize_account_deletion(user_id, authenticated_at) do
+    with :ok <- Administration.lock_platform_authority_changes(),
+         {:ok, user, organizations, workspaces} <- lock_account_state(user_id),
          :ok <- require_transferred_team_ownership(user.id, organizations, workspaces),
-         :ok <- record_account_deletion_audits(user, organizations) do
+         :ok <- record_account_deletion_audits(user, organizations),
+         :ok <- Administration.record_platform_account_deletion(user, authenticated_at) do
       Repo.delete(user)
     end
   end

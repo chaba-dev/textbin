@@ -10,6 +10,7 @@ defmodule TextbinWeb.UserAuth do
 
   alias Textbin.Accounts
   alias Textbin.Accounts.{Scope, User}
+  alias Textbin.Administration
 
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
@@ -258,19 +259,13 @@ defmodule TextbinWeb.UserAuth do
   defp put_token_in_session(conn, token) do
     conn
     |> put_session(:user_token, token)
-    |> put_session(:live_socket_id, user_session_topic(token))
+    |> put_session(:live_socket_id, Accounts.user_session_topic(token))
   end
 
   @doc """
   Disconnects existing sockets for the given tokens.
   """
-  def disconnect_sessions(tokens) do
-    Enum.each(tokens, fn %{token: token} ->
-      TextbinWeb.Endpoint.broadcast(user_session_topic(token), "disconnect", %{})
-    end)
-  end
-
-  defp user_session_topic(token), do: "users_sessions:#{Base.url_encode64(token)}"
+  defdelegate disconnect_sessions(tokens), to: Accounts
 
   @doc """
   Handles mounting and authenticating the current_scope in LiveViews.
@@ -285,6 +280,9 @@ defmodule TextbinWeb.UserAuth do
       and assigns the current_scope to socket assigns based
       on user_token.
       Redirects to login page if there's no logged user.
+
+    * `:require_platform_admin` - Requires a freshly authorized platform
+      administrator after applying normal authenticated-user behavior.
 
   ## Examples
 
@@ -320,6 +318,26 @@ defmodule TextbinWeb.UserAuth do
         |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
       {:halt, socket}
+    end
+  end
+
+  def on_mount(:require_platform_admin, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    cond do
+      !authenticated_scope?(socket.assigns.current_scope) ->
+        socket =
+          socket
+          |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
+          |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
+
+        {:halt, socket}
+
+      match?({:ok, _user}, Administration.authorize_platform_admin(socket.assigns.current_scope)) ->
+        {:cont, socket}
+
+      true ->
+        raise TextbinWeb.ForbiddenError
     end
   end
 
@@ -372,6 +390,14 @@ defmodule TextbinWeb.UserAuth do
       |> maybe_store_return_to()
       |> redirect(to: ~p"/users/log-in")
       |> halt()
+    end
+  end
+
+  @doc "Requires fresh platform administration authority."
+  def require_platform_admin(conn, _opts) do
+    case Administration.authorize_platform_admin(conn.assigns.current_scope) do
+      {:ok, _user} -> conn
+      {:error, :forbidden} -> raise TextbinWeb.ForbiddenError
     end
   end
 
