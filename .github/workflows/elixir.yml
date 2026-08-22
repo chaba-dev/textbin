@@ -155,7 +155,13 @@ jobs:
       - name: Start SeaweedFS
         if: matrix.storage-backend == 's3'
         run: |
-          docker compose up -d object-storage
+          s3_config="$GITHUB_WORKSPACE/config/seaweedfs_s3.json"
+          docker run --detach --name object-storage --hostname object-storage \
+            --publish 8333:8333 \
+            --volume "$s3_config:/etc/seaweedfs/s3.json:ro" \
+            chrislusf/seaweedfs:4.40 \
+            server -s3 -dir=/data -ip=object-storage -ip.bind=0.0.0.0 \
+            -master.volumeSizeLimitMB=1024 -s3.config=/etc/seaweedfs/s3.json
 
           for attempt in $(seq 1 30); do
             if curl --silent --show-error \
@@ -166,7 +172,7 @@ jobs:
             sleep 1
           done
 
-          docker compose logs object-storage
+          docker logs object-storage
           exit 1
 
       - name: Run tests with ${{ matrix.storage-backend }} storage

@@ -18,19 +18,6 @@ defmodule Textbin.ConfigTest do
     on_exit(fn -> Enum.each(previous, fn {name, value} -> restore_env(name, value) end) end)
   end
 
-  test "the test database default port matches Docker Compose" do
-    database_port = System.get_env("DATABASE_PORT")
-    System.delete_env("DATABASE_PORT")
-
-    on_exit(fn -> restore_env("DATABASE_PORT", database_port) end)
-
-    config = Config.Reader.read!("config/test.exs", env: :test)
-    test_port = config[:textbin][Textbin.Repo][:port]
-    docker_compose = File.read!("docker-compose.yml")
-
-    assert docker_compose =~ ~s(- "#{test_port}:5432")
-  end
-
   test "Phoenix and Cargo release versions stay synchronized" do
     mix_project = File.read!("mix.exs")
     cargo_workspace = File.read!("Cargo.toml")

@@ -7,15 +7,15 @@ To start your Phoenix server:
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
-## Docker Compose
+## Development dependencies
 
-Start Postgres for local development:
+Textbin requires PostgreSQL. Development and test configuration default to a
+local server on port `5433`; use the `DATABASE_*` environment variables when
+your server listens elsewhere.
 
-```sh
-docker compose up db
-```
-
-Then run `mix setup` and `mix phx.server` locally as usual.
+Development defaults to S3-compatible paste storage on port `8333`. To develop
+without an object-storage service, set `TEXTBIN_STORAGE_BACKEND=local` and
+`TEXTBIN_STORAGE_PATH` to a writable local directory before starting Phoenix.
 
 Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
 
