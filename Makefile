@@ -16,10 +16,10 @@ rs-test:
 .PHONY: lint
 lint: ex-lint rs-lint
 
-.PHONY: check-rfcs
-check-rfcs:
-	./scripts/check-rfc-status.sh
-	./scripts/check-rfc-status-test.sh
+.PHONY: check-rfds
+check-rfds:
+	./scripts/check-rfd-status.sh
+	./scripts/check-rfd-status-test.sh
 
 .PHONY: ex-lint
 ex-lint:

@@ -25,8 +25,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check RFCs
-        run: make check-rfcs
+      - name: Check RFDs
+        run: make check-rfds
 
       - name: Setup Elixir
         uses: erlef/setup-beam@v1

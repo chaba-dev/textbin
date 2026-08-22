@@ -1,17 +1,16 @@
----
-rfc: 0005
-title: Workspace collaboration
-status: Draft
----
+:authors: Darwin D Wu <darwin67@users.noreply.github.com>
+:state: discussion
+:discussion: https://github.com/chaba-dev/textbin/pull/54
+:labels: software, process
 
-# RFC 0005: Workspace collaboration
+= RFD 5 Workspace collaboration
 
-## Goal
+== Goal
 
 Complete team workflows around the existing organization, workspace, role, and
 workspace-owned paste model.
 
-## Invitations
+== Invitations
 
 Organization owners and admins can invite an email address to an organization
 with an initial organization role. Workspace owners can invite an existing
@@ -23,7 +22,7 @@ transaction time. Existing memberships produce an idempotent result rather than
 duplicates. Invitation emails and pages do not reveal private organization data
 before authentication and email matching.
 
-## Workspace defaults
+== Workspace defaults
 
 Each workspace can define default visibility and expiration plus an optional
 maximum expiration. Creation applies defaults server-side when values are
@@ -34,7 +33,7 @@ Only workspace owners can change workspace defaults. Organization admins do not
 implicitly override workspace-owner policy unless that authority is separately
 specified.
 
-## Workspace API tokens
+== Workspace API tokens
 
 Workspace tokens represent automation owned by a workspace rather than a user.
 They have a name, token hash, creator, last-used timestamp, optional expiration,
@@ -45,7 +44,7 @@ managed explicitly by workspace owners.
 The first scopes are paste read, paste create, and paste delete. A token cannot
 manage members, invitations, roles, billing, or other tokens.
 
-## CLI workflows
+== CLI workflows
 
 The CLI can list accessible organizations and workspaces, select a default per
 profile, override it per command, and clearly display the active destination
@@ -56,15 +55,15 @@ Workspace create/show/delete/list/search use the same public API contract as
 other clients. A stale or unauthorized selected workspace returns an actionable
 error and never falls back to a personal workspace silently.
 
-## Acceptance criteria
+== Acceptance criteria
 
-- [ ] Invitation token theft alone is insufficient when the authenticated email
+* [ ] Invitation token theft alone is insufficient when the authenticated email
   does not match the invitation.
-- [ ] Concurrent acceptance, revocation, and role changes preserve one membership
+* [ ] Concurrent acceptance, revocation, and role changes preserve one membership
   and current authorization policy.
-- [ ] Workspace defaults are enforced identically for browser, user-token, and
+* [ ] Workspace defaults are enforced identically for browser, user-token, and
   workspace-token creation.
-- [ ] Workspace tokens cannot cross workspace boundaries or exercise ungranted
+* [ ] Workspace tokens cannot cross workspace boundaries or exercise ungranted
   scopes.
-- [ ] CLI profile selection never redirects a command to another workspace without
+* [ ] CLI profile selection never redirects a command to another workspace without
   explicit user action.

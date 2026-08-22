@@ -1,17 +1,16 @@
----
-rfc: 0003
-title: Paste discovery and API contract
-status: Draft
----
+:authors: Darwin D Wu <darwin67@users.noreply.github.com>
+:state: discussion
+:discussion: https://github.com/chaba-dev/textbin/pull/54
+:labels: software, api
 
-# RFC 0003: Paste discovery and API contract
+= RFD 3 Paste discovery and API contract
 
-## Goal
+== Goal
 
 Complete the everyday paste workflow and define one stable API contract used by
 the web application, CLI, and generated clients.
 
-## Paste metadata and viewer
+== Paste metadata and viewer
 
 Pastes gain optional `title` and `filename` metadata with bounded lengths and no
 path semantics. The browser viewer displays title or filename, human-readable
@@ -21,7 +20,7 @@ the paste and remain usable when syntax highlighting is disabled.
 Binary pastes remain downloads and are never interpreted as HTML. Metadata in
 headers and download filenames is escaped according to the relevant protocol.
 
-## Dashboard filters, list, recent, and search
+== Dashboard filters, list, recent, and search
 
 Owner-visible lists support cursor pagination and filters for syntax,
 visibility, expiration state, creator, and workspace. `recent` is the newest
@@ -29,15 +28,15 @@ active subset of `list`, not a separate persistence model.
 
 Search is introduced in this order:
 
-1. exact/prefix metadata search over title and filename;
-2. PostgreSQL full-text search for eligible text paste bodies;
-3. tags and advanced filters only after their data model is specified.
+. exact/prefix metadata search over title and filename;
+. PostgreSQL full-text search for eligible text paste bodies;
+. tags and advanced filters only after their data model is specified.
 
 Every query is restricted to workspaces and pastes the current scope may read.
 Private content never enters a public search index. Public discovery, if added,
 is a separate feature and indexes only public pastes.
 
-## CLI JSON and canonical URLs
+== CLI JSON and canonical URLs
 
 Create, show, delete, list, recent, and search support `--json`. JSON mode writes
 one documented JSON value to stdout and diagnostics to stderr. It disables
@@ -48,14 +47,14 @@ from endpoint configuration. Dates use RFC 3339 UTC strings, IDs remain strings,
 and absent optional values are consistently `null` or omitted as defined by the
 OpenAPI schema.
 
-## Request limits
+== Request limits
 
 The Plug JSON parser limit is no greater than the application paste limit plus a
 small documented metadata allowance. Oversized requests are rejected before
 the complete JSON body is decoded. Raw and multipart paths enforce the same
 content limit while streaming.
 
-## OpenAPI and clients
+== OpenAPI and clients
 
 OpenAPI covers authentication, token management, paste CRUD, list/recent/search,
 raw content, organizations, workspaces, memberships, and invitations. The
@@ -66,14 +65,14 @@ generated TypeScript client is the first supported SDK. Go and Python clients
 are deferred until there is demonstrated demand; generation alone does not make
 an SDK supported.
 
-## Acceptance criteria
+== Acceptance criteria
 
-- [ ] Viewer metadata, readable sizes, and line anchors work for anonymous shared
+* [ ] Viewer metadata, readable sizes, and line anchors work for anonymous shared
   and authenticated private views without weakening authorization.
-- [ ] Dashboard and API filters can be combined and retain stable cursor ordering.
-- [ ] Search cannot reveal the existence or metadata of an unauthorized paste.
-- [ ] Every CLI command's `--json` output is machine-readable and covered by
+* [ ] Dashboard and API filters can be combined and retain stable cursor ordering.
+* [ ] Search cannot reveal the existence or metadata of an unauthorized paste.
+* [ ] Every CLI command's `--json` output is machine-readable and covered by
   compatibility tests.
-- [ ] API create/show responses contain canonical and raw URLs.
-- [ ] Oversized JSON is rejected before full decoding.
-- [ ] OpenAPI validation and server contract tests run in CI.
+* [ ] API create/show responses contain canonical and raw URLs.
+* [ ] Oversized JSON is rejected before full decoding.
+* [ ] OpenAPI validation and server contract tests run in CI.
