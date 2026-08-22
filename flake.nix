@@ -55,6 +55,7 @@
 
             # Tools
             watchman
+            docker-compose
             yamllint
             pkg-config
             openssl

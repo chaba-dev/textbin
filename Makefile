@@ -33,6 +33,14 @@ rs-lint:
 rs-fmt:
 	cargo fmt --check
 
+.PHONY: up
+up:
+	docker compose up -d
+
+.PHONY: down
+down:
+	docker compose stop
+
 .PHONY: migrate
 migrate:
 	mix ecto.migration
