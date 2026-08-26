@@ -222,6 +222,7 @@ jobs:
             test "$(id -u)" = "1000"
             test "$(id -g)" = "1000"
             test -x /app/bin/textbin
+            test -x /app/bin/grant-platform-admin
             test -x /app/bin/migrate
             touch /var/lib/textbin/pastes/.write-test
             touch /var/lib/textbin/uploads/.write-test
@@ -285,4 +286,5 @@ jobs:
           done
 
           test "$ready" = "true"
-          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:4100/
+          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:4100/healthz
+          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:4100/readyz

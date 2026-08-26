@@ -6,7 +6,10 @@ defmodule Textbin.ConfigTest do
     "PHX_HOST" => "textbin.example.com",
     "SECRET_KEY_BASE" => String.duplicate("a", 64)
   }
-  @optional_production_env ~w(HTTPS_PORT POOL_SIZE PORT TLS_CERT_PATH TLS_KEY_PATH)
+  @optional_production_env ~w(
+    HTTPS_PORT MAIL_FROM_ADDRESS MAIL_FROM_NAME POOL_SIZE PORT POSTMARK_API_KEY
+    TEXTBIN_MAILER_BACKEND TLS_CERT_PATH TLS_KEY_PATH
+  )
 
   setup do
     names = Map.keys(@production_env) ++ @optional_production_env
@@ -119,11 +122,51 @@ defmodule Textbin.ConfigTest do
     end
   end
 
-  defp production_endpoint_config do
-    "config/runtime.exs"
-    |> Config.Reader.read!(env: :prod)
-    |> get_in([:textbin, TextbinWeb.Endpoint])
+  test "production configures Postmark and its sender at runtime" do
+    System.put_env(%{
+      "MAIL_FROM_ADDRESS" => "textbin@example.com",
+      "MAIL_FROM_NAME" => "Example Textbin",
+      "POSTMARK_API_KEY" => "server-token",
+      "TEXTBIN_MAILER_BACKEND" => "postmark"
+    })
+
+    config = production_config()
+
+    assert get_in(config, [:textbin, Textbin.Mailer]) == [
+             adapter: Swoosh.Adapters.Postmark,
+             api_key: "server-token"
+           ]
+
+    assert get_in(config, [:textbin, :mail_from]) == [
+             name: "Example Textbin",
+             address: "textbin@example.com"
+           ]
   end
+
+  test "production rejects unsupported mail backends" do
+    System.put_env("TEXTBIN_MAILER_BACKEND", "smtp")
+
+    assert_raise RuntimeError, ~r/unsupported TEXTBIN_MAILER_BACKEND: "smtp"/, fn ->
+      production_config()
+    end
+  end
+
+  test "production requires a sender address for Postmark" do
+    System.put_env(%{
+      "POSTMARK_API_KEY" => "server-token",
+      "TEXTBIN_MAILER_BACKEND" => "postmark"
+    })
+
+    assert_raise System.EnvError, ~r/MAIL_FROM_ADDRESS/, fn ->
+      production_config()
+    end
+  end
+
+  defp production_endpoint_config do
+    get_in(production_config(), [:textbin, TextbinWeb.Endpoint])
+  end
+
+  defp production_config, do: Config.Reader.read!("config/runtime.exs", env: :prod)
 
   defp restore_env(name, nil), do: System.delete_env(name)
   defp restore_env(name, value), do: System.put_env(name, value)

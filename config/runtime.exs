@@ -59,6 +59,27 @@ case storage_backend do
     raise "unsupported TEXTBIN_STORAGE_BACKEND: #{inspect(unsupported)}"
 end
 
+case System.get_env("TEXTBIN_MAILER_BACKEND") do
+  nil ->
+    if mail_from_address = System.get_env("MAIL_FROM_ADDRESS") do
+      config :textbin, :mail_from,
+        name: System.get_env("MAIL_FROM_NAME") || "Textbin",
+        address: mail_from_address
+    end
+
+  "postmark" ->
+    config :textbin, Textbin.Mailer,
+      adapter: Swoosh.Adapters.Postmark,
+      api_key: System.fetch_env!("POSTMARK_API_KEY")
+
+    config :textbin, :mail_from,
+      name: System.get_env("MAIL_FROM_NAME") || "Textbin",
+      address: System.fetch_env!("MAIL_FROM_ADDRESS")
+
+  unsupported ->
+    raise "unsupported TEXTBIN_MAILER_BACKEND: #{inspect(unsupported)}"
+end
+
 if config_env() == :prod do
   parse_port = fn name, default ->
     case Integer.parse(System.get_env(name) || default) do
