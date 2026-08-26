@@ -1,12 +1,16 @@
 defmodule TextbinWeb.UI.AdminLiveTest do
   use TextbinWeb.ConnCase, async: false
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
   import Textbin.AccountsFixtures
 
   alias Textbin.Accounts.Scope
+  alias Textbin.Accounts.User
   alias Textbin.Administration
+  alias Textbin.Administration.PlatformAuditEvent
   alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
   alias Textbin.Repo
   alias TextbinWeb.ForbiddenError
 
@@ -68,6 +72,77 @@ defmodule TextbinWeb.UI.AdminLiveTest do
     |> render_submit()
 
     assert has_element?(view, "#admin-lookup-empty")
+  end
+
+  test "performs reasoned account actions from an exact user lookup", %{conn: conn} do
+    target = user_fixture()
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view
+    |> form("#admin-lookup-form", lookup: %{query: target.email})
+    |> render_submit()
+
+    assert has_element?(view, "#admin-account-action-form")
+
+    view
+    |> form("#admin-account-action-form",
+      account_action: %{
+        action: "grant",
+        target_id: target.id,
+        reason: "incident response coverage"
+      }
+    )
+    |> render_submit()
+
+    assert_patch(view, ~p"/admin")
+    assert Repo.get!(User, target.id).platform_role == "admin"
+  end
+
+  test "removes a paste immediately and exposes its audit event", %{conn: conn} do
+    owner = user_fixture()
+
+    assert {:ok, paste} =
+             Pastes.create_paste(Scope.for_user(owner), %{
+               data: "reported content",
+               audience: "public"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+    assert has_element?(view, "#admin-paste-moderation-form")
+
+    view
+    |> form("#admin-paste-moderation-form",
+      moderation: %{paste_id: paste.id, reason: "reported malware"}
+    )
+    |> render_submit()
+
+    assert_patch(view, ~p"/admin")
+    assert %Paste{expires_at: %DateTime{}} = Repo.get!(Paste, paste.id)
+
+    assert Repo.exists?(
+             from event in PlatformAuditEvent,
+               where:
+                 event.action == "platform.paste.deleted" and event.target_id == ^paste.id and
+                   event.reason == "reported malware"
+           )
+  end
+
+  test "sensitive panel actions redirect stale sessions to reauthentication", %{conn: conn} do
+    token = get_session(conn, :user_token)
+    override_token_authenticated_at(token, DateTime.add(DateTime.utc_now(:second), -21, :minute))
+
+    owner = user_fixture()
+    assert {:ok, paste} = Pastes.create_paste(Scope.for_user(owner), %{data: "reported"})
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view
+    |> form("#admin-paste-moderation-form",
+      moderation: %{paste_id: paste.id, reason: "policy violation"}
+    )
+    |> render_submit()
+
+    assert_redirect(view, ~p"/users/log-in")
+    assert Repo.get!(Paste, paste.id).expires_at == nil
   end
 
   test "renders every protected largest-paste row without exposing capability IDs", %{conn: conn} do

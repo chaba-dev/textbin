@@ -129,6 +129,43 @@
               <.summary_stat label="Workspaces" value={@lookup.user.workspace_memberships} />
               <.summary_stat label="Pastes" value={@lookup.user.pastes} />
             </dl>
+            <.form
+              for={@account_action_form}
+              id="admin-account-action-form"
+              phx-submit="account_action"
+              class="mt-5 grid gap-3 border-t border-base-300 pt-5 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto] sm:items-end"
+            >
+              <.input
+                field={@account_action_form[:action]}
+                id="admin-account-action"
+                type="select"
+                label="Action"
+                options={account_action_options(@lookup.user)}
+                required
+              />
+              <.input
+                field={@account_action_form[:reason]}
+                id="admin-account-action-reason"
+                type="text"
+                label="Reason"
+                maxlength="500"
+                required
+              />
+              <input
+                id="admin-account-action-target"
+                type="hidden"
+                name={@account_action_form[:target_id].name}
+                value={@lookup.user.id}
+              />
+              <button
+                id="admin-account-action-submit"
+                type="submit"
+                phx-disable-with="Applying..."
+                class="btn btn-warning"
+              >
+                Apply action
+              </button>
+            </.form>
           </article>
 
           <article
@@ -169,6 +206,59 @@
             </dl>
           </article>
         </div>
+      </div>
+    </section>
+
+    <section
+      id="paste-moderation"
+      class="overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm"
+    >
+      <div class="grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div>
+          <div class="flex size-10 items-center justify-center rounded-xl bg-error/10 text-error">
+            <.icon name="hero-shield-exclamation" class="size-5" />
+          </div>
+          <p class="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-error">Moderation</p>
+          <h2 class="mt-2 text-xl font-semibold text-base-content">Remove a paste</h2>
+          <p class="mt-2 text-sm leading-6 text-base-content/60">
+            The paste becomes inaccessible immediately. Blob cleanup is retried independently if storage is unavailable.
+          </p>
+        </div>
+        <.form
+          for={@moderation_form}
+          id="admin-paste-moderation-form"
+          phx-submit="moderate_paste"
+          class="grid content-start gap-4"
+        >
+          <.input
+            field={@moderation_form[:paste_id]}
+            id="admin-moderation-paste-id"
+            type="text"
+            label="Exact paste ID"
+            placeholder="Paste UUID"
+            autocomplete="off"
+            required
+          />
+          <.input
+            field={@moderation_form[:reason]}
+            id="admin-moderation-reason"
+            type="textarea"
+            label="Moderation reason"
+            maxlength="500"
+            required
+          />
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-xs text-base-content/45">Recent reauthentication is required.</p>
+            <button
+              id="admin-paste-moderation-submit"
+              type="submit"
+              phx-disable-with="Removing..."
+              class="btn btn-error"
+            >
+              <.icon name="hero-trash" class="size-4" /> Remove paste
+            </button>
+          </div>
+        </.form>
       </div>
     </section>
 

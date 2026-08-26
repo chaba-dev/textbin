@@ -333,6 +333,87 @@ defmodule Textbin.AdministrationTest do
     end
   end
 
+  describe "administrative paste deletion" do
+    setup do
+      admin = admin_fixture()
+      owner = user_fixture()
+      owner_scope = user_scope_fixture(owner)
+
+      %{admin: admin, scope: admin_scope(admin), owner_scope: owner_scope}
+    end
+
+    test "expires and audits the paste before retryable storage cleanup", context do
+      original_storage = Application.fetch_env!(:textbin, Textbin.Storage)
+
+      on_exit(fn -> Application.put_env(:textbin, Textbin.Storage, original_storage) end)
+
+      assert {:ok, paste} =
+               Pastes.create_paste(context.owner_scope, %{
+                 data: String.duplicate("moderated", 1_024),
+                 audience: "public"
+               })
+
+      Application.put_env(:textbin, Textbin.Storage,
+        adapter: Textbin.FailingDeleteStorage,
+        opts: [test_pid: self(), delegate: original_storage]
+      )
+
+      assert {:ok, %Paste{expires_at: %DateTime{}}} =
+               Administration.delete_paste(context.scope, paste.id, "malware distribution",
+                 request_id: "request-456"
+               )
+
+      refute_received {:storage_delete_failed, _storage_key}
+      refute Pastes.get_shared_paste(nil, paste.id)
+      assert Repo.get(Paste, paste.id)
+
+      assert %PlatformAuditEvent{
+               action: "platform.paste.deleted",
+               target_type: "paste",
+               target_id: target_id,
+               reason: "malware distribution",
+               request_id: "request-456"
+             } =
+               Repo.one!(
+                 from event in PlatformAuditEvent,
+                   where: event.action == "platform.paste.deleted"
+               )
+
+      assert target_id == paste.id
+      assert Pastes.delete_expired_pastes(limit: 1) == 0
+      assert_receive {:storage_delete_failed, storage_key}
+      assert storage_key == paste.storage_key
+      assert Repo.get(Paste, paste.id)
+    end
+
+    test "requires a reason, recent reauthentication, and current authority", context do
+      assert {:ok, paste} =
+               Pastes.create_paste(context.owner_scope, %{data: "reported", audience: "public"})
+
+      assert {:error, :reason_required} =
+               Administration.delete_paste(context.scope, paste.id, " ")
+
+      stale_scope =
+        Scope.for_user(%{
+          context.admin
+          | authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
+        })
+
+      assert {:error, :reauthentication_required} =
+               Administration.delete_paste(stale_scope, paste.id, "policy violation")
+
+      assert {:error, :forbidden} =
+               Administration.delete_paste(context.owner_scope, paste.id, "not authorized")
+
+      assert Repo.get!(Paste, paste.id).expires_at == nil
+
+      refute Repo.exists?(
+               from event in PlatformAuditEvent,
+                 where: event.action == "platform.paste.deleted"
+             )
+    end
+  end
+
   describe "administration reads" do
     setup do
       admin = admin_fixture()

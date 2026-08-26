@@ -18,6 +18,8 @@ defmodule TextbinWeb.UI.AdminLive do
      socket
      |> assign(:page_title, "Platform administration")
      |> assign(:lookup_form, to_form(%{"query" => ""}, as: :lookup))
+     |> assign(:moderation_form, to_form(%{"paste_id" => "", "reason" => ""}, as: :moderation))
+     |> assign(:account_action_form, to_form(%{"reason" => ""}, as: :account_action))
      |> assign(:lookup_performed?, false)
      |> assign(:lookup, empty_lookup())
      |> stream_configure(:largest_pastes, dom_id: &"largest-paste-row-#{&1.row_key}")}
@@ -71,6 +73,31 @@ defmodule TextbinWeb.UI.AdminLive do
     end
   end
 
+  def handle_event(
+        "moderate_paste",
+        %{"moderation" => %{"paste_id" => paste_id, "reason" => reason}},
+        socket
+      ) do
+    socket.assigns.current_scope
+    |> Administration.delete_paste(paste_id, reason)
+    |> handle_mutation_result(socket, "Paste removed and queued for storage cleanup.")
+  end
+
+  def handle_event(
+        "account_action",
+        %{
+          "account_action" => %{
+            "action" => action,
+            "target_id" => target_id,
+            "reason" => reason
+          }
+        },
+        socket
+      ) do
+    result = account_action(action, socket.assigns.current_scope, target_id, reason)
+    handle_mutation_result(result, socket, account_action_message(action))
+  end
+
   def handle_event("load_more_audit", _params, %{assigns: %{audit_next_cursor: nil}} = socket),
     do: {:noreply, socket}
 
@@ -98,6 +125,61 @@ defmodule TextbinWeb.UI.AdminLive do
     |> put_flash(:error, "Your platform administration access has changed.")
     |> push_navigate(to: ~p"/")
   end
+
+  defp account_action("grant", scope, target_id, reason),
+    do: Administration.grant_platform_admin(scope, target_id, reason)
+
+  defp account_action("revoke", scope, target_id, reason),
+    do: Administration.revoke_platform_admin(scope, target_id, reason)
+
+  defp account_action("suspend", scope, target_id, reason),
+    do: Administration.suspend_user(scope, target_id, reason)
+
+  defp account_action("restore", scope, target_id, reason),
+    do: Administration.restore_user(scope, target_id, reason)
+
+  defp account_action(_action, _scope, _target_id, _reason), do: {:error, :not_found}
+
+  defp account_action_message("grant"), do: "Platform administrator access granted."
+  defp account_action_message("revoke"), do: "Platform administrator access revoked."
+  defp account_action_message("suspend"), do: "Account suspended and active sessions revoked."
+  defp account_action_message("restore"), do: "Account restored. A new login is still required."
+  defp account_action_message(_action), do: "Account updated."
+
+  defp handle_mutation_result({:ok, _result}, socket, message) do
+    {:noreply,
+     socket
+     |> put_flash(:info, message)
+     |> push_patch(to: ~p"/admin")}
+  end
+
+  defp handle_mutation_result({:error, :forbidden}, socket, _message),
+    do: {:noreply, leave_admin(socket)}
+
+  defp handle_mutation_result({:error, :reauthentication_required}, socket, _message) do
+    {:noreply,
+     socket
+     |> put_flash(:error, "Reauthenticate before performing this sensitive action.")
+     |> push_navigate(to: ~p"/users/log-in")}
+  end
+
+  defp handle_mutation_result({:error, reason}, socket, _message) do
+    {:noreply, put_flash(socket, :error, mutation_error(reason))}
+  end
+
+  defp mutation_error(:reason_required), do: "A reason is required."
+  defp mutation_error(:reason_too_long), do: "The reason must be at most 500 bytes."
+  defp mutation_error(:not_found), do: "The target is unavailable or has already been handled."
+
+  defp mutation_error(:final_active_admin),
+    do: "The final active administrator cannot be removed."
+
+  defp mutation_error(:self_suspension), do: "You cannot suspend your own account."
+  defp mutation_error(:already_suspended), do: "That account is already suspended."
+  defp mutation_error(:unconfirmed), do: "Only confirmed accounts can become administrators."
+  defp mutation_error(:suspended), do: "A suspended account cannot become an administrator."
+  defp mutation_error(:ineligible), do: "That account is not eligible for this action."
+  defp mutation_error(_reason), do: "The administrative action could not be completed."
 
   defp empty_lookup, do: %{user: nil, organization: nil, workspace: nil}
 
@@ -130,12 +212,21 @@ defmodule TextbinWeb.UI.AdminLive do
   def status_class("Active"), do: "bg-success/10 text-success"
   def status_class(_status), do: "bg-warning/10 text-warning"
 
+  def account_action_options(%{suspended_at: %DateTime{}}), do: [{"Restore account", "restore"}]
+
+  def account_action_options(%{platform_role: "admin"}),
+    do: [{"Revoke platform administrator", "revoke"}, {"Suspend account", "suspend"}]
+
+  def account_action_options(_user),
+    do: [{"Grant platform administrator", "grant"}, {"Suspend account", "suspend"}]
+
   def audit_title("platform.admin.bootstrap"), do: "Platform administrator bootstrapped"
   def audit_title("platform.admin.granted"), do: "Platform administrator granted"
   def audit_title("platform.admin.revoked"), do: "Platform administrator revoked"
   def audit_title("platform.account.suspended"), do: "Account suspended"
   def audit_title("platform.account.restored"), do: "Account restored"
   def audit_title("platform.admin.account_deleted"), do: "Administrator account deleted"
+  def audit_title("platform.paste.deleted"), do: "Paste administratively removed"
   def audit_title(action), do: action
 
   def page_params(kind, page, assigns) do

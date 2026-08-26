@@ -320,6 +320,22 @@ defmodule Textbin.Administration do
     end
   end
 
+  @doc """
+  Makes a paste immediately inaccessible and records the moderation decision.
+
+  Blob removal and hard deletion remain the responsibility of the retryable
+  expiration cleaner, so storage availability cannot roll back moderation.
+  """
+  def delete_paste(scope, paste, reason, opts \\ []) do
+    with {:ok, reason} <- normalize_reason(reason),
+         {:ok, paste_id} <- paste_id(paste) do
+      authority_transaction(
+        scope,
+        &delete_paste_in_transaction(&1, paste_id, reason, opts)
+      )
+    end
+  end
+
   defp authorize_account_deletion_in_transaction(scope, user_id) do
     with :ok <- lock_authority_changes(),
          %User{suspended_at: nil} = user <- lock_user(user_id),
@@ -485,6 +501,30 @@ defmodule Textbin.Administration do
     end
   end
 
+  defp delete_paste_in_transaction(actor, paste_id, reason, opts) do
+    now = Paste.utc_now_ms()
+
+    with %Paste{} = paste <- lock_active_paste(paste_id, now),
+         {:ok, expired_paste} <-
+           paste
+           |> Ecto.Changeset.change(expires_at: now)
+           |> Repo.update(),
+         :ok <-
+           record_paste_audit(
+             actor,
+             "platform.paste.deleted",
+             expired_paste,
+             reason,
+             %{"previous_expires_at" => encode_timestamp(paste.expires_at)},
+             opts
+           ) do
+      {:ok, expired_paste}
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
   defp authority_transaction(%Scope{} = scope, callback) do
     Repo.transact(fn ->
       with :ok <- lock_authority_changes(),
@@ -617,6 +657,23 @@ defmodule Textbin.Administration do
     |> audit_result()
   end
 
+  defp record_paste_audit(actor, action, target, reason, metadata, opts) do
+    %PlatformAuditEvent{}
+    |> PlatformAuditEvent.changeset(%{
+      actor_kind: "user",
+      actor_user_id: actor.id,
+      actor_label: actor.email,
+      action: action,
+      target_type: "paste",
+      target_id: target.id,
+      reason: reason,
+      request_id: Keyword.get(opts, :request_id),
+      metadata: metadata
+    })
+    |> Repo.insert()
+    |> audit_result()
+  end
+
   defp audit_result({:ok, %PlatformAuditEvent{}}), do: :ok
   defp audit_result({:error, changeset}), do: {:error, changeset}
 
@@ -635,6 +692,16 @@ defmodule Textbin.Administration do
 
   defp lock_user_by_email(email) do
     Repo.one(from user in User, where: user.email == ^email, lock: "FOR UPDATE")
+  end
+
+  defp lock_active_paste(paste_id, now) do
+    Repo.one(
+      from paste in Paste,
+        where:
+          paste.id == ^paste_id and
+            (is_nil(paste.expires_at) or paste.expires_at > ^now),
+        lock: "FOR UPDATE"
+    )
   end
 
   defp normalize_reason(reason) when is_binary(reason) do
@@ -657,6 +724,20 @@ defmodule Textbin.Administration do
   end
 
   defp user_id(_id), do: {:error, :not_found}
+
+  defp paste_id(%Paste{id: id}), do: paste_id(id)
+
+  defp paste_id(id) when is_binary(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> {:ok, id}
+      :error -> {:error, :not_found}
+    end
+  end
+
+  defp paste_id(_id), do: {:error, :not_found}
+
+  defp encode_timestamp(nil), do: nil
+  defp encode_timestamp(timestamp), do: DateTime.to_iso8601(timestamp)
 
   defp distinct_users(id, id), do: {:error, :same_user}
   defp distinct_users(_target_id, _replacement_id), do: :ok
