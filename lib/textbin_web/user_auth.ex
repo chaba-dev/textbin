@@ -334,12 +334,41 @@ defmodule TextbinWeb.UserAuth do
         {:halt, socket}
 
       match?({:ok, _user}, Administration.authorize_platform_admin(socket.assigns.current_scope)) ->
-        {:cont, socket}
+        if Phoenix.LiveView.connected?(socket) do
+          :ok = Administration.subscribe_to_platform_authority(socket.assigns.current_scope)
+
+          {:cont,
+           Phoenix.LiveView.attach_hook(
+             socket,
+             :platform_authority,
+             :handle_info,
+             &handle_platform_authority_change/2
+           )}
+        else
+          {:cont, socket}
+        end
 
       true ->
         raise TextbinWeb.ForbiddenError
     end
   end
+
+  defp handle_platform_authority_change(:platform_authority_changed, socket) do
+    case Administration.authorize_platform_admin(socket.assigns.current_scope) do
+      {:ok, _user} ->
+        {:cont, socket}
+
+      {:error, :forbidden} ->
+        socket =
+          socket
+          |> Phoenix.LiveView.put_flash(:error, "Your platform access has changed.")
+          |> Phoenix.LiveView.push_navigate(to: ~p"/")
+
+        {:halt, socket}
+    end
+  end
+
+  defp handle_platform_authority_change(_message, socket), do: {:cont, socket}
 
   defp mount_current_scope(socket, session) do
     Phoenix.Component.assign_new(socket, :current_scope, fn ->

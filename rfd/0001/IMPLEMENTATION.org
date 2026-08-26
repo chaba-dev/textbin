@@ -25,13 +25,13 @@ administration interface.
 Make context authorization and the immutable platform log the security boundary
 for every transport.
 
-- [ ] A non-admin cannot mount an admin route or obtain admin data by calling a
+- [X] A non-admin cannot mount an admin route or obtain admin data by calling a
   context function directly.
-- [ ] Every context call reloads current platform authority, and a mounted admin
+- [X] Every context call reloads current platform authority, and a mounted admin
   loses panel access promptly after revocation or suspension.
-- [ ] Every privilege change, suspension, restoration, and administrative deletion
+- [X] Every privilege change, suspension, restoration, and administrative deletion
   is audited.
-- [ ] Administrative mutations and their audit events commit atomically, and the
+- [X] Administrative mutations and their audit events commit atomically, and the
   runtime database path cannot update or delete platform audit events.
 
 * Phase 3: Read-only administration views
