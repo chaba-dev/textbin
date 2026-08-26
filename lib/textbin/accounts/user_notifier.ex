@@ -10,10 +10,13 @@ defmodule Textbin.Accounts.UserNotifier do
 
   # Delivers the email using the application mailer.
   defp deliver(recipient, subject, body) do
+    sender =
+      Application.get_env(:textbin, :mail_from, name: "Textbin", address: "contact@example.com")
+
     email =
       new()
       |> to(recipient)
-      |> from({"Textbin", "contact@example.com"})
+      |> from({sender[:name], sender[:address]})
       |> subject(subject)
       |> text_body(body)
 

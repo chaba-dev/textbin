@@ -23,6 +23,11 @@ defmodule TextbinWeb.Router do
   end
 
   scope "/", TextbinWeb do
+    get "/healthz", HealthController, :live
+    get "/readyz", HealthController, :ready
+  end
+
+  scope "/", TextbinWeb do
     pipe_through :browser
 
     get "/pastes/:id/raw", PasteController, :raw

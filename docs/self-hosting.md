@@ -1,208 +1,553 @@
 # Self-hosting Textbin
 
-Textbin ships as a portable OCI image. The image does not assume Docker
-Compose, a particular orchestrator, an ingress controller, or how secrets and
-persistent storage are provided.
+Textbin publishes a portable OCI image and supports the runtime contract in this
+guide. The project does **not** maintain production Docker Compose, Kubernetes,
+Helm, Terraform, cloud-provider, TLS, monitoring, or backup-scheduling
+configurations. The `docker` commands below are illustrative translations of the
+contract, not a production-ready stack. Operators own availability, network
+policy, TLS lifecycle, secret management, monitoring, and backup automation.
 
-Stable and prerelease images are published from GitHub Releases as:
+## Image and dependency contract
 
-```text
-ghcr.io/chaba2/textbin:<version>
+Release images are published at `ghcr.io/chaba-dev/textbin`. They support
+`linux/amd64` and `linux/arm64`.
+
+- Use an exact release tag such as `0.1.0`, not `latest`, a major tag, or a minor
+  tag.
+- For reproducible deployments, resolve the multi-architecture manifest and pin
+  `ghcr.io/chaba-dev/textbin@sha256:<manifest-digest>`. Record that digest with the
+  backup and deployment metadata.
+- Stable releases update their exact, major, minor, commit-SHA, and `latest`
+  tags. Prereleases update only their exact and commit-SHA tags.
+- The process runs as `textbin`, numeric UID/GID `1000`, and starts with
+  `/app/bin/textbin start`.
+
+GitHub creates a new GHCR package as private. Before the first public release,
+the repository owner must make `chaba-dev/textbin` public in the package settings.
+Until then, pulls require GHCR authentication.
+
+A production installation requires:
+
+1. PostgreSQL 17 on a private network;
+2. either a durable POSIX filesystem or a supported S3-compatible object store;
+3. writable upload staging space;
+4. public HTTPS, terminated by a reverse proxy or by Textbin; and
+5. Postmark email delivery if users need to register and confirm accounts.
+
+PostgreSQL metadata and non-inline paste objects form one durability boundary.
+Losing either can make paste content unreadable.
+
+## Environment variables
+
+Pass secrets through the platform's secret facility. Do not bake them into an
+image, commit an environment file, put credentials in command history, or print
+the effective environment while troubleshooting.
+
+Required for every server and release command:
+
+| Variable | Contract |
+|---|---|
+| `DATABASE_URL` | PostgreSQL URL, for example `ecto://textbin:<percent-encoded-password>@postgres/textbin_prod` |
+| `SECRET_KEY_BASE` | At least 64 bytes of random signing material |
+| `PHX_HOST` | Public hostname only, for example `textbin.example.com` |
+
+Generate a secret without a source checkout:
+
+```sh
+openssl rand -base64 64
 ```
 
-Images support `linux/amd64` and `linux/arm64`. Pin an exact semantic-version
-tag or, for reproducible deployments, the published manifest digest. Stable
-releases also update the matching major and minor tags plus `latest`;
-prereleases update only their complete version and commit-SHA tags.
+Application and database options:
 
-GitHub creates a new GHCR package as private. Before announcing the first public
-release, the repository owner must change the `chaba2/textbin` package visibility
-to public in GitHub's package settings. Until that one-time step is complete,
-pulling the image requires GHCR authentication.
+| Variable | Default | Contract |
+|---|---:|---|
+| `PORT` | `4000` | HTTP listener, integer from 1 through 65535 |
+| `POOL_SIZE` | `10` | PostgreSQL connections per application instance, positive integer |
+| `ECTO_IPV6` | unset | Set to `true` or `1` when the database hostname resolves over IPv6 |
+| `DNS_CLUSTER_QUERY` | unset | Erlang DNS clustering query; leave unset for one node or without distributed clustering |
+| `TEXTBIN_INLINE_PASTE_BYTES` | `8192` | Non-negative threshold below which safe UTF-8 bodies remain in PostgreSQL |
+| `TEXTBIN_UPLOAD_TMP_DIR` | `/var/lib/textbin/uploads` | Private upload spool |
 
-## Runtime contract
+Storage options:
 
-The server runs as the unprivileged `textbin` user with numeric UID and GID
-`1000`. Its default command is:
+| Variable | Required when | Default / contract |
+|---|---|---|
+| `TEXTBIN_STORAGE_BACKEND` | Optional | `local`; accepted values are `local` and `s3` |
+| `TEXTBIN_STORAGE_PATH` | Local | `/var/lib/textbin/pastes` |
+| `S3_ENDPOINT` | S3 | Absolute HTTP(S) origin; path-style access is used |
+| `S3_BUCKET` | S3 | Existing bucket name |
+| `S3_REGION` | S3 | `us-east-1` |
+| `S3_ACCESS_KEY_ID` | S3 | Bucket-scoped access key |
+| `S3_SECRET_ACCESS_KEY` | S3 | Bucket-scoped secret key |
 
-```bash
-/app/bin/textbin start
-```
+Email options for supported production registration:
 
-The process listens for HTTP on `PORT` (`4000` by default) and can optionally
-terminate TLS on `HTTPS_PORT` (`4443` by default). Terminate it using the
-runtime's normal `SIGTERM` and grace-period mechanism.
+| Variable | Required when | Contract |
+|---|---|---|
+| `TEXTBIN_MAILER_BACKEND` | Sending email | Set to `postmark` |
+| `POSTMARK_API_KEY` | Postmark | Postmark server API token |
+| `MAIL_FROM_ADDRESS` | Sending email | Verified sender address |
+| `MAIL_FROM_NAME` | Optional | Defaults to `Textbin` |
 
-The following configuration is required in production:
+Without a production mail backend, the server can run but new users cannot
+receive confirmation or login links. Validate the sender domain and outbound
+HTTPS access to Postmark before opening registration.
 
-| Variable          | Purpose                                           |
-|-------------------|---------------------------------------------------|
-| `DATABASE_URL`    | PostgreSQL connection URL                         |
-| `SECRET_KEY_BASE` | Phoenix signing and encryption secret             |
-| `PHX_HOST`        | Public hostname used when generating URLs         |
-| `PORT`            | HTTP listener port; defaults to `4000`            |
-| `POOL_SIZE`       | Connections per PostgreSQL pool; defaults to `10` |
+Direct TLS options:
 
-Generate `SECRET_KEY_BASE` with `mix phx.gen.secret` from a source checkout or
-another cryptographically secure secret generator. Supply secrets through the
-runtime's secret mechanism rather than baking them into an image layer.
+| Variable | Default | Contract |
+|---|---:|---|
+| `TLS_CERT_PATH` | unset | Readable PEM certificate; must be set with `TLS_KEY_PATH` |
+| `TLS_KEY_PATH` | unset | Readable PEM private key; must be set with `TLS_CERT_PATH` |
+| `HTTPS_PORT` | `4443` | Internal HTTPS listener, integer from 1 through 65535 |
 
-`PORT` and `HTTPS_PORT` must be valid TCP ports. `POOL_SIZE` must be a positive
-integer. Textbin rejects invalid values during startup instead of booting with a
-partial configuration.
+`PHX_SERVER=true` is already set in the image. Invalid integers, unsupported
+backends, incomplete TLS pairs, unreadable TLS files, and missing backend secrets
+fail startup. Keep one identical environment/secret set for migration jobs,
+admin jobs, and application instances.
 
-## TLS termination
+## PostgreSQL
 
-By default, Textbin serves HTTP and expects a reverse proxy, ingress, or load
-balancer to terminate public TLS. It can instead terminate TLS directly through
-Bandit and Erlang/OTP's TLS stack:
+Textbin's tested production baseline is PostgreSQL 17. Use a supported PostgreSQL
+17 minor release, UTF-8 database encoding, durable storage, and routine database
+maintenance. The application role needs connect, schema migration, table,
+sequence, and advisory-lock privileges in its own database; it does not need a
+PostgreSQL superuser or access to other databases. Do not expose PostgreSQL to
+the public Internet.
+
+Size `max_connections` for at least:
 
 ```text
+(maximum simultaneous Textbin instances × POOL_SIZE) + maintenance headroom
+```
+
+Migration and operator jobs open transient connections, and backup tools need
+headroom. Start with the default pool and increase it only after observing queue
+time and database capacity. Each replica gets its own pool.
+
+Before deploying Textbin, verify from the same private network and with the
+application credentials. PostgreSQL tools expect a `postgresql://` URL rather
+than Ecto's `ecto://` scheme:
+
+```sh
+PGDATABASE_URL='postgresql://textbin:<percent-encoded-password>@postgres:5432/textbin_prod'
+pg_isready -d "$PGDATABASE_URL"
+psql "$PGDATABASE_URL" -v ON_ERROR_STOP=1 -c 'select current_database(), version();'
+unset PGDATABASE_URL
+```
+
+## Writable paths and upload capacity
+
+The image creates both paths with UID/GID `1000` and deliberately declares no
+Docker `VOLUME`:
+
+| Path | Durability |
+|---|---|
+| `/var/lib/textbin/pastes` | Persistent and backed up for local storage |
+| `/var/lib/textbin/uploads` | Writable; persistence is optional |
+
+Upload files are mode-restricted, removed after finalization, and reaped when
+stale. Ephemeral upload space is safe because an unfinished body is not committed
+paste data. Persistent staging lets cleanup continue across restarts. Provision
+at least `maximum concurrent uploads × maximum paste size`, plus filesystem
+overhead and operational headroom. The current maximum paste size is 1 MiB.
+
+## Migrations
+
+The server never migrates on startup. Run exactly one migration job from the new
+image before starting or rolling application instances:
+
+```sh
+docker run --rm --network textbin-private --env-file /run/textbin/runtime.env \
+  ghcr.io/chaba-dev/textbin:0.1.0 /app/bin/migrate
+```
+
+The command is idempotent and uses a PostgreSQL advisory lock. Keep the job logs;
+a non-zero exit means the rollout must stop. Do not start the new server version
+until migrations succeed.
+
+## Local-storage deployment
+
+Local storage requires one persistent filesystem mounted at
+`/var/lib/textbin/pastes`. It must support same-filesystem atomic rename plus file
+and directory `fsync`. Shared multi-node access is safe only when the filesystem
+provides those semantics consistently to every node. Otherwise run one Textbin
+instance or use S3-compatible storage.
+
+An illustrative environment file (replace all placeholders and set mode `0600`):
+
+```dotenv
+DATABASE_URL=ecto://textbin:<percent-encoded-password>@postgres:5432/textbin_prod
+SECRET_KEY_BASE=<openssl-rand-base64-64-output>
+PHX_HOST=textbin.example.com
+POOL_SIZE=10
+TEXTBIN_STORAGE_BACKEND=local
+TEXTBIN_STORAGE_PATH=/var/lib/textbin/pastes
+TEXTBIN_UPLOAD_TMP_DIR=/var/lib/textbin/uploads
+TEXTBIN_MAILER_BACKEND=postmark
+POSTMARK_API_KEY=<postmark-server-token>
+MAIL_FROM_ADDRESS=textbin@example.com
+```
+
+Illustrative single-node server command:
+
+```sh
+docker volume create textbin-pastes
+docker volume create textbin-uploads
+docker run --rm --user 0:0 \
+  --mount type=volume,src=textbin-pastes,dst=/var/lib/textbin/pastes \
+  --mount type=volume,src=textbin-uploads,dst=/var/lib/textbin/uploads \
+  --entrypoint chown ghcr.io/chaba-dev/textbin:0.1.0 \
+  -R 1000:1000 /var/lib/textbin/pastes /var/lib/textbin/uploads
+
+docker run --name textbin --read-only --restart unless-stopped \
+  --network textbin-private --env-file /run/textbin/runtime.env \
+  --mount type=volume,src=textbin-pastes,dst=/var/lib/textbin/pastes \
+  --mount type=volume,src=textbin-uploads,dst=/var/lib/textbin/uploads \
+  --tmpfs /app/tmp:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=1000,gid=1000 \
+  --publish 127.0.0.1:4000:4000 \
+  ghcr.io/chaba-dev/textbin:0.1.0
+```
+
+The private `/app/tmp` tmpfs is required with `--read-only`: the OTP release
+launcher writes evaluated runtime configuration there before boot. Keep it
+ephemeral because that configuration contains resolved secrets.
+
+The volume must already be writable by UID/GID `1000`. Verify before migration:
+
+```sh
+docker run --rm --user 1000:1000 \
+  --mount type=volume,src=textbin-pastes,dst=/var/lib/textbin/pastes \
+  --entrypoint sh ghcr.io/chaba-dev/textbin:0.1.0 -c \
+  'set -eu; p=/var/lib/textbin/pastes/.permission-check; umask 077; : > "$p"; sync "$p"; rm "$p"'
+```
+
+After startup, perform the end-to-end paste check under [Verification](#verification).
+It writes a body larger than the inline threshold, proving database and mounted
+blob storage connectivity together.
+
+## S3-compatible deployment
+
+Textbin uses path-style, AWS Signature V4 PUT, GET, and DELETE requests. The
+bucket must exist. Credentials need only object read, write, and delete access
+within that bucket; deny bucket administration and access to other buckets. Keep
+the endpoint private when possible and never expose its administration UI or API
+publicly. SeaweedFS and Garage are tested development targets; test any provider's
+path-style and signing compatibility before production use.
+
+Illustrative S3 additions to the common environment:
+
+```dotenv
+TEXTBIN_STORAGE_BACKEND=s3
+S3_ENDPOINT=https://objects.internal.example.com
+S3_BUCKET=textbin-prod
+S3_REGION=us-east-1
+S3_ACCESS_KEY_ID=<bucket-scoped-access-key>
+S3_SECRET_ACCESS_KEY=<bucket-scoped-secret-key>
+TEXTBIN_UPLOAD_TMP_DIR=/var/lib/textbin/uploads
+```
+
+No paste volume is required:
+
+```sh
+docker volume create textbin-uploads
+docker run --rm --user 0:0 \
+  --mount type=volume,src=textbin-uploads,dst=/var/lib/textbin/uploads \
+  --entrypoint chown ghcr.io/chaba-dev/textbin:0.1.0 \
+  -R 1000:1000 /var/lib/textbin/uploads
+
+docker run --name textbin --read-only --restart unless-stopped \
+  --network textbin-private --env-file /run/textbin/runtime.env \
+  --mount type=volume,src=textbin-uploads,dst=/var/lib/textbin/uploads \
+  --tmpfs /app/tmp:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=1000,gid=1000 \
+  --publish 127.0.0.1:4000:4000 \
+  ghcr.io/chaba-dev/textbin:0.1.0
+```
+
+Use the object store's supported CLI from the Textbin network to put, read, and
+delete a disposable object using the application credentials. Then perform the
+end-to-end paste check below. A bucket-list operation alone is insufficient:
+Textbin needs object PUT, GET, and DELETE. Do not log the credentials or probe
+contents.
+
+Never switch an existing installation between local and S3 by changing only the
+environment. Storage keys do not identify a backend, and Textbin does not migrate
+existing objects.
+
+## Networking, TLS, and probes
+
+### Reverse proxy (recommended)
+
+Publish `PORT` only to a trusted proxy, ingress, or load balancer. The proxy must:
+
+- terminate public TLS for `PHX_HOST` and redirect public HTTP to HTTPS;
+- preserve the original `Host` header;
+- support WebSocket upgrades for `/live/websocket`;
+- forward normal HTTP to the private `PORT`; and
+- use `/readyz` to select traffic-ready instances.
+
+Textbin generates canonical URLs as `https://PHX_HOST` on public port 443.
+Non-standard public HTTPS ports are not supported. Textbin does not currently
+trust or rewrite `Forwarded` or `X-Forwarded-*` headers. Proxy-set values cannot
+override the canonical host or scheme, and request logs see the immediate peer
+address. Configure the proxy to replace, not append, forwarded headers anyway,
+and do not use them for authorization or abuse decisions.
+
+### Direct TLS
+
+Mount a certificate and key read-only, readable by UID/GID `1000`, then set:
+
+```dotenv
 TLS_CERT_PATH=/run/secrets/textbin/tls.crt
 TLS_KEY_PATH=/run/secrets/textbin/tls.key
 HTTPS_PORT=4443
 ```
 
-`TLS_CERT_PATH` and `TLS_KEY_PATH` must be supplied together and must name
-readable regular files. Mount both files read-only and make them readable by
-UID/GID `1000`; never place the private key in the image. The HTTP listener
-remains enabled on `PORT`, which allows a separately protected health endpoint
-or internal traffic. Control access to both listeners with the runtime's network
-policy.
+Map public TCP 443 to `HTTPS_PORT`; the HTTP `PORT` remains enabled for private
+probes. Every replica needs a certificate valid for `PHX_HOST`. Replace renewed
+files atomically and restart or roll instances so Erlang loads them. Certificate
+issuance and renewal are operator responsibilities.
 
-Direct TLS works with a layer-4 load balancer. For example, an NLB can accept
-TCP port `443` and pass the encrypted connection to `HTTPS_PORT=4443`. Using an
-unprivileged target port avoids granting the container permission to bind port
-`443`. Every replica must receive a certificate valid for `PHX_HOST` and its
-corresponding key. Verify client-address preservation for the load balancer's
-target mode before relying on source addresses for logs or abuse controls.
+### Health checks
 
-`HTTPS_PORT` is the internal application listener, not the public URL port.
-Textbin generates public URLs as `https://PHX_HOST` on port `443`, so a direct
-deployment must publish or forward public port `443` to `HTTPS_PORT`. Public
-HTTPS deployments on a non-standard port are not currently supported.
+| Endpoint | Success | Meaning |
+|---|---|---|
+| `GET /healthz` | `200 ok` | BEAM and HTTP listener are alive; no dependency check |
+| `GET /readyz` | `200 ready` | A bounded `SELECT 1` succeeded against PostgreSQL |
 
-Certificate renewal is the operator's responsibility. Replace the mounted
-files atomically and restart or roll the application instances so Erlang/OTP
-loads the renewed certificate. When a proxy or ingress already manages ACME and
-certificate rotation, leave direct TLS unset and forward HTTP to `PORT`.
+`/readyz` returns 503 on database failure and never includes connection details.
+Use `/healthz` for restart decisions and `/readyz` for rollout and load-balancer
+readiness. Neither endpoint verifies blob storage; use the end-to-end paste probe
+after deployment and alert on application storage errors.
 
-## Writable paths
+## First user and platform administrator
 
-The image creates these paths and grants ownership to UID/GID `1000`:
+1. Confirm Postmark delivery and `MAIL_FROM_ADDRESS` before exposing Textbin.
+2. Visit `https://PHX_HOST/users/register`, submit the first user's email, and
+   follow the emailed confirmation/login link.
+3. While that confirmed user is logged in, set a password in user settings if API
+   token creation is needed.
+4. Grant platform authority from the running container:
 
-| Path                       | Default variable         | Durability requirement                          |
-|----------------------------|--------------------------|-------------------------------------------------|
-| `/var/lib/textbin/pastes`  | `TEXTBIN_STORAGE_PATH`   | Persistent when using local storage             |
-| `/var/lib/textbin/uploads` | `TEXTBIN_UPLOAD_TMP_DIR` | Writable staging space; persistence is optional |
+   ```sh
+   docker exec textbin /app/bin/grant-platform-admin admin@example.com
+   ```
 
-The Dockerfile deliberately does not declare either path as a `VOLUME`.
-Operators can supply bind mounts, named volumes, ephemeral disks, Kubernetes
-volumes, or another implementation appropriate to their runtime.
+The command accepts exactly one email, requires an existing confirmed,
+non-suspended human user, and records a platform audit event. It is also the
+audited recovery command when all normal admin access is lost. It uses release
+RPC, so execute it against a running application container with its normal
+environment; do not edit the database directly. Organization owner/admin roles
+do not grant platform authority.
 
-Staged upload files are private, bounded by the configured paste limit, and
-removed after finalization. Textbin tracks active staging files and periodically
-removes stale files left by interrupted requests. Persisting the staging path
-allows that cleanup to operate across container restarts; using ephemeral space
-is also safe because unfinished request bodies are not committed paste data.
-Provision staging capacity for the maximum expected number of concurrent
-uploads. The current default maximum paste size is 1 MiB.
+## Verification
 
-## Run migrations explicitly
+Check probes first:
 
-The image never runs database migrations as a server startup side effect. Run
-the included command once per deployment, with the same `DATABASE_URL` and
-runtime secrets as the server:
-
-```text
-/app/bin/migrate
+```sh
+curl --fail --silent --show-error https://textbin.example.com/healthz
+curl --fail --silent --show-error https://textbin.example.com/readyz
 ```
 
-The command is safe to run repeatedly and applies every pending migration. In a
-multi-instance deployment, run it as a dedicated release job before replacing
-the application instances.
+For a full database-and-blob smoke test, use a dedicated operator account with a
+password. Keep the returned token out of shell tracing and revoke it afterward:
 
-## Local storage
+```sh
+(
+  set -euo pipefail
+  set +x
+  : "${TEXTBIN_OPERATOR_PASSWORD:?set TEXTBIN_OPERATOR_PASSWORD}"
 
-Select local storage with:
+  BASE_URL=https://textbin.example.com
+  TOKEN=
+  PASTE_ID=
 
-```text
-TEXTBIN_STORAGE_BACKEND=local
-TEXTBIN_STORAGE_PATH=/var/lib/textbin/pastes
+  cleanup() {
+    status=$?
+    trap - EXIT
+    set +e
+    if [[ -n "$TOKEN" && -n "$PASTE_ID" ]]; then
+      curl --fail --silent --show-error --output /dev/null -X DELETE \
+        -H "authorization: Bearer $TOKEN" \
+        "$BASE_URL/api/v1/pastes/$PASTE_ID"
+    fi
+    if [[ -n "$TOKEN" ]]; then
+      curl --fail --silent --show-error --output /dev/null -X DELETE \
+        -H "authorization: Bearer $TOKEN" "$BASE_URL/api/v1/me/token"
+    fi
+    rm -f /tmp/textbin-probe.bin /tmp/textbin-probe-restored.bin
+    unset TOKEN TEXTBIN_OPERATOR_PASSWORD
+    exit "$status"
+  }
+  trap cleanup EXIT
+
+  TOKEN="$(
+    jq -cn \
+      --arg email 'operator@example.com' \
+      --arg password "$TEXTBIN_OPERATOR_PASSWORD" \
+      --arg name 'restore-drill' \
+      '{email: $email, password: $password, name: $name}' \
+      | curl --fail --silent --show-error \
+          -H 'content-type: application/json' --data-binary @- \
+          "$BASE_URL/api/v1/auth/tokens" \
+      | jq -er '.data.api_token'
+  )"
+
+  dd if=/dev/urandom bs=16384 count=1 2>/dev/null > /tmp/textbin-probe.bin
+  EXPECTED_SHA256="$(sha256sum /tmp/textbin-probe.bin | cut -d' ' -f1)"
+  PASTE_ID="$(curl --fail --silent --show-error \
+    -H "authorization: Bearer $TOKEN" \
+    -H 'content-type: application/octet-stream' \
+    --data-binary @/tmp/textbin-probe.bin \
+    "$BASE_URL/api/v1/pastes" | jq -er '.data.id')"
+
+  curl --fail --silent --show-error \
+    -H "authorization: Bearer $TOKEN" \
+    "$BASE_URL/api/v1/pastes/$PASTE_ID" \
+    | jq -er '.data.data_base64' \
+    | base64 -d > /tmp/textbin-probe-restored.bin
+  test "$(sha256sum /tmp/textbin-probe-restored.bin | cut -d' ' -f1)" = "$EXPECTED_SHA256"
+  echo "Textbin external paste integrity verified"
+)
 ```
 
-The configured path must:
+The random 16 KiB binary body exceeds the default inline threshold and therefore
+exercises the configured external storage backend. A successful checksum proves
+that API authorization, PostgreSQL metadata, object write/read, and integrity
+verification all worked.
 
-- be writable by UID/GID `1000`;
-- survive application replacement and host restart;
-- support atomic rename and file and directory `fsync` semantics; and
-- have enough capacity for retained paste bodies and temporary files created
-  adjacent to objects during atomic finalization.
+## Back up and restore
 
-Do not use a filesystem that ignores durability operations if acknowledged
-writes must survive host failure. Network filesystems and storage drivers vary;
-verify their rename and synchronization guarantees before production use.
+PostgreSQL records include object keys, sizes, and SHA-256 checksums. Blob writes
+and database commits cross systems, so independent live backups can capture a row
+without its object or an object without its row. The pending-upload journal
+repairs interrupted live operations; it is not a backup mechanism.
 
-## S3-compatible storage
+### Coordinated backup
 
-Select S3-compatible storage with:
+1. Record the exact image digest and runtime configuration names (not secret
+   values).
+2. Stop all Textbin instances or block write traffic and let active requests
+   finish. Confirm no server can create or delete a paste.
+3. Back up PostgreSQL using PostgreSQL 17 tooling, for example `pg_dump` in custom
+   format, and capture its checksum.
+4. While writes remain stopped, snapshot/copy `/var/lib/textbin/pastes` or the
+   complete S3 bucket, including object versions if versioning is enabled.
+5. Capture the blob backup's provider snapshot/version identifier and inventory.
+6. Resume writes only after both backups have completed. Store both artifacts and
+   their identifiers as one backup set.
 
-```text
-TEXTBIN_STORAGE_BACKEND=s3
-S3_ENDPOINT=https://objects.example.com
-S3_BUCKET=textbin
-S3_REGION=us-east-1
-S3_ACCESS_KEY_ID=...
-S3_SECRET_ACCESS_KEY=...
+For example, while writes are stopped, PostgreSQL custom-format and local-storage
+backups can be created with PostgreSQL 17 and standard archive tools:
+
+```sh
+umask 077
+BACKUP_DIR=/secure-backups/textbin-2026-08-26T210000Z
+PGDATABASE_URL='postgresql://textbin:<percent-encoded-password>@postgres:5432/textbin_prod'
+install -d -m 0700 "$BACKUP_DIR"
+pg_dump --format=custom --file="$BACKUP_DIR/postgres.dump" "$PGDATABASE_URL"
+tar --create --file="$BACKUP_DIR/pastes.tar" \
+  --directory=/var/lib/textbin/pastes .
+sha256sum "$BACKUP_DIR/postgres.dump" "$BACKUP_DIR/pastes.tar" \
+  > "$BACKUP_DIR/SHA256SUMS"
+unset PGDATABASE_URL
 ```
 
-Textbin uses path-style object URLs and basic signed PUT, GET, and DELETE
-operations. The bucket must exist before the server starts, and the credentials
-must be restricted to object operations for that bucket. SeaweedFS and Garage
-are suitable self-hosted implementations; verify compatibility before selecting
-another provider.
+Run those tools where the durable paste path is mounted read-only. For S3, use a
+provider-consistent bucket snapshot or versioned replication operation instead
+of `pastes.tar`, then record its immutable identifier and inventory beside the
+database dump.
 
-S3 removes the need for persistent local paste storage, but the upload staging
-path must still be writable. A paste is journaled in PostgreSQL before its object
-is uploaded. Interrupted objects are claimed and removed by the background
-cleaner without racing successful paste commits.
+Upload staging is not durable paste data and need not be backed up. The secret
+key is needed to preserve existing signed sessions but belongs in the secret
+manager's protected backup, not beside ordinary backup logs.
 
-Do not change an existing installation from local to S3, or from S3 to local,
-by changing only environment variables. Storage keys do not identify their
-backend, and Textbin does not currently migrate existing objects between
-backends.
+### Restore drill
 
-## PostgreSQL and storage are one durability boundary
+Run this drill regularly, not only after an incident:
 
-PostgreSQL stores ownership, visibility, expiration, content type, size,
-checksum, and the blob storage key. Small UTF-8 textual bodies are stored inline
-in PostgreSQL; larger and binary bodies use the selected storage backend.
+1. Create an isolated PostgreSQL 17 database and isolated local volume or bucket.
+   Ensure it cannot receive production traffic or email.
+2. Restore the blob snapshot first, preserving every object key.
+3. Restore PostgreSQL with `pg_restore --exit-on-error --clean --if-exists` (or
+   the equivalent for the chosen backup format).
+4. Configure the recorded image digest against the restored database and blob
+   location. Use a new hostname and secret delivery path.
+5. Run `/app/bin/migrate` only if intentionally validating an upgrade; otherwise
+   start the exact backed-up image.
+6. Require `/readyz` to return 200. Compare expected database row counts and the
+   blob inventory with the backup manifest.
+7. Select at least one known external paste from the backup and read it through
+   the API. Compare the returned bytes with its recorded SHA-256 checksum. Run
+   the binary end-to-end probe from [Verification](#verification) to prove new
+   writes and reads too.
+8. Record the restore duration, checks performed, missing objects, checksum
+   failures, and cleanup of the isolated environment.
 
-Back up PostgreSQL and blob storage as a coordinated unit. The safest procedure
-is:
+For an isolated database that already exists and an empty local restore path,
+the corresponding restore commands are:
 
-1. stop or quiesce writes;
-2. wait for active requests to finish;
-3. snapshot PostgreSQL and the local/S3 blob store;
-4. resume writes; and
-5. regularly restore both snapshots into an isolated environment and verify
-   paste reads.
+```sh
+umask 077
+BACKUP_DIR=/secure-backups/textbin-2026-08-26T210000Z
+RESTORE_DATABASE_URL='postgresql://textbin_restore:<percent-encoded-password>@restore-postgres:5432/textbin_restore'
+cd "$BACKUP_DIR"
+sha256sum --check SHA256SUMS
+test -z "$(find /restore/textbin/pastes -mindepth 1 -print -quit)"
+tar --extract --file=pastes.tar --directory=/restore/textbin/pastes
+pg_restore --exit-on-error --clean --if-exists --no-owner \
+  --dbname="$RESTORE_DATABASE_URL" postgres.dump
+unset RESTORE_DATABASE_URL
+```
 
-Independent live snapshots can capture a database row without its object, or an
-object without its row, because creation and deletion cross two systems. The
-pending-upload journal repairs interrupted live operations; it is not a
-replacement for coordinated backups.
+Restore an S3 snapshot with the provider's immutable snapshot/version identifier
+before `pg_restore`. Keep the restore bucket isolated and preserve object keys.
 
-## Upgrade procedure
+A database that starts is not a successful restore. The drill succeeds only when
+metadata exists **and** externally stored paste bytes read with the expected
+checksum.
 
-For each upgrade:
+## Upgrades and rollback
 
-1. read the release notes and back up PostgreSQL and blob storage;
-2. run `/app/bin/migrate` from the new image as a dedicated job;
-3. replace application instances using the runtime's normal rollout strategy;
-4. verify login, paste creation, and reads from the configured backend; and
-5. retain the previous image until the rollout is accepted.
+Before every upgrade, read all intervening release notes and complete a
+coordinated backup and recent restore drill.
 
-Database migrations are expected to be forward-compatible during a normal
-rolling deployment. Downgrading an image does not reverse migrations. Restore a
-coordinated pre-upgrade backup when a migration must be rolled back.
+Single node:
+
+1. stop the old server;
+2. run `/app/bin/migrate` from the exact new image;
+3. start the new image with unchanged durable storage and secrets; and
+4. require readiness, login, and the end-to-end storage probe before reopening
+   traffic.
+
+Rolling deployment:
+
+1. run one migration job from the new image while old instances remain serving;
+2. stop if migration fails;
+3. replace instances gradually, adding each only after `/readyz` succeeds; and
+4. verify login and external paste create/read before completing the rollout.
+
+Migrations are designed to be forward-compatible with the previous application
+during a normal roll. They are not reversible, and launching an older image after
+new migrations is not a supported rollback. If application rollback is unsafe,
+stop writes and restore the coordinated pre-upgrade PostgreSQL and blob backup,
+then start its recorded image digest. Never restore only PostgreSQL or only blobs.
+
+## Troubleshooting without exposing secrets
+
+| Symptom | Safe checks |
+|---|---|
+| Startup says a required variable is missing | Check that the secret/config key is attached; print key names or presence only, never values |
+| Database connection refused or `/readyz` is 503 | Run `pg_isready` from the application network; check DNS, port, TLS policy, role limits, and `replicas × POOL_SIZE` |
+| Migration waits or fails | Ensure only the release job is migrating, inspect PostgreSQL advisory locks and migration logs, and do not start the new image |
+| Local writes fail | Check mount ownership is `1000:1000`, free space/inodes, read-only flags, and rename/fsync support |
+| S3 returns 403 | Check clock synchronization, endpoint/region, path-style support, and object-level policy without printing keys |
+| S3 returns 404 | Confirm bucket and endpoint, then check whether database and blob backups came from the same set |
+| Uploads fail but small pastes work | Check staging ownership, free space, inode availability, and the 1 MiB request limit |
+| Confirmation mail is absent | Check Postmark delivery/activity, verified sender, outbound HTTPS, and recipient suppression state; never log the API token |
+| Browser loops or LiveView disconnects | Confirm public HTTPS, `PHX_HOST`, preserved `Host`, WebSocket upgrade support, and proxy idle timeout |
+| TLS listener will not start | Check that both PEM paths are regular readable files for UID 1000 and that `HTTPS_PORT` is free |
+
+Application errors include a request ID where available. Correlate that ID with
+proxy and application logs. Sanitize database URLs, authorization headers, API
+tokens, cookies, Postmark credentials, and S3 credentials before sharing logs.

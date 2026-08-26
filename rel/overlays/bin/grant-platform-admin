@@ -2,11 +2,11 @@
 set -eu
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 EMAIL" >&2
-  exit 64
+	echo "usage: $0 EMAIL" >&2
+	exit 64
 fi
 
-export TEXTBIN_PLATFORM_ADMIN_EMAIL="$1"
+encoded_email=$(printf '%s' "$1" | base64 | tr -d '\n')
 
 exec "$(dirname "$0")/textbin" rpc \
-  'Textbin.Release.grant_platform_admin(System.fetch_env!("TEXTBIN_PLATFORM_ADMIN_EMAIL"))'
+	"email = Base.decode64!(\"$encoded_email\"); case Textbin.Release.grant_platform_admin(email) do {:ok, _result} = success -> success; {:error, reason} -> raise \"grant-platform-admin failed: #{inspect(reason)}\" end"
