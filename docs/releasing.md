@@ -48,7 +48,7 @@ gate** on `main`. Review and update pinned action commit SHAs deliberately when
 upgrading release dependencies. The version comments beside each SHA are
 informational; the SHA is the security boundary.
 
-After the first container publication, make the `chaba2/textbin` package public
+After the first container publication, make the `chaba-dev/textbin` package public
 in GitHub's package settings as described in the self-hosting guide.
 
 ## Automated flow
@@ -111,7 +111,7 @@ main changes
     -> release/next PR
     -> vMAJOR.MINOR.PATCH tag
     -> GitHub Release with CLI artifacts, notes, and tag comparison
-    -> ghcr.io/chaba2/textbin (linux/amd64 and linux/arm64)
+    -> ghcr.io/chaba-dev/textbin (linux/amd64 and linux/arm64)
 ```
 
 ## Published CLI platforms
