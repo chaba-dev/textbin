@@ -53,7 +53,7 @@ report model.
   storage cleanup and remains audited when storage is unavailable.
 - [X] Sensitive actions enforce the documented reason and recent-reauthentication
   matrix.
-- [ ] Once the RFD 4 report model exists, platform administrators can page through
+- [X] Once the RFD 4 report model exists, platform administrators can page through
   the report queue and dismiss or resolve reports with a reason and audit event.
 
 * Phase 5: End-to-end verification
@@ -61,6 +61,6 @@ report model.
 Each earlier phase ships with targeted tests; this phase closes cross-feature and
 LiveView coverage gaps.
 
-- [ ] Authorization, role-change invalidation, final-admin concurrency,
+- [X] Authorization, role-change invalidation, final-admin concurrency,
   suspension, deletion cleanup, reauthentication, and audit behavior have context
   and LiveView tests.

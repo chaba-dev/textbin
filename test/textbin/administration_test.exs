@@ -9,6 +9,8 @@ defmodule Textbin.AdministrationTest do
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
   alias Textbin.Release
+  alias Textbin.Reports
+  alias Textbin.Reports.Report
 
   import Textbin.AccountsFixtures
 
@@ -414,6 +416,116 @@ defmodule Textbin.AdministrationTest do
     end
   end
 
+  describe "report review" do
+    setup do
+      admin = admin_fixture()
+      owner = user_fixture()
+      reporter = user_fixture()
+
+      %{admin: admin, scope: admin_scope(admin), owner: owner, reporter: reporter}
+    end
+
+    test "paginates the open queue without exposing reporter identity", context do
+      reports =
+        for index <- 1..3 do
+          assert {:ok, paste} =
+                   Pastes.create_paste(Scope.for_user(context.owner), %{
+                     data: "reported #{index}",
+                     audience: "public"
+                   })
+
+          assert {:ok, report} =
+                   Reports.create_report(Scope.for_user(context.reporter), paste.id, %{
+                     "category" => "spam",
+                     "notes" => "Queue item #{index}"
+                   })
+
+          report
+        end
+
+      assert {:ok, first_page} = Administration.list_reports(context.scope, limit: 2)
+      assert length(first_page.entries) == 2
+      assert first_page.next_page == 2
+      refute Enum.any?(first_page.entries, &Map.has_key?(&1, :reporter_user_id))
+
+      assert {:ok, second_page} =
+               Administration.list_reports(context.scope, limit: 2, page: 2)
+
+      assert length(second_page.entries) == 1
+
+      assert MapSet.new(first_page.entries ++ second_page.entries, & &1.id) ==
+               MapSet.new(reports, & &1.id)
+
+      assert {:error, :forbidden} =
+               Administration.list_reports(Scope.for_user(context.reporter))
+    end
+
+    test "dismisses and resolves reports with reasons and audit events without sudo", context do
+      stale_scope =
+        Scope.for_user(%{
+          context.admin
+          | authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
+        })
+
+      dismissed = report_fixture(context, "spam")
+      resolved = report_fixture(context, "malware")
+
+      assert {:ok, %Report{status: "dismissed"}} =
+               Administration.dismiss_report(stale_scope, dismissed, "not actionable",
+                 request_id: "dismiss-request"
+               )
+
+      assert {:ok, %Report{status: "actioned"}} =
+               Administration.resolve_report(stale_scope, resolved, "handled externally")
+
+      assert {:ok, %{entries: []}} = Administration.list_reports(context.scope)
+
+      events =
+        Repo.all(
+          from event in PlatformAuditEvent,
+            where: event.target_type == "report",
+            order_by: [asc: event.inserted_at]
+        )
+
+      assert Enum.map(events, & &1.action) == [
+               "platform.report.dismissed",
+               "platform.report.resolved"
+             ]
+
+      assert Enum.map(events, & &1.reason) == ["not actionable", "handled externally"]
+      assert hd(events).request_id == "dismiss-request"
+      assert hd(events).metadata["paste_id"] == dismissed.paste_id
+    end
+
+    test "requires a reason, current authority, and an atomic audit transition", context do
+      report = report_fixture(context, "other")
+
+      assert {:error, :reason_required} =
+               Administration.dismiss_report(context.scope, report, " ")
+
+      assert {:error, :forbidden} =
+               Administration.resolve_report(
+                 Scope.for_user(context.reporter),
+                 report,
+                 "not authorized"
+               )
+
+      assert {:error, %Ecto.Changeset{}} =
+               Administration.resolve_report(context.scope, report, "reviewed",
+                 request_id: String.duplicate("x", 256)
+               )
+
+      assert Repo.get!(Report, report.id).status == "open"
+      refute Repo.exists?(from event in PlatformAuditEvent, where: event.target_id == ^report.id)
+
+      assert {:ok, %Report{status: "actioned"}} =
+               Administration.resolve_report(context.scope, report, "reviewed")
+
+      assert {:error, :not_found} =
+               Administration.dismiss_report(context.scope, report, "second review")
+    end
+  end
+
   describe "administration reads" do
     setup do
       admin = admin_fixture()
@@ -625,5 +737,20 @@ defmodule Textbin.AdministrationTest do
   defp guest_user do
     assert {:ok, user} = Accounts.create_guest_user()
     user
+  end
+
+  defp report_fixture(context, category) do
+    assert {:ok, paste} =
+             Pastes.create_paste(Scope.for_user(context.owner), %{
+               data: "report fixture #{Ecto.UUID.generate()}",
+               audience: "public"
+             })
+
+    assert {:ok, report} =
+             Reports.create_report(Scope.for_user(context.reporter), paste.id, %{
+               "category" => category
+             })
+
+    report
   end
 end

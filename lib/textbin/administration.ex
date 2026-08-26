@@ -22,6 +22,7 @@ defmodule Textbin.Administration do
 
   alias Textbin.Pastes.Paste
   alias Textbin.Repo
+  alias Textbin.Reports.Report
 
   @platform_admin_role "admin"
   @authority_lock_key 8_174_021_483_001
@@ -199,6 +200,33 @@ defmodule Textbin.Administration do
     end
   end
 
+  @doc "Lists the open abuse-report queue oldest first without reporter identity."
+  def list_reports(scope, opts \\ []) do
+    with {:ok, _admin} <- authorize_platform_admin(scope) do
+      limit = page_limit(Keyword.get(opts, :limit))
+      offset = page_offset(Keyword.get(opts, :page), limit)
+
+      reports =
+        Repo.all(
+          from report in Report,
+            where: report.status == "open",
+            order_by: [asc: report.inserted_at, asc: report.id],
+            limit: ^(limit + 1),
+            offset: ^offset,
+            select: %{
+              id: report.id,
+              paste_id: report.paste_id,
+              category: report.category,
+              notes: report.notes,
+              status: report.status,
+              inserted_at: report.inserted_at
+            }
+        )
+
+      {:ok, page(reports, limit, Keyword.get(opts, :page))}
+    end
+  end
+
   @doc false
   def authorize_account_deletion(%Scope{user: %User{id: user_id}} = scope) do
     case Repo.transact(fn -> authorize_account_deletion_in_transaction(scope, user_id) end) do
@@ -334,6 +362,16 @@ defmodule Textbin.Administration do
         &delete_paste_in_transaction(&1, paste_id, reason, opts)
       )
     end
+  end
+
+  @doc "Dismisses an open abuse report with an audited reason."
+  def dismiss_report(scope, report, reason, opts \\ []) do
+    review_report(scope, report, reason, "dismissed", "platform.report.dismissed", opts)
+  end
+
+  @doc "Marks an open abuse report resolved with an audited reason."
+  def resolve_report(scope, report, reason, opts \\ []) do
+    review_report(scope, report, reason, "actioned", "platform.report.resolved", opts)
   end
 
   defp authorize_account_deletion_in_transaction(scope, user_id) do
@@ -525,6 +563,35 @@ defmodule Textbin.Administration do
     end
   end
 
+  defp review_report(scope, report, reason, status, action, opts) do
+    with {:ok, reason} <- normalize_reason(reason),
+         {:ok, report_id} <- report_id(report) do
+      report_transaction(
+        scope,
+        &review_report_in_transaction(&1, report_id, reason, status, action, opts)
+      )
+    end
+  end
+
+  defp review_report_in_transaction(actor, report_id, reason, status, action, opts) do
+    with %Report{} = report <- lock_open_report(report_id),
+         {:ok, report} <-
+           report
+           |> Ecto.Changeset.change(
+             status: status,
+             resolution_reason: reason,
+             resolved_by_user_id: actor.id,
+             resolved_at: DateTime.utc_now()
+           )
+           |> Repo.update(),
+         :ok <- record_report_audit(actor, action, report, reason, opts) do
+      {:ok, report}
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
   defp authority_transaction(%Scope{} = scope, callback) do
     Repo.transact(fn ->
       with :ok <- lock_authority_changes(),
@@ -536,6 +603,19 @@ defmodule Textbin.Administration do
   end
 
   defp authority_transaction(_scope, _callback), do: {:error, :forbidden}
+
+  # Report-only review does not require sudo, but it shares the authority lock
+  # so revocation cannot race authorization and the audited state transition.
+  defp report_transaction(%Scope{} = scope, callback) do
+    Repo.transact(fn ->
+      with :ok <- lock_authority_changes(),
+           {:ok, actor} <- lock_platform_admin(scope) do
+        callback.(actor)
+      end
+    end)
+  end
+
+  defp report_transaction(_scope, _callback), do: {:error, :forbidden}
 
   defp lock_platform_admin(%Scope{user: %User{id: user_id}}) do
     case lock_user(user_id) do
@@ -674,6 +754,23 @@ defmodule Textbin.Administration do
     |> audit_result()
   end
 
+  defp record_report_audit(actor, action, report, reason, opts) do
+    %PlatformAuditEvent{}
+    |> PlatformAuditEvent.changeset(%{
+      actor_kind: "user",
+      actor_user_id: actor.id,
+      actor_label: actor.email,
+      action: action,
+      target_type: "report",
+      target_id: report.id,
+      reason: reason,
+      request_id: Keyword.get(opts, :request_id),
+      metadata: %{"paste_id" => report.paste_id, "category" => report.category}
+    })
+    |> Repo.insert()
+    |> audit_result()
+  end
+
   defp audit_result({:ok, %PlatformAuditEvent{}}), do: :ok
   defp audit_result({:error, changeset}), do: {:error, changeset}
 
@@ -700,6 +797,14 @@ defmodule Textbin.Administration do
         where:
           paste.id == ^paste_id and
             (is_nil(paste.expires_at) or paste.expires_at > ^now),
+        lock: "FOR UPDATE"
+    )
+  end
+
+  defp lock_open_report(report_id) do
+    Repo.one(
+      from report in Report,
+        where: report.id == ^report_id and report.status == "open",
         lock: "FOR UPDATE"
     )
   end
@@ -735,6 +840,17 @@ defmodule Textbin.Administration do
   end
 
   defp paste_id(_id), do: {:error, :not_found}
+
+  defp report_id(%Report{id: id}), do: report_id(id)
+
+  defp report_id(id) when is_binary(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> {:ok, id}
+      :error -> {:error, :not_found}
+    end
+  end
+
+  defp report_id(_id), do: {:error, :not_found}
 
   defp encode_timestamp(nil), do: nil
   defp encode_timestamp(timestamp), do: DateTime.to_iso8601(timestamp)

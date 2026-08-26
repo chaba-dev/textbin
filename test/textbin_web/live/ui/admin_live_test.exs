@@ -12,6 +12,8 @@ defmodule TextbinWeb.UI.AdminLiveTest do
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
   alias Textbin.Repo
+  alias Textbin.Reports
+  alias Textbin.Reports.Report
   alias TextbinWeb.ForbiddenError
 
   setup %{conn: conn} do
@@ -167,6 +169,115 @@ defmodule TextbinWeb.UI.AdminLiveTest do
 
     assert_redirect(view, ~p"/users/log-in")
     assert Repo.get!(Paste, paste.id).expires_at == nil
+  end
+
+  test "reviews reports without requiring sudo and refreshes the audit log", %{conn: conn} do
+    owner = user_fixture()
+    reporter = user_fixture()
+
+    assert {:ok, paste} =
+             Pastes.create_paste(Scope.for_user(owner), %{
+               data: "reported from LiveView",
+               audience: "unlisted"
+             })
+
+    assert {:ok, report} =
+             Reports.create_report(Scope.for_user(reporter), paste.id, %{
+               "category" => "malware",
+               "notes" => "Unexpected executable"
+             })
+
+    token = get_session(conn, :user_token)
+    override_token_authenticated_at(token, DateTime.add(DateTime.utc_now(:second), -21, :minute))
+
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+    assert has_element?(view, "#report-action-form-#{report.id}")
+    assert has_element?(view, "#report-queue-entries", "Unexpected executable")
+    assert has_element?(view, "#report-queue-entries a[href='/pastes/#{paste.id}']")
+
+    view
+    |> form("#report-action-form-#{report.id}",
+      report_action: %{
+        report_id: report.id,
+        reason: "content removed by provider"
+      }
+    )
+    |> put_submitter("#resolve-report-#{report.id}")
+    |> render_submit()
+
+    assert_patch(view, ~p"/admin")
+    assert Repo.get!(Report, report.id).status == "actioned"
+    refute has_element?(view, "#report-action-form-#{report.id}")
+    assert has_element?(view, "#platform-audit-events", "Abuse report resolved")
+  end
+
+  test "surfaces final-admin and reason protections in the panel", %{
+    admin: admin,
+    conn: conn
+  } do
+    target = user_fixture()
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view
+    |> form("#admin-lookup-form", lookup: %{query: admin.email})
+    |> render_submit()
+
+    view
+    |> form("#admin-account-action-form",
+      account_action: %{action: "revoke", target_id: admin.id, reason: "rotation"}
+    )
+    |> render_submit()
+
+    assert has_element?(view, "#flash-error", "final active administrator")
+    assert Repo.get!(User, admin.id).platform_role == "admin"
+
+    view
+    |> form("#admin-lookup-form", lookup: %{query: target.email})
+    |> render_submit()
+
+    view
+    |> form("#admin-account-action-form",
+      account_action: %{action: "grant", target_id: target.id, reason: " "}
+    )
+    |> render_submit()
+
+    assert has_element?(view, "#flash-error", "reason is required")
+    assert Repo.get!(User, target.id).platform_role == nil
+  end
+
+  test "suspends and restores an account through audited panel actions", %{conn: conn} do
+    target = user_fixture()
+    target_token = Textbin.Accounts.generate_user_session_token(target)
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view
+    |> form("#admin-lookup-form", lookup: %{query: target.email})
+    |> render_submit()
+
+    view
+    |> form("#admin-account-action-form",
+      account_action: %{action: "suspend", target_id: target.id, reason: "abuse response"}
+    )
+    |> render_submit()
+
+    assert_patch(view, ~p"/admin")
+    assert %User{suspended_at: %DateTime{}} = Repo.get!(User, target.id)
+    refute Textbin.Accounts.get_user_by_session_token(target_token)
+    assert has_element?(view, "#platform-audit-events", "Account suspended")
+
+    view
+    |> form("#admin-lookup-form", lookup: %{query: target.email})
+    |> render_submit()
+
+    view
+    |> form("#admin-account-action-form",
+      account_action: %{action: "restore", target_id: target.id, reason: "appeal accepted"}
+    )
+    |> render_submit()
+
+    assert_patch(view, ~p"/admin")
+    assert Repo.get!(User, target.id).suspended_at == nil
+    assert has_element?(view, "#platform-audit-events", "Account restored")
   end
 
   test "renders every protected largest-paste row without exposing capability IDs", %{conn: conn} do
