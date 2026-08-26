@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 3lsjmiMYDgwKtdaQ3bfz4i4fn6sTwWsM6QKCAIFamw5UMkGMy2klQNCCp5rysQ4
+\restrict ncDbxlj9PmQf1gUaRU86LkDzv7pm6WsvEpDIMJ4ZZZ4WawWqkoe2w5t3evP7qa7
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -154,6 +154,28 @@ CREATE TABLE public.platform_audit_events (
 
 
 --
+-- Name: reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reports (
+    id uuid NOT NULL,
+    paste_id uuid NOT NULL,
+    reporter_user_id uuid NOT NULL,
+    category character varying(255) NOT NULL,
+    notes text,
+    status character varying(255) DEFAULT 'open'::character varying NOT NULL,
+    resolution_reason text,
+    resolved_by_user_id uuid,
+    resolved_at timestamp without time zone,
+    inserted_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL,
+    CONSTRAINT reports_category_must_be_supported CHECK (((category)::text = ANY ((ARRAY['spam'::character varying, 'malware'::character varying, 'harassment'::character varying, 'copyright'::character varying, 'other'::character varying])::text[]))),
+    CONSTRAINT reports_resolution_must_be_consistent CHECK (((((status)::text = 'open'::text) AND (resolution_reason IS NULL) AND (resolved_by_user_id IS NULL) AND (resolved_at IS NULL)) OR (((status)::text = ANY ((ARRAY['actioned'::character varying, 'dismissed'::character varying])::text[])) AND (resolution_reason IS NOT NULL) AND (resolved_by_user_id IS NOT NULL) AND (resolved_at IS NOT NULL)))),
+    CONSTRAINT reports_status_must_be_supported CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'actioned'::character varying, 'dismissed'::character varying])::text[])))
+);
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -284,6 +306,14 @@ ALTER TABLE ONLY public.pending_uploads
 
 ALTER TABLE ONLY public.platform_audit_events
     ADD CONSTRAINT platform_audit_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reports reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT reports_pkey PRIMARY KEY (id);
 
 
 --
@@ -457,6 +487,27 @@ CREATE INDEX platform_audit_events_inserted_at_id_index ON public.platform_audit
 --
 
 CREATE INDEX platform_audit_events_target_type_target_id_index ON public.platform_audit_events USING btree (target_type, target_id);
+
+
+--
+-- Name: reports_one_open_per_reporter_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX reports_one_open_per_reporter_index ON public.reports USING btree (paste_id, reporter_user_id) WHERE ((status)::text = 'open'::text);
+
+
+--
+-- Name: reports_paste_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reports_paste_id_index ON public.reports USING btree (paste_id);
+
+
+--
+-- Name: reports_queue_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reports_queue_index ON public.reports USING btree (status, inserted_at, id);
 
 
 --
@@ -642,7 +693,7 @@ ALTER TABLE ONLY public.workspaces
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3lsjmiMYDgwKtdaQ3bfz4i4fn6sTwWsM6QKCAIFamw5UMkGMy2klQNCCp5rysQ4
+\unrestrict ncDbxlj9PmQf1gUaRU86LkDzv7pm6WsvEpDIMJ4ZZZ4WawWqkoe2w5t3evP7qa7
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -666,3 +717,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260814081000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814082000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260822090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260826090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260826130000);

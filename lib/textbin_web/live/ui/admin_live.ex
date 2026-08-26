@@ -20,6 +20,7 @@ defmodule TextbinWeb.UI.AdminLive do
      |> assign(:lookup_form, to_form(%{"query" => ""}, as: :lookup))
      |> assign(:moderation_form, to_form(%{"paste_id" => "", "reason" => ""}, as: :moderation))
      |> assign(:account_action_form, to_form(%{"reason" => ""}, as: :account_action))
+     |> assign(:report_action_form, to_form(%{"reason" => ""}, as: :report_action))
      |> assign(:lookup_performed?, false)
      |> assign(:lookup, empty_lookup())
      |> stream_configure(:largest_pastes, dom_id: &"largest-paste-row-#{&1.row_key}")}
@@ -40,6 +41,11 @@ defmodule TextbinWeb.UI.AdminLive do
              limit: @page_size,
              page: params["largest_page"]
            ),
+         {:ok, report_page} <-
+           Administration.list_reports(scope,
+             limit: @page_size,
+             page: params["report_page"]
+           ),
          {:ok, audit_page} <-
            Administration.list_platform_audit_events(scope,
              limit: @page_size
@@ -49,9 +55,11 @@ defmodule TextbinWeb.UI.AdminLive do
        |> assign(:overview, overview)
        |> assign(:recent_page, recent_page)
        |> assign(:largest_page, largest_page)
+       |> assign(:report_page, report_page)
        |> assign(:audit_next_cursor, audit_page.next_cursor)
        |> stream(:recent_pastes, recent_page.entries, reset: true)
        |> stream(:largest_pastes, largest_stream_entries(largest_page), reset: true)
+       |> stream(:reports, report_page.entries, reset: true)
        |> stream(:platform_audit_events, audit_page.entries, reset: true)}
     else
       {:error, :forbidden} -> {:noreply, leave_admin(socket)}
@@ -98,6 +106,21 @@ defmodule TextbinWeb.UI.AdminLive do
     handle_mutation_result(result, socket, account_action_message(action))
   end
 
+  def handle_event(
+        "review_report",
+        %{
+          "report_action" => %{
+            "action" => action,
+            "report_id" => report_id,
+            "reason" => reason
+          }
+        },
+        socket
+      ) do
+    result = report_action(action, socket.assigns.current_scope, report_id, reason)
+    handle_mutation_result(result, socket, report_action_message(action))
+  end
+
   def handle_event("load_more_audit", _params, %{assigns: %{audit_next_cursor: nil}} = socket),
     do: {:noreply, socket}
 
@@ -140,11 +163,23 @@ defmodule TextbinWeb.UI.AdminLive do
 
   defp account_action(_action, _scope, _target_id, _reason), do: {:error, :not_found}
 
+  defp report_action("dismiss", scope, report_id, reason),
+    do: Administration.dismiss_report(scope, report_id, reason)
+
+  defp report_action("resolve", scope, report_id, reason),
+    do: Administration.resolve_report(scope, report_id, reason)
+
+  defp report_action(_action, _scope, _report_id, _reason), do: {:error, :not_found}
+
   defp account_action_message("grant"), do: "Platform administrator access granted."
   defp account_action_message("revoke"), do: "Platform administrator access revoked."
   defp account_action_message("suspend"), do: "Account suspended and active sessions revoked."
   defp account_action_message("restore"), do: "Account restored. A new login is still required."
   defp account_action_message(_action), do: "Account updated."
+
+  defp report_action_message("dismiss"), do: "Report dismissed."
+  defp report_action_message("resolve"), do: "Report resolved."
+  defp report_action_message(_action), do: "Report updated."
 
   defp handle_mutation_result({:ok, _result}, socket, message) do
     {:noreply,
@@ -245,12 +280,15 @@ defmodule TextbinWeb.UI.AdminLive do
   def audit_title("platform.account.restored"), do: "Account restored"
   def audit_title("platform.admin.account_deleted"), do: "Administrator account deleted"
   def audit_title("platform.paste.deleted"), do: "Paste administratively removed"
+  def audit_title("platform.report.dismissed"), do: "Abuse report dismissed"
+  def audit_title("platform.report.resolved"), do: "Abuse report resolved"
   def audit_title(action), do: action
 
   def page_params(kind, page, assigns) do
     %{
       recent_page: if(kind == :recent, do: page, else: assigns.recent_page.page),
-      largest_page: if(kind == :largest, do: page, else: assigns.largest_page.page)
+      largest_page: if(kind == :largest, do: page, else: assigns.largest_page.page),
+      report_page: if(kind == :report, do: page, else: assigns.report_page.page)
     }
   end
 
