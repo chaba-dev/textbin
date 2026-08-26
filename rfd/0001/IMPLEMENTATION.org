@@ -2,9 +2,9 @@
 
 Implements [[file:README.adoc][RFD 1: Administration]].
 
-- [ ] A non-admin cannot mount an admin route or obtain admin data by calling a
+- [X] A non-admin cannot mount an admin route or obtain admin data by calling a
   context function directly.
-- [ ] Every context call reloads current platform authority, and a mounted admin
+- [X] Every context call reloads current platform authority, and a mounted admin
   loses panel access promptly after revocation or suspension.
 - [X] Organization owners and admins have no platform authority unless separately
   granted it.
@@ -24,8 +24,8 @@ Implements [[file:README.adoc][RFD 1: Administration]].
   deleting memberships or content, and restoration does not revive old tokens.
 - [ ] Administrative paste deletion makes content inaccessible before retryable
   storage cleanup and remains audited when storage is unavailable.
-- [ ] Admin list queries are paginated, scoped in SQL, and do not load paste bodies.
-- [ ] General recent-paste discovery exposes only public pastes, and metadata views
+- [X] Admin list queries are paginated, scoped in SQL, and do not load paste bodies.
+- [X] General recent-paste discovery exposes only public pastes, and metadata views
   do not create a privileged path to workspace-only or arbitrary unlisted content.
 - [ ] Sensitive actions enforce the documented reason and recent-reauthentication
   matrix.

@@ -383,6 +383,20 @@ CREATE UNIQUE INDEX organizations_slug_index ON public.organizations USING btree
 
 
 --
+-- Name: pastes_admin_largest_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_admin_largest_index ON public.pastes USING btree (size_bytes, inserted_at, id);
+
+
+--
+-- Name: pastes_admin_recent_visibility_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_admin_recent_visibility_index ON public.pastes USING btree (visibility, inserted_at, id);
+
+
+--
 -- Name: pastes_created_by_user_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -651,3 +665,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260814080000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814081000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814082000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260822090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260826090000);

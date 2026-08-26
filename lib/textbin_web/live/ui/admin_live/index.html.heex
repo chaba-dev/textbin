@@ -1,0 +1,255 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <div id="platform-admin-page" class="mx-auto max-w-7xl space-y-10">
+    <header class="relative overflow-hidden rounded-3xl border border-base-300 bg-base-100 px-6 py-8 shadow-sm sm:px-9">
+      <div class="absolute inset-y-0 right-0 hidden w-2/5 bg-gradient-to-l from-primary/10 to-transparent sm:block">
+      </div>
+      <div class="relative">
+        <div class="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-primary">
+          <.icon name="hero-shield-check" class="size-4" /> Trusted operators
+        </div>
+        <h1 class="text-3xl font-semibold tracking-tight text-base-content sm:text-4xl">
+          Platform administration
+        </h1>
+        <p class="mt-3 max-w-2xl text-sm leading-6 text-base-content/60">
+          Installation-wide operational metadata. Paste bodies and bearer credentials are never loaded here.
+        </p>
+      </div>
+    </header>
+
+    <section id="installation-overview" aria-labelledby="overview-heading">
+      <div class="mb-4 flex items-end justify-between gap-4">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-[0.16em] text-base-content/40">Health</p>
+          <h2 id="overview-heading" class="mt-1 text-xl font-semibold text-base-content">
+            Installation overview
+          </h2>
+        </div>
+        <span class="inline-flex items-center gap-2 text-xs font-medium text-success">
+          <span class="size-2 rounded-full bg-success shadow-[0_0_0_4px_color-mix(in_oklab,var(--color-success)_15%,transparent)]">
+          </span>
+          Live database totals
+        </span>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <.metric_card
+          label="Registered users"
+          value={@overview.registered_users}
+          icon="hero-users"
+        />
+        <.metric_card label="Suspended" value={@overview.suspended_users} icon="hero-no-symbol" />
+        <.metric_card
+          label="Organizations"
+          value={@overview.organizations}
+          icon="hero-building-office-2"
+        />
+        <.metric_card label="Workspaces" value={@overview.workspaces} icon="hero-squares-2x2" />
+        <.metric_card
+          label="Active pastes"
+          value={@overview.active_pastes}
+          icon="hero-document-text"
+        />
+        <.metric_card
+          label="Active storage"
+          value={format_bytes(@overview.active_paste_bytes)}
+          icon="hero-circle-stack"
+        />
+      </div>
+    </section>
+
+    <section id="admin-lookup" class="rounded-2xl border border-base-300 bg-base-100 shadow-sm">
+      <div class="grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-[0.16em] text-primary">Exact lookup</p>
+          <h2 class="mt-2 text-xl font-semibold text-base-content">Find installation records</h2>
+          <p class="mt-2 text-sm leading-6 text-base-content/60">
+            Enter a user email or UUID, an organization slug, a workspace UUID, or <span class="font-mono text-xs">organization/workspace</span>.
+          </p>
+          <.form
+            for={@lookup_form}
+            id="admin-lookup-form"
+            phx-submit="lookup"
+            class="mt-5 flex gap-2"
+          >
+            <.input
+              field={@lookup_form[:query]}
+              type="search"
+              placeholder="name@example.com or exact identifier"
+              autocomplete="off"
+              class="w-full rounded-xl border border-base-300 bg-base-100 px-4 py-2.5 text-sm text-base-content outline-none transition placeholder:text-base-content/35 focus:border-primary focus:ring-4 focus:ring-primary/10"
+            />
+            <button id="admin-lookup-submit" type="submit" class="btn btn-primary shrink-0">
+              <.icon name="hero-magnifying-glass" class="size-4" /> Search
+            </button>
+          </.form>
+        </div>
+
+        <div id="admin-lookup-results" class="grid content-start gap-3 sm:grid-cols-2">
+          <div
+            :if={!@lookup_performed?}
+            class="col-span-full rounded-xl border border-dashed border-base-300 p-8 text-center text-sm text-base-content/45"
+          >
+            Exact matches and bounded membership summaries appear here.
+          </div>
+          <div
+            :if={@lookup_performed? && Enum.all?(Map.values(@lookup), &is_nil/1)}
+            id="admin-lookup-empty"
+            class="col-span-full rounded-xl border border-dashed border-base-300 p-8 text-center text-sm text-base-content/55"
+          >
+            No exact records matched that identifier.
+          </div>
+
+          <article
+            :if={@lookup.user}
+            id="admin-user-result"
+            class="rounded-xl border border-base-300 bg-base-200/35 p-4 sm:col-span-2"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-xs font-bold uppercase tracking-wider text-base-content/40">
+                  User
+                </p>
+                <h3 class="mt-1 break-all font-semibold text-base-content">
+                  {@lookup.user.email}
+                </h3>
+                <p class="mt-1 break-all font-mono text-xs text-base-content/45">
+                  {@lookup.user.id}
+                </p>
+              </div>
+              <% status = account_status(@lookup.user) %>
+              <span class={[
+                "rounded-full px-2.5 py-1 text-xs font-semibold",
+                status_class(status)
+              ]}>
+                {status}
+              </span>
+            </div>
+            <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <.summary_stat label="Platform role" value={@lookup.user.platform_role || "None"} />
+              <.summary_stat label="Organizations" value={@lookup.user.organization_memberships} />
+              <.summary_stat label="Workspaces" value={@lookup.user.workspace_memberships} />
+              <.summary_stat label="Pastes" value={@lookup.user.pastes} />
+            </dl>
+          </article>
+
+          <article
+            :if={@lookup.organization}
+            id="admin-organization-result"
+            class="rounded-xl border border-base-300 bg-base-200/35 p-4"
+          >
+            <p class="text-xs font-bold uppercase tracking-wider text-base-content/40">
+              Organization
+            </p>
+            <h3 class="mt-1 font-semibold text-base-content">{@lookup.organization.name}</h3>
+            <p class="mt-1 font-mono text-xs text-base-content/45">
+              /{@lookup.organization.slug}
+            </p>
+            <dl class="mt-4 grid grid-cols-3 gap-2 text-sm">
+              <.summary_stat label="Members" value={@lookup.organization.members} />
+              <.summary_stat label="Workspaces" value={@lookup.organization.workspaces} />
+              <.summary_stat label="Pastes" value={@lookup.organization.pastes} />
+            </dl>
+          </article>
+
+          <article
+            :if={@lookup.workspace}
+            id="admin-workspace-result"
+            class="rounded-xl border border-base-300 bg-base-200/35 p-4"
+          >
+            <p class="text-xs font-bold uppercase tracking-wider text-base-content/40">
+              Workspace
+            </p>
+            <h3 class="mt-1 font-semibold text-base-content">{@lookup.workspace.name}</h3>
+            <p class="mt-1 font-mono text-xs text-base-content/45">
+              /{@lookup.workspace.organization_slug}/{@lookup.workspace.slug}
+            </p>
+            <dl class="mt-4 grid grid-cols-3 gap-2 text-sm">
+              <.summary_stat label="Members" value={@lookup.workspace.members} />
+              <.summary_stat label="Pastes" value={@lookup.workspace.pastes} />
+              <.summary_stat label="Sharing" value={@lookup.workspace.external_sharing_policy} />
+            </dl>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid gap-6 xl:grid-cols-2">
+      <.paste_panel
+        id="recent-public-pastes"
+        title="Recent public pastes"
+        description="Only active public pastes from workspaces that allow public sharing."
+        icon="hero-globe-alt"
+        stream={@streams.recent_pastes}
+        page={@recent_page}
+        kind={:recent}
+        assigns={assigns}
+      />
+      <.paste_panel
+        id="largest-pastes"
+        title="Largest pastes"
+        description="Body-free metadata across audiences; non-public capability IDs stay hidden."
+        icon="hero-arrows-pointing-out"
+        stream={@streams.largest_pastes}
+        page={@largest_page}
+        kind={:largest}
+        assigns={assigns}
+      />
+    </div>
+
+    <section
+      id="platform-audit-log"
+      class="overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm"
+    >
+      <div class="flex items-start gap-3 border-b border-base-300 bg-base-200/35 px-5 py-5 sm:px-6">
+        <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <.icon name="hero-shield-check" class="size-5" />
+        </div>
+        <div>
+          <h2 class="font-semibold text-base-content">Platform audit log</h2>
+          <p class="mt-1 text-sm text-base-content/55">
+            Append-only installation authority and account events.
+          </p>
+        </div>
+      </div>
+      <div id="platform-audit-events" phx-update="stream" class="divide-y divide-base-300">
+        <div
+          id="platform-audit-events-empty"
+          class="hidden p-10 text-center text-sm text-base-content/50 only:block"
+        >
+          No platform activity recorded.
+        </div>
+        <article
+          :for={{id, event} <- @streams.platform_audit_events}
+          id={id}
+          class="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-6"
+        >
+          <div class="min-w-0">
+            <h3 class="font-medium text-base-content">{audit_title(event.action)}</h3>
+            <p class="mt-1 break-words text-sm text-base-content/60">
+              <span class="font-medium">{event.actor_label}</span> · {event.reason}
+            </p>
+            <p class="mt-2 break-all font-mono text-xs text-base-content/40">
+              {event.target_type}:{event.target_id}
+            </p>
+          </div>
+          <time
+            class="text-xs text-base-content/45"
+            datetime={DateTime.to_iso8601(event.inserted_at)}
+          >
+            {format_timestamp(event.inserted_at)}
+          </time>
+        </article>
+      </div>
+      <div :if={@audit_next_cursor} class="border-t border-base-300 p-4 text-center">
+        <button
+          id="load-more-platform-audit-events"
+          type="button"
+          phx-click="load_more_audit"
+          phx-disable-with="Loading..."
+          class="btn btn-outline btn-sm"
+        >
+          Load older activity
+        </button>
+      </div>
+    </section>
+  </div>
+</Layouts.app>
