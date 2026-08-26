@@ -69,6 +69,37 @@ defmodule Textbin.AdministrationTest do
       assert {:error, :forbidden} = Administration.authorize_platform_admin(scope)
     end
 
+    test "queues an authority notification before follow-up authorization" do
+      actor = admin_fixture()
+      target = admin_fixture()
+      target_scope = admin_scope(target)
+      parent = self()
+
+      watcher =
+        Task.async(fn ->
+          assert :ok = Administration.subscribe_to_platform_authority(target_scope)
+          send(parent, {:subscribed, self()})
+          assert_receive :authorize
+
+          authorization = Administration.authorize_platform_admin(target_scope)
+          assert_receive notification
+          {authorization, notification}
+        end)
+
+      assert_receive {:subscribed, watcher_pid}
+
+      assert {:ok, %User{platform_role: nil}} =
+               Administration.revoke_platform_admin(
+                 admin_scope(actor),
+                 target,
+                 "subscription race"
+               )
+
+      send(watcher_pid, :authorize)
+
+      assert {{:error, :forbidden}, :platform_authority_changed} = Task.await(watcher)
+    end
+
     test "organization owners and admins have no platform authority" do
       owner = user_fixture()
       organization_admin = user_fixture()
@@ -133,6 +164,18 @@ defmodule Textbin.AdministrationTest do
       assert granted.request_id == "request-123"
       assert revoked.action == "platform.admin.revoked"
       assert revoked.reason == "coverage ended"
+    end
+
+    test "rolls back authority changes when their audit event is invalid", %{scope: scope} do
+      target = user_fixture()
+
+      assert {:error, %Ecto.Changeset{}} =
+               Administration.grant_platform_admin(scope, target, "operations coverage",
+                 request_id: String.duplicate("x", 256)
+               )
+
+      assert Repo.get!(User, target.id).platform_role == nil
+      refute Repo.exists?(from event in PlatformAuditEvent, where: event.target_id == ^target.id)
     end
 
     test "requires a reason and recent reauthentication", %{admin: admin} do
@@ -221,6 +264,14 @@ defmodule Textbin.AdministrationTest do
                Administration.restore_user(scope, suspended, "appeal accepted")
 
       refute Repo.exists?(from token in UserToken, where: token.user_id == ^user.id)
+
+      assert ["platform.account.suspended", "platform.account.restored"] ==
+               Repo.all(
+                 from event in PlatformAuditEvent,
+                   where: event.target_id == ^user.id,
+                   order_by: [asc: event.inserted_at],
+                   select: event.action
+               )
     end
 
     test "rejects self-suspension and suspending the final active admin", %{
@@ -454,6 +505,14 @@ defmodule Textbin.AdministrationTest do
   test "platform audit events reject updates and deletes" do
     user = admin_fixture()
     event = Repo.one!(from event in PlatformAuditEvent, where: event.target_id == ^user.id)
+
+    assert_raise Postgrex.Error, ~r/platform audit events are append-only/, fn ->
+      Repo.transaction(fn ->
+        event
+        |> Ecto.Changeset.change(reason: "rewritten")
+        |> Repo.update!()
+      end)
+    end
 
     assert_raise Postgrex.Error, ~r/platform audit events are append-only/, fn ->
       Repo.transaction(fn -> Repo.delete!(event) end)

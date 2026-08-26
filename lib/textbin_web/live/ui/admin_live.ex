@@ -14,10 +14,6 @@ defmodule TextbinWeb.UI.AdminLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket) do
-      :ok = Administration.subscribe_to_platform_authority(socket.assigns.current_scope)
-    end
-
     {:ok,
      socket
      |> assign(:page_title, "Platform administration")
@@ -94,14 +90,6 @@ defmodule TextbinWeb.UI.AdminLive do
 
       {:error, :not_found} ->
         {:noreply, assign(socket, :audit_next_cursor, nil)}
-    end
-  end
-
-  @impl true
-  def handle_info(:platform_authority_changed, socket) do
-    case Administration.authorize_platform_admin(socket.assigns.current_scope) do
-      {:ok, _admin} -> {:noreply, socket}
-      {:error, :forbidden} -> {:noreply, leave_admin(socket)}
     end
   end
 

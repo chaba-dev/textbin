@@ -217,5 +217,23 @@ for the platform log.
 
 == Implementation
 
+Delivery proceeds in dependency order:
+
+. *Platform authority and account controls* establish the role, release
+  bootstrap, final-active-admin invariant, and suspension behavior without
+  exposing an administration interface.
+. *Authorization and audit boundary* enforce current authority in contexts and
+  routes, invalidate mounted access after authority changes, and make immutable,
+  transactional platform audit events cover every administrative mutation.
+. *Read-only administration views* add bounded installation, account,
+  organization, workspace, paste-metadata, and audit views without adding a
+  privileged content-reading path.
+. *Moderation and report review* add paste deletion and the documented reason and
+  reauthentication rules. The administration foundation and other moderation
+  actions can ship first; the report queue starts after RFD 4 supplies its report
+  model.
+. *End-to-end verification* closes cross-feature context and LiveView coverage
+  after every earlier phase has shipped with its own targeted tests.
+
 Progress against this proposal is tracked in the
 link:IMPLEMENTATION.org[RFD 1 implementation checklist].

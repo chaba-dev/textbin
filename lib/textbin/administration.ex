@@ -249,6 +249,7 @@ defmodule Textbin.Administration do
         scope,
         &grant_platform_admin_in_transaction(&1, target_id, reason, opts)
       )
+      |> notify_platform_authority_change()
     end
   end
 
@@ -288,12 +289,11 @@ defmodule Textbin.Administration do
     notify_platform_authority_change(result)
   end
 
-  @doc "Subscribes the current user to changes in their platform authority."
-  def subscribe_to_platform_authority(scope) do
-    with {:ok, %User{id: user_id}} <- authorize_platform_admin(scope) do
-      Phoenix.PubSub.subscribe(Textbin.PubSub, platform_authority_topic(user_id))
-    end
-  end
+  @doc "Subscribes the caller to authority changes for its current user."
+  def subscribe_to_platform_authority(%Scope{user: %User{id: user_id}}),
+    do: Phoenix.PubSub.subscribe(Textbin.PubSub, platform_authority_topic(user_id))
+
+  def subscribe_to_platform_authority(_scope), do: {:error, :forbidden}
 
   @doc "Suspends an account and revokes all of its authentication tokens."
   def suspend_user(scope, target, reason, opts \\ []) do
@@ -305,6 +305,7 @@ defmodule Textbin.Administration do
           scope,
           &suspend_user_in_transaction(&1, target_id, reason, opts)
         )
+        |> notify_platform_authority_change()
       end
 
     disconnect_suspended_sessions(result)
@@ -315,6 +316,7 @@ defmodule Textbin.Administration do
     with {:ok, reason} <- normalize_reason(reason),
          {:ok, target_id} <- user_id(target) do
       authority_transaction(scope, &restore_user_in_transaction(&1, target_id, reason, opts))
+      |> notify_platform_authority_change()
     end
   end
 
@@ -870,6 +872,11 @@ defmodule Textbin.Administration do
 
   defp notify_platform_authority_change({:ok, %{revoked: %User{id: revoked_id}}} = result) do
     broadcast_platform_authority_change(revoked_id)
+    result
+  end
+
+  defp notify_platform_authority_change({:ok, {%User{id: user_id}, _tokens}} = result) do
+    broadcast_platform_authority_change(user_id)
     result
   end
 

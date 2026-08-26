@@ -110,10 +110,39 @@ defmodule TextbinWeb.UI.AdminLiveTest do
     actor_scope = Scope.for_user(%{actor | authenticated_at: DateTime.utc_now(:second)})
 
     assert {:ok, view, _html} = live(conn, ~p"/admin")
+    monitor = monitor_proxy(view)
 
     assert {:ok, _revoked} =
              Administration.revoke_platform_admin(actor_scope, admin, "operator rotation")
 
     assert_redirect(view, ~p"/")
+    assert_full_redirect(monitor, ~p"/")
+  end
+
+  test "leaves the panel promptly when the administrator is suspended", %{
+    admin: admin,
+    conn: conn
+  } do
+    actor = user_fixture()
+    assert {:ok, :granted} = Administration.bootstrap_platform_admin(actor.email)
+    actor = Repo.get!(Textbin.Accounts.User, actor.id)
+    actor_scope = Scope.for_user(%{actor | authenticated_at: DateTime.utc_now(:second)})
+
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+    monitor = monitor_proxy(view)
+
+    assert {:ok, {_target, _tokens}} =
+             Administration.suspend_user(actor_scope, admin, "security response")
+
+    assert_redirect(view, ~p"/")
+    assert_full_redirect(monitor, ~p"/")
+  end
+
+  defp monitor_proxy(%{proxy: {_ref, _topic, proxy_pid}}),
+    do: {proxy_pid, Process.monitor(proxy_pid)}
+
+  defp assert_full_redirect({proxy_pid, monitor_ref}, path) do
+    assert_receive {:DOWN, ^monitor_ref, :process, ^proxy_pid,
+                    {:shutdown, {:redirect, %{to: ^path}}}}
   end
 end
