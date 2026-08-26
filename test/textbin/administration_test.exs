@@ -6,6 +6,8 @@ defmodule Textbin.AdministrationTest do
   alias Textbin.Administration
   alias Textbin.Administration.PlatformAuditEvent
   alias Textbin.Organizations
+  alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
   alias Textbin.Release
 
   import Textbin.AccountsFixtures
@@ -328,6 +330,175 @@ defmodule Textbin.AdministrationTest do
 
       assert actor_id == admin.id
       assert target_id == admin.id
+    end
+  end
+
+  describe "administration reads" do
+    setup do
+      admin = admin_fixture()
+      %{admin: admin, scope: admin_scope(admin)}
+    end
+
+    test "reloads authority for every read and rejects ordinary users", %{
+      admin: admin,
+      scope: scope
+    } do
+      ordinary_scope = user_scope_fixture()
+
+      for operation <- [
+            &Administration.get_installation_overview/1,
+            &Administration.lookup(&1, admin.email),
+            &Administration.list_recent_public_pastes/1,
+            &Administration.list_largest_pastes/1,
+            &Administration.list_platform_audit_events/1
+          ] do
+        assert {:error, :forbidden} = operation.(ordinary_scope)
+      end
+
+      assert {:ok, _overview} = Administration.get_installation_overview(scope)
+      Repo.update_all(from(user in User, where: user.id == ^admin.id), set: [platform_role: nil])
+      assert {:error, :forbidden} = Administration.get_installation_overview(scope)
+    end
+
+    test "returns installation totals and exact lookup summaries", %{scope: scope} do
+      target = user_fixture()
+      target_scope = user_scope_fixture(target)
+      organization = Organizations.get_personal_organization!(target)
+      workspace = personal_workspace_fixture(target)
+      assert {:ok, _paste} = Pastes.create_paste(target_scope, %{data: "lookup paste"})
+
+      assert {:ok, overview} = Administration.get_installation_overview(scope)
+      assert overview.registered_users >= 2
+      assert overview.organizations >= 2
+      assert overview.workspaces >= 2
+      assert overview.active_pastes >= 1
+
+      assert {:ok, %{user: user}} = Administration.lookup(scope, String.upcase(target.email))
+      assert user.id == target.id
+      assert user.organization_memberships == 1
+      assert user.workspace_memberships == 1
+      assert user.pastes == 1
+      refute Map.has_key?(user, :hashed_password)
+
+      assert {:ok, %{organization: found_organization}} =
+               Administration.lookup(scope, organization.slug)
+
+      assert found_organization.id == organization.id
+      assert found_organization.members == 1
+      assert found_organization.workspaces == 1
+
+      assert {:ok, %{workspace: found_workspace}} =
+               Administration.lookup(scope, "#{organization.slug}/#{workspace.slug}")
+
+      assert found_workspace.id == workspace.id
+      assert found_workspace.members == 1
+      assert found_workspace.pastes == 1
+    end
+
+    test "paginates body-free paste metadata and limits discovery to public pastes", %{
+      scope: scope
+    } do
+      owner = user_fixture()
+      owner_scope = user_scope_fixture(owner)
+
+      assert {:ok, public} =
+               Pastes.create_paste(owner_scope, %{
+                 data: "public-body-must-not-load",
+                 audience: "public"
+               })
+
+      assert {:ok, unlisted} =
+               Pastes.create_paste(owner_scope, %{
+                 data: String.duplicate("u", 200),
+                 audience: "unlisted"
+               })
+
+      assert {:ok, workspace_only} =
+               Pastes.create_paste(owner_scope, %{
+                 data: String.duplicate("w", 300),
+                 audience: "workspace"
+               })
+
+      assert {:ok, recent_page} =
+               Administration.list_recent_public_pastes(scope, limit: 1)
+
+      assert [%{id: public_id} = recent] = recent_page.entries
+      assert public_id == public.id
+      refute Map.has_key?(recent, :data)
+      refute Map.has_key?(recent, :storage_key)
+
+      assert {:ok, largest_page} = Administration.list_largest_pastes(scope, limit: 2)
+      assert largest_page.next_page == 2
+      assert [%{id: nil}, %{id: nil}] = largest_page.entries
+
+      assert {:ok, second_page} =
+               Administration.list_largest_pastes(scope, limit: 2, page: largest_page.next_page)
+
+      assert Enum.any?(second_page.entries, &(&1.id == public.id))
+      refute Enum.any?(recent_page.entries, &(&1.id in [unlisted.id, workspace_only.id]))
+    end
+
+    test "paginates platform audit events", %{scope: scope} do
+      _second_admin = admin_fixture()
+
+      assert {:ok, first_page} =
+               Administration.list_platform_audit_events(scope, limit: 1)
+
+      assert length(first_page.entries) == 1
+      assert first_page.next_cursor
+
+      assert {:ok, second_page} =
+               Administration.list_platform_audit_events(scope,
+                 limit: 1,
+                 cursor: first_page.next_cursor
+               )
+
+      assert length(second_page.entries) == 1
+      assert first_page.entries != second_page.entries
+    end
+
+    test "handles legacy inline pastes without size metadata", %{scope: scope} do
+      owner = user_fixture()
+      owner_scope = user_scope_fixture(owner)
+      workspace = personal_workspace_fixture(owner)
+
+      assert {:ok, modern} =
+               Pastes.create_paste(owner_scope, %{data: "modern", audience: "public"})
+
+      legacy_data = "legacy inline content"
+
+      legacy =
+        Repo.insert!(%Paste{
+          data: legacy_data,
+          size_bytes: nil,
+          audience: "public",
+          workspace_id: workspace.id,
+          created_by_user_id: owner.id
+        })
+
+      assert {:ok, overview} = Administration.get_installation_overview(scope)
+      assert overview.active_paste_bytes >= modern.size_bytes + byte_size(legacy_data)
+
+      assert {:ok, page} = Administration.list_largest_pastes(scope, limit: 100)
+      modern_index = Enum.find_index(page.entries, &(&1.id == modern.id))
+      legacy_index = Enum.find_index(page.entries, &(&1.id == legacy.id))
+
+      assert modern_index < legacy_index
+      assert Enum.at(page.entries, legacy_index).size_bytes == byte_size(legacy_data)
+    end
+
+    test "notifies a mounted administrator after revocation", %{admin: admin, scope: scope} do
+      actor = admin_fixture()
+      :ok = Administration.subscribe_to_platform_authority(scope)
+
+      assert {:ok, %User{platform_role: nil}} =
+               Administration.revoke_platform_admin(
+                 admin_scope(actor),
+                 admin,
+                 "rotation complete"
+               )
+
+      assert_receive :platform_authority_changed
     end
   end
 

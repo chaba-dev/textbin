@@ -39,8 +39,8 @@ for every transport.
 Ship useful installation, account, organization, workspace, paste-metadata, and
 audit views without creating a privileged content-reading path.
 
-- [ ] Admin list queries are paginated, scoped in SQL, and do not load paste bodies.
-- [ ] General recent-paste discovery exposes only public pastes, and metadata views
+- [X] Admin list queries are paginated, scoped in SQL, and do not load paste bodies.
+- [X] General recent-paste discovery exposes only public pastes, and metadata views
   do not create a privileged path to workspace-only or arbitrary unlisted content.
 
 * Phase 4: Moderation and report review

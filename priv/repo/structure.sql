@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 6gtWhRfmKpVJkaDO90gYdQMd8oshwcJAhZ5etVA7wO4LV6cIsOJfb8kQjX2kxyN
+\restrict 3lsjmiMYDgwKtdaQ3bfz4i4fn6sTwWsM6QKCAIFamw5UMkGMy2klQNCCp5rysQ4
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -145,7 +145,7 @@ CREATE TABLE public.platform_audit_events (
     action character varying(255) NOT NULL,
     target_type character varying(255) NOT NULL,
     target_id uuid NOT NULL,
-    reason text NOT NULL,
+    reason character varying(255) NOT NULL,
     request_id character varying(255),
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     inserted_at timestamp without time zone NOT NULL,
@@ -380,6 +380,20 @@ CREATE UNIQUE INDEX organizations_personal_owner_id_index ON public.organization
 --
 
 CREATE UNIQUE INDEX organizations_slug_index ON public.organizations USING btree (slug);
+
+
+--
+-- Name: pastes_admin_largest_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_admin_largest_index ON public.pastes USING btree (size_bytes DESC NULLS LAST, inserted_at DESC, id DESC);
+
+
+--
+-- Name: pastes_admin_recent_visibility_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_admin_recent_visibility_index ON public.pastes USING btree (visibility, inserted_at DESC, id DESC);
 
 
 --
@@ -628,7 +642,7 @@ ALTER TABLE ONLY public.workspaces
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 6gtWhRfmKpVJkaDO90gYdQMd8oshwcJAhZ5etVA7wO4LV6cIsOJfb8kQjX2kxyN
+\unrestrict 3lsjmiMYDgwKtdaQ3bfz4i4fn6sTwWsM6QKCAIFamw5UMkGMy2klQNCCp5rysQ4
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -651,3 +665,4 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260814080000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814081000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260814082000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260822090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20260826090000);

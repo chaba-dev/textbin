@@ -580,6 +580,13 @@ defmodule TextbinWeb.Layouts do
                     </.link>
                   <% else %>
                     <.link
+                      :if={platform_admin?(@current_scope)}
+                      navigate={~p"/admin"}
+                      class="btn btn-ghost btn-sm w-full justify-start"
+                    >
+                      <.icon name="hero-shield-check" class="size-4" /> Administration
+                    </.link>
+                    <.link
                       href={~p"/users/settings"}
                       class="btn btn-ghost btn-sm w-full justify-start"
                     >
@@ -620,6 +627,9 @@ defmodule TextbinWeb.Layouts do
     do: Textbin.Accounts.User.guest?(user)
 
   defp guest_scope?(_scope), do: false
+
+  defp platform_admin?(%{user: %{platform_role: "admin", suspended_at: nil}}), do: true
+  defp platform_admin?(_scope), do: false
 
   defp application_shell?(%{
          user: %Textbin.Accounts.User{} = user,
