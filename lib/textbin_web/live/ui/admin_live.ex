@@ -23,7 +23,8 @@ defmodule TextbinWeb.UI.AdminLive do
      |> assign(:page_title, "Platform administration")
      |> assign(:lookup_form, to_form(%{"query" => ""}, as: :lookup))
      |> assign(:lookup_performed?, false)
-     |> assign(:lookup, empty_lookup())}
+     |> assign(:lookup, empty_lookup())
+     |> stream_configure(:largest_pastes, dom_id: &"largest-paste-row-#{&1.row_key}")}
   end
 
   @impl true
@@ -52,7 +53,7 @@ defmodule TextbinWeb.UI.AdminLive do
        |> assign(:largest_page, largest_page)
        |> assign(:audit_next_cursor, audit_page.next_cursor)
        |> stream(:recent_pastes, recent_page.entries, reset: true)
-       |> stream(:largest_pastes, largest_page.entries, reset: true)
+       |> stream(:largest_pastes, largest_stream_entries(largest_page), reset: true)
        |> stream(:platform_audit_events, audit_page.entries, reset: true)}
     else
       {:error, :forbidden} -> {:noreply, leave_admin(socket)}
@@ -111,6 +112,12 @@ defmodule TextbinWeb.UI.AdminLive do
   end
 
   defp empty_lookup, do: %{user: nil, organization: nil, workspace: nil}
+
+  defp largest_stream_entries(page) do
+    page.entries
+    |> Enum.with_index()
+    |> Enum.map(fn {paste, index} -> Map.put(paste, :row_key, "#{page.page}-#{index}") end)
+  end
 
   def format_bytes(nil), do: "0 B"
 

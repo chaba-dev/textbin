@@ -386,14 +386,14 @@ CREATE UNIQUE INDEX organizations_slug_index ON public.organizations USING btree
 -- Name: pastes_admin_largest_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX pastes_admin_largest_index ON public.pastes USING btree (size_bytes, inserted_at, id);
+CREATE INDEX pastes_admin_largest_index ON public.pastes USING btree (size_bytes DESC NULLS LAST, inserted_at DESC, id DESC);
 
 
 --
 -- Name: pastes_admin_recent_visibility_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX pastes_admin_recent_visibility_index ON public.pastes USING btree (visibility, inserted_at, id);
+CREATE INDEX pastes_admin_recent_visibility_index ON public.pastes USING btree (visibility, inserted_at DESC, id DESC);
 
 
 --

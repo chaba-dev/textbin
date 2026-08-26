@@ -7,6 +7,7 @@ defmodule Textbin.AdministrationTest do
   alias Textbin.Administration.PlatformAuditEvent
   alias Textbin.Organizations
   alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
   alias Textbin.Release
 
   import Textbin.AccountsFixtures
@@ -403,6 +404,36 @@ defmodule Textbin.AdministrationTest do
 
       assert length(second_page.entries) == 1
       assert first_page.entries != second_page.entries
+    end
+
+    test "handles legacy inline pastes without size metadata", %{scope: scope} do
+      owner = user_fixture()
+      owner_scope = user_scope_fixture(owner)
+      workspace = personal_workspace_fixture(owner)
+
+      assert {:ok, modern} =
+               Pastes.create_paste(owner_scope, %{data: "modern", audience: "public"})
+
+      legacy_data = "legacy inline content"
+
+      legacy =
+        Repo.insert!(%Paste{
+          data: legacy_data,
+          size_bytes: nil,
+          audience: "public",
+          workspace_id: workspace.id,
+          created_by_user_id: owner.id
+        })
+
+      assert {:ok, overview} = Administration.get_installation_overview(scope)
+      assert overview.active_paste_bytes >= modern.size_bytes + byte_size(legacy_data)
+
+      assert {:ok, page} = Administration.list_largest_pastes(scope, limit: 100)
+      modern_index = Enum.find_index(page.entries, &(&1.id == modern.id))
+      legacy_index = Enum.find_index(page.entries, &(&1.id == legacy.id))
+
+      assert modern_index < legacy_index
+      assert Enum.at(page.entries, legacy_index).size_bytes == byte_size(legacy_data)
     end
 
     test "notifies a mounted administrator after revocation", %{admin: admin, scope: scope} do

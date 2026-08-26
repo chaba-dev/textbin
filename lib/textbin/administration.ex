@@ -59,7 +59,12 @@ defmodule Textbin.Administration do
            Repo.one(
              from p in Paste,
                where: is_nil(p.expires_at) or p.expires_at > ^now,
-               select: fragment("COALESCE(SUM(?), 0)::bigint", p.size_bytes)
+               select:
+                 fragment(
+                   "COALESCE(SUM(COALESCE(?, octet_length(?), 0)), 0)::bigint",
+                   p.size_bytes,
+                   p.data
+                 )
            )
        }}
     end
@@ -139,7 +144,11 @@ defmodule Textbin.Administration do
             is_nil(workspace.deletion_requested_at) and
               is_nil(organization.deletion_requested_at) and
               (is_nil(paste.expires_at) or paste.expires_at > ^now),
-          order_by: [desc: paste.size_bytes, desc: paste.inserted_at, desc: paste.id],
+          order_by: [
+            desc_nulls_last: paste.size_bytes,
+            desc: paste.inserted_at,
+            desc: paste.id
+          ],
           limit: ^(limit + 1),
           offset: ^offset,
           select: %{
@@ -153,7 +162,12 @@ defmodule Textbin.Administration do
                 ),
                 :binary_id
               ),
-            size_bytes: paste.size_bytes,
+            size_bytes:
+              fragment(
+                "COALESCE(?, octet_length(?), 0)::bigint",
+                paste.size_bytes,
+                paste.data
+              ),
             content_type: paste.content_type,
             syntax_highlight: paste.syntax_highlight,
             audience: paste.audience,

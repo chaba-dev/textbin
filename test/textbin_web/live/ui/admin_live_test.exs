@@ -70,6 +70,39 @@ defmodule TextbinWeb.UI.AdminLiveTest do
     assert has_element?(view, "#admin-lookup-empty")
   end
 
+  test "renders every protected largest-paste row without exposing capability IDs", %{conn: conn} do
+    owner = user_fixture()
+    scope = Scope.for_user(owner)
+
+    assert {:ok, first} =
+             Pastes.create_paste(scope, %{
+               data: String.duplicate("a", 200),
+               audience: "unlisted"
+             })
+
+    assert {:ok, second} =
+             Pastes.create_paste(scope, %{
+               data: String.duplicate("b", 100),
+               audience: "workspace"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+
+    assert has_element?(view, "#largest-pastes-entries article + article")
+    refute has_element?(view, "#largest-pastes-entries a[href='/pastes/#{first.id}']")
+    refute has_element?(view, "#largest-pastes-entries a[href='/pastes/#{second.id}']")
+
+    row_ids =
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#largest-pastes-entries article")
+      |> LazyHTML.attribute("id")
+
+    assert length(row_ids) == 2
+    assert length(Enum.uniq(row_ids)) == 2
+  end
+
   test "leaves the panel promptly when authority is revoked", %{admin: admin, conn: conn} do
     actor = user_fixture()
     assert {:ok, :granted} = Administration.bootstrap_platform_admin(actor.email)

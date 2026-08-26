@@ -35,6 +35,10 @@ config :textbin,
   expiration_cleanup_interval_ms: :timer.minutes(15),
   expiration_cleanup_batch_size: 500
 
+# Concurrent production indexes require a session-level lock rather than the
+# transaction-level migration lock used by default.
+config :textbin, Textbin.Repo, migration_lock: :pg_advisory_lock
+
 config :textbin, Textbin.Storage,
   adapter: Textbin.Storage.Local,
   opts: {:replace, [root: "storage"]}
