@@ -2,6 +2,8 @@ defmodule Textbin.Administration.MigrationTest do
   use ExUnit.Case, async: false
 
   alias Textbin.MigrationRepo
+  alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
 
   @foundation_version 20_260_822_090_000
   @administration_indexes_version 20_260_826_090_000
@@ -32,10 +34,22 @@ defmodule Textbin.Administration.MigrationTest do
     paste_id = insert_legacy_inline_paste()
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @administration_indexes_version)
 
-    assert %{rows: [[21]]} =
-             MigrationRepo.query!("SELECT size_bytes FROM pastes WHERE id = $1::uuid", [
-               uuid(paste_id)
-             ])
+    assert %{rows: [["legacy inline content", 21, sha256]]} =
+             MigrationRepo.query!(
+               "SELECT data, size_bytes, sha256 FROM pastes WHERE id = $1::uuid",
+               [
+                 uuid(paste_id)
+               ]
+             )
+
+    assert sha256 == :crypto.hash(:sha256, "legacy inline content")
+
+    assert %Paste{data: "legacy inline content"} =
+             Pastes.load_data(%Paste{
+               data: "legacy inline content",
+               size_bytes: 21,
+               sha256: sha256
+             })
 
     assert index_definition("pastes_admin_recent_visibility_index") =~
              "(visibility, inserted_at DESC, id DESC)"
@@ -46,6 +60,12 @@ defmodule Textbin.Administration.MigrationTest do
     assert MigrationRepo.config()[:migration_lock] == :pg_advisory_lock
     migration = Textbin.Repo.Migrations.AddAdministrationPasteIndexes
     assert apply(migration, :__migration__, [])[:disable_ddl_transaction]
+  end
+
+  test "structure snapshot preserves the audit reason text column" do
+    structure = File.read!(Path.expand("../../../priv/repo/structure.sql", __DIR__))
+
+    assert structure =~ ~r/CREATE TABLE public\.platform_audit_events \(.+reason text NOT NULL/s
   end
 
   defp insert_legacy_inline_paste do
