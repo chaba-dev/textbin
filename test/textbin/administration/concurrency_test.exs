@@ -5,7 +5,12 @@ defmodule Textbin.Administration.ConcurrencyTest do
   alias Textbin.Accounts
   alias Textbin.Accounts.{Scope, User, UserToken}
   alias Textbin.Administration
+  alias Textbin.Administration.PlatformAuditEvent
+  alias Textbin.Pastes
+  alias Textbin.Pastes.Paste
   alias Textbin.Repo
+  alias Textbin.Reports
+  alias Textbin.Reports.Report
 
   import Ecto.Query
   import Textbin.AccountsFixtures
@@ -14,7 +19,7 @@ defmodule Textbin.Administration.ConcurrencyTest do
 
   setup do
     :ok = Sandbox.checkout(Repo, sandbox: false)
-    Repo.query!("TRUNCATE platform_audit_events")
+    Repo.query!("TRUNCATE reports, platform_audit_events")
     {:ok, cleanup} = Agent.start(fn -> [] end)
 
     on_exit(fn ->
@@ -22,7 +27,8 @@ defmodule Textbin.Administration.ConcurrencyTest do
       :ok = Sandbox.checkout(Repo, sandbox: false)
 
       try do
-        Repo.query!("TRUNCATE platform_audit_events")
+        Repo.query!("TRUNCATE reports, platform_audit_events")
+        Repo.delete_all(from paste in Paste, where: paste.created_by_user_id in ^user_ids)
         Repo.delete_all(from user in User, where: user.id in ^user_ids)
       after
         Sandbox.checkin(Repo)
@@ -123,6 +129,37 @@ defmodule Textbin.Administration.ConcurrencyTest do
                  where: token.user_id == ^user.id and token.context == ^Atom.to_string(context)
              )
     end
+  end
+
+  test "concurrent report reviews produce one transition and audit event", %{cleanup: cleanup} do
+    admin_a = tracked_admin_fixture(cleanup)
+    admin_b = tracked_admin_fixture(cleanup)
+    owner = tracked_user_fixture(cleanup)
+    reporter = tracked_user_fixture(cleanup)
+
+    assert {:ok, paste} =
+             Pastes.create_paste(Scope.for_user(owner), %{
+               data: "concurrent report",
+               audience: "public"
+             })
+
+    assert {:ok, report} =
+             Reports.create_report(Scope.for_user(reporter), paste.id, %{"category" => "spam"})
+
+    results =
+      race([
+        fn -> Administration.resolve_report(admin_scope(admin_a), report, "actioned") end,
+        fn -> Administration.dismiss_report(admin_scope(admin_b), report, "dismissed") end
+      ])
+
+    assert Enum.count(results, &match?({:ok, %{id: _, status: _}}, &1)) == 1
+    assert Enum.count(results, &match?({:error, :not_found}, &1)) == 1
+    assert Repo.get!(Report, report.id).status in ["actioned", "dismissed"]
+
+    assert Repo.aggregate(
+             from(event in PlatformAuditEvent, where: event.target_id == ^report.id),
+             :count
+           ) == 1
   end
 
   defp race(functions) do

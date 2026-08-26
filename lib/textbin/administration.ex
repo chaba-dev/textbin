@@ -574,20 +574,27 @@ defmodule Textbin.Administration do
   end
 
   defp review_report_in_transaction(actor, report_id, reason, status, action, opts) do
+    now = DateTime.utc_now()
+
     with %Report{} = report <- lock_open_report(report_id),
-         {:ok, report} <-
-           report
-           |> Ecto.Changeset.change(
-             status: status,
-             resolution_reason: reason,
-             resolved_by_user_id: actor.id,
-             resolved_at: DateTime.utc_now()
-           )
-           |> Repo.update(),
+         {1, nil} <-
+           Repo.update_all(
+             from(candidate in Report,
+               where: candidate.id == ^report.id and candidate.status == "open"
+             ),
+             set: [
+               status: status,
+               resolution_reason: reason,
+               resolved_by_user_id: actor.id,
+               resolved_at: now,
+               updated_at: now
+             ]
+           ),
          :ok <- record_report_audit(actor, action, report, reason, opts) do
-      {:ok, report}
+      {:ok, %{id: report.id, status: status}}
     else
       nil -> {:error, :not_found}
+      {0, nil} -> {:error, :not_found}
       error -> error
     end
   end
@@ -805,6 +812,7 @@ defmodule Textbin.Administration do
     Repo.one(
       from report in Report,
         where: report.id == ^report_id and report.status == "open",
+        select: struct(report, [:id, :paste_id, :category]),
         lock: "FOR UPDATE"
     )
   end

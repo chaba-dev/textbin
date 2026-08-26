@@ -5,6 +5,7 @@ defmodule Textbin.ReportsTest do
 
   alias Textbin.Accounts
   alias Textbin.Accounts.Scope
+  alias Textbin.Organizations
   alias Textbin.Pastes
   alias Textbin.Pastes.Paste
   alias Textbin.Reports
@@ -85,6 +86,70 @@ defmodule Textbin.ReportsTest do
              Reports.create_report(context.reporter_scope, workspace_paste.id, %{
                "category" => "spam"
              })
+
+    unconfirmed = unconfirmed_user_fixture()
+
+    assert {:error, :forbidden} =
+             Reports.create_report(Scope.for_user(unconfirmed), workspace_paste.id, %{
+               "category" => "spam"
+             })
+  end
+
+  test "rejects policy-disabled and deletion-in-progress targets", context do
+    organization = Organizations.get_personal_organization!(context.owner_scope.user)
+    workspace = hd(organization.workspaces)
+
+    assert {:ok, policy_paste} =
+             Pastes.create_paste(context.owner_scope, %{data: "policy", audience: "public"})
+
+    workspace
+    |> Ecto.Changeset.change(external_sharing_policy: "disabled")
+    |> Repo.update!()
+
+    assert {:error, :not_found} =
+             Reports.create_report(context.reporter_scope, policy_paste.id, %{
+               "category" => "spam"
+             })
+
+    workspace
+    |> Ecto.Changeset.change(
+      external_sharing_policy: "public",
+      deletion_requested_at: Paste.utc_now_ms()
+    )
+    |> Repo.update!()
+
+    assert {:error, :not_found} =
+             Reports.create_report(context.reporter_scope, policy_paste.id, %{
+               "category" => "spam"
+             })
+
+    workspace
+    |> Ecto.Changeset.change(deletion_requested_at: nil)
+    |> Repo.update!()
+
+    organization
+    |> Ecto.Changeset.change(deletion_requested_at: Paste.utc_now_ms())
+    |> Repo.update!()
+
+    assert {:error, :not_found} =
+             Reports.create_report(context.reporter_scope, policy_paste.id, %{
+               "category" => "spam"
+             })
+  end
+
+  test "retains reports after reporter and paste deletion", context do
+    assert {:ok, paste} =
+             Pastes.create_paste(context.owner_scope, %{data: "retained", audience: "public"})
+
+    assert {:ok, report} =
+             Reports.create_report(context.reporter_scope, paste.id, %{"category" => "other"})
+
+    assert {:ok, _reporter} = Accounts.delete_user(context.reporter_scope)
+    assert Repo.get!(Report, report.id).reporter_user_id == context.reporter_scope.user.id
+
+    assert {:ok, _paste} = Pastes.delete_paste(context.owner_scope, paste)
+    refute Repo.get(Paste, paste.id)
+    assert Repo.get!(Report, report.id).paste_id == paste.id
   end
 
   test "validates category, notes, and one open report per reporter", context do

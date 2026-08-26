@@ -470,13 +470,19 @@ defmodule Textbin.AdministrationTest do
       dismissed = report_fixture(context, "spam")
       resolved = report_fixture(context, "malware")
 
-      assert {:ok, %Report{status: "dismissed"}} =
+      assert {:ok, dismissed_result} =
                Administration.dismiss_report(stale_scope, dismissed, "not actionable",
                  request_id: "dismiss-request"
                )
 
-      assert {:ok, %Report{status: "actioned"}} =
+      assert dismissed_result == %{id: dismissed.id, status: "dismissed"}
+      refute Map.has_key?(dismissed_result, :reporter_user_id)
+
+      assert {:ok, resolved_result} =
                Administration.resolve_report(stale_scope, resolved, "handled externally")
+
+      assert resolved_result == %{id: resolved.id, status: "actioned"}
+      refute Map.has_key?(resolved_result, :reporter_user_id)
 
       assert {:ok, %{entries: []}} = Administration.list_reports(context.scope)
 
@@ -518,11 +524,34 @@ defmodule Textbin.AdministrationTest do
       assert Repo.get!(Report, report.id).status == "open"
       refute Repo.exists?(from event in PlatformAuditEvent, where: event.target_id == ^report.id)
 
-      assert {:ok, %Report{status: "actioned"}} =
+      assert {:ok, %{id: report_id, status: "actioned"} = result} =
                Administration.resolve_report(context.scope, report, "reviewed")
+
+      assert report_id == report.id
+      refute Map.has_key?(result, :reporter_user_id)
 
       assert {:error, :not_found} =
                Administration.dismiss_report(context.scope, report, "second review")
+    end
+
+    test "reloads revoked authority for report reads and review", context do
+      report = report_fixture(context, "spam")
+      replacement = admin_fixture()
+
+      assert {:ok, %User{platform_role: nil}} =
+               Administration.revoke_platform_admin(
+                 admin_scope(replacement),
+                 context.admin,
+                 "rotation complete"
+               )
+
+      assert {:error, :forbidden} = Administration.list_reports(context.scope)
+
+      assert {:error, :forbidden} =
+               Administration.resolve_report(context.scope, report, "stale authority")
+
+      assert Repo.get!(Report, report.id).status == "open"
+      refute Repo.exists?(from event in PlatformAuditEvent, where: event.target_id == ^report.id)
     end
   end
 
@@ -543,6 +572,7 @@ defmodule Textbin.AdministrationTest do
             &Administration.lookup(&1, admin.email),
             &Administration.list_recent_public_pastes/1,
             &Administration.list_largest_pastes/1,
+            &Administration.list_reports/1,
             &Administration.list_platform_audit_events/1
           ] do
         assert {:error, :forbidden} = operation.(ordinary_scope)
