@@ -96,6 +96,30 @@ defmodule TextbinWeb.UI.AdminLiveTest do
 
     assert_patch(view, ~p"/admin")
     assert Repo.get!(User, target.id).platform_role == "admin"
+    refute has_element?(view, "#admin-user-result")
+    refute has_element?(view, "#admin-account-action-form")
+  end
+
+  test "offers only eligible account actions", %{admin: admin, conn: conn} do
+    unconfirmed = unconfirmed_user_fixture()
+    assert {:ok, guest} = Textbin.Accounts.create_guest_user()
+    assert {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view
+    |> form("#admin-lookup-form", lookup: %{query: admin.email})
+    |> render_submit()
+
+    assert has_element?(view, "#admin-account-action option[value='revoke']")
+    refute has_element?(view, "#admin-account-action option[value='suspend']")
+
+    for target <- [unconfirmed, guest] do
+      view
+      |> form("#admin-lookup-form", lookup: %{query: target.email})
+      |> render_submit()
+
+      assert has_element?(view, "#admin-account-action option[value='suspend']")
+      refute has_element?(view, "#admin-account-action option[value='grant']")
+    end
   end
 
   test "removes a paste immediately and exposes its audit event", %{conn: conn} do

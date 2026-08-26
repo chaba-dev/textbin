@@ -140,7 +140,7 @@
                 id="admin-account-action"
                 type="select"
                 label="Action"
-                options={account_action_options(@lookup.user)}
+                options={account_action_options(@current_scope.user.id, @lookup.user)}
                 required
               />
               <.input

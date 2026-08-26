@@ -149,6 +149,7 @@ defmodule TextbinWeb.UI.AdminLive do
   defp handle_mutation_result({:ok, _result}, socket, message) do
     {:noreply,
      socket
+     |> clear_lookup()
      |> put_flash(:info, message)
      |> push_patch(to: ~p"/admin")}
   end
@@ -181,6 +182,14 @@ defmodule TextbinWeb.UI.AdminLive do
   defp mutation_error(:ineligible), do: "That account is not eligible for this action."
   defp mutation_error(_reason), do: "The administrative action could not be completed."
 
+  defp clear_lookup(socket) do
+    socket
+    |> assign(:lookup_form, to_form(%{"query" => ""}, as: :lookup))
+    |> assign(:account_action_form, to_form(%{"reason" => ""}, as: :account_action))
+    |> assign(:lookup_performed?, false)
+    |> assign(:lookup, empty_lookup())
+  end
+
   defp empty_lookup, do: %{user: nil, organization: nil, workspace: nil}
 
   defp largest_stream_entries(page) do
@@ -212,13 +221,22 @@ defmodule TextbinWeb.UI.AdminLive do
   def status_class("Active"), do: "bg-success/10 text-success"
   def status_class(_status), do: "bg-warning/10 text-warning"
 
-  def account_action_options(%{suspended_at: %DateTime{}}), do: [{"Restore account", "restore"}]
+  def account_action_options(_actor_id, %{suspended_at: %DateTime{}}),
+    do: [{"Restore account", "restore"}]
 
-  def account_action_options(%{platform_role: "admin"}),
+  def account_action_options(actor_id, %{id: actor_id, platform_role: "admin"}),
+    do: [{"Revoke platform administrator", "revoke"}]
+
+  def account_action_options(_actor_id, %{platform_role: "admin"}),
     do: [{"Revoke platform administrator", "revoke"}, {"Suspend account", "suspend"}]
 
-  def account_action_options(_user),
-    do: [{"Grant platform administrator", "grant"}, {"Suspend account", "suspend"}]
+  def account_action_options(_actor_id, %{
+        kind: "registered",
+        confirmed_at: %DateTime{}
+      }),
+      do: [{"Grant platform administrator", "grant"}, {"Suspend account", "suspend"}]
+
+  def account_action_options(_actor_id, _user), do: [{"Suspend account", "suspend"}]
 
   def audit_title("platform.admin.bootstrap"), do: "Platform administrator bootstrapped"
   def audit_title("platform.admin.granted"), do: "Platform administrator granted"
