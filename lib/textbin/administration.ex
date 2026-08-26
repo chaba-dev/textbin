@@ -27,6 +27,13 @@ defmodule Textbin.Administration do
 
   def authorize_platform_admin(_scope), do: {:error, :forbidden}
 
+  @doc "Subscribes the caller to authority changes for its current user."
+  def subscribe_to_platform_authority(%Scope{user: %User{id: user_id}}) do
+    Phoenix.PubSub.subscribe(Textbin.PubSub, platform_authority_topic(user_id))
+  end
+
+  def subscribe_to_platform_authority(_scope), do: {:error, :forbidden}
+
   @doc false
   def authorize_account_deletion(%Scope{user: %User{id: user_id}} = scope) do
     case Repo.transact(fn -> authorize_account_deletion_in_transaction(scope, user_id) end) do
@@ -77,6 +84,7 @@ defmodule Textbin.Administration do
         scope,
         &grant_platform_admin_in_transaction(&1, target_id, reason, opts)
       )
+      |> notify_platform_authority_change()
     end
   end
 
@@ -88,6 +96,7 @@ defmodule Textbin.Administration do
         scope,
         &revoke_platform_admin_in_transaction(&1, target_id, reason, opts)
       )
+      |> notify_platform_authority_change()
     end
   end
 
@@ -107,6 +116,7 @@ defmodule Textbin.Administration do
           opts
         )
       )
+      |> notify_platform_authority_change()
     end
   end
 
@@ -120,6 +130,7 @@ defmodule Textbin.Administration do
           scope,
           &suspend_user_in_transaction(&1, target_id, reason, opts)
         )
+        |> notify_platform_authority_change()
       end
 
     disconnect_suspended_sessions(result)
@@ -130,6 +141,7 @@ defmodule Textbin.Administration do
     with {:ok, reason} <- normalize_reason(reason),
          {:ok, target_id} <- user_id(target) do
       authority_transaction(scope, &restore_user_in_transaction(&1, target_id, reason, opts))
+      |> notify_platform_authority_change()
     end
   end
 
@@ -486,4 +498,31 @@ defmodule Textbin.Administration do
   end
 
   defp disconnect_suspended_sessions(result), do: result
+
+  defp notify_platform_authority_change({:ok, %User{id: user_id}} = result) do
+    broadcast_platform_authority_change(user_id)
+    result
+  end
+
+  defp notify_platform_authority_change({:ok, %{revoked: %User{id: user_id}}} = result) do
+    broadcast_platform_authority_change(user_id)
+    result
+  end
+
+  defp notify_platform_authority_change({:ok, {%User{id: user_id}, _tokens}} = result) do
+    broadcast_platform_authority_change(user_id)
+    result
+  end
+
+  defp notify_platform_authority_change(result), do: result
+
+  defp broadcast_platform_authority_change(user_id) do
+    Phoenix.PubSub.broadcast(
+      Textbin.PubSub,
+      platform_authority_topic(user_id),
+      :platform_authority_changed
+    )
+  end
+
+  defp platform_authority_topic(user_id), do: "platform_authority:#{user_id}"
 end

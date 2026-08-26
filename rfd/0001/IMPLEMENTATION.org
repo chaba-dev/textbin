@@ -2,19 +2,16 @@
 
 Implements [[file:README.adoc][RFD 1: Administration]].
 
-- [ ] A non-admin cannot mount an admin route or obtain admin data by calling a
-  context function directly.
-- [ ] Every context call reloads current platform authority, and a mounted admin
-  loses panel access promptly after revocation or suspension.
+* Phase 1: Platform authority and account controls
+
+Establish the role, recovery path, and account invariants before exposing an
+administration interface.
+
 - [X] Organization owners and admins have no platform authority unless separately
   granted it.
 - [X] An operator can grant the first platform administrator from a release without
   manipulating the database manually, and can use the same audited mechanism for
   emergency recovery.
-- [ ] Every privilege change, suspension, restoration, and administrative deletion
-  is audited.
-- [ ] Administrative mutations and their audit events commit atomically, and the
-  runtime database path cannot update or delete platform audit events.
 - [X] Concurrent revocation, suspension, and account-deletion attempts cannot
   remove the final active platform administrator, while one transaction can grant
   a replacement and remove the previous administrator.
@@ -22,13 +19,48 @@ Implements [[file:README.adoc][RFD 1: Administration]].
   reauthentication and records a platform audit event.
 - [X] Suspension immediately invalidates browser sessions and API tokens without
   deleting memberships or content, and restoration does not revive old tokens.
-- [ ] Administrative paste deletion makes content inaccessible before retryable
-  storage cleanup and remains audited when storage is unavailable.
+
+* Phase 2: Authorization and audit boundary
+
+Make context authorization and the immutable platform log the security boundary
+for every transport.
+
+- [X] A non-admin cannot mount an admin route or obtain admin data by calling a
+  context function directly.
+- [X] Every administrative read and mutation reloads current platform authority,
+  and a mounted admin loses panel access promptly after revocation or suspension.
+- [X] Every privilege change, suspension, restoration, and administrative deletion
+  is audited.
+- [X] Administrative mutations and their audit events commit atomically, and the
+  runtime database path cannot update or delete platform audit events.
+
+* Phase 3: Read-only administration views
+
+Ship useful installation, account, organization, workspace, paste-metadata, and
+audit views without creating a privileged content-reading path.
+
 - [ ] Admin list queries are paginated, scoped in SQL, and do not load paste bodies.
 - [ ] General recent-paste discovery exposes only public pastes, and metadata views
   do not create a privileged path to workspace-only or arbitrary unlisted content.
+
+* Phase 4: Moderation and report review
+
+Add reasoned, reauthenticated mutations after authorization, auditing, and
+read-only inspection are in place. Report review starts after RFD 4 provides the
+report model.
+
+- [ ] Administrative paste deletion makes content inaccessible before retryable
+  storage cleanup and remains audited when storage is unavailable.
 - [ ] Sensitive actions enforce the documented reason and recent-reauthentication
   matrix.
+- [ ] Once the RFD 4 report model exists, platform administrators can page through
+  the report queue and dismiss or resolve reports with a reason and audit event.
+
+* Phase 5: End-to-end verification
+
+Each earlier phase ships with targeted tests; this phase closes cross-feature and
+LiveView coverage gaps.
+
 - [ ] Authorization, role-change invalidation, final-admin concurrency,
   suspension, deletion cleanup, reauthentication, and audit behavior have context
   and LiveView tests.

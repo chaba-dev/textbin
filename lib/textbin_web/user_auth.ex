@@ -324,22 +324,59 @@ defmodule TextbinWeb.UserAuth do
   def on_mount(:require_platform_admin, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
-    cond do
-      !authenticated_scope?(socket.assigns.current_scope) ->
-        socket =
-          socket
-          |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
-          |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
+    if authenticated_scope?(socket.assigns.current_scope) do
+      authorize_platform_admin_mount(socket)
+    else
+      socket =
+        socket
+        |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
+        |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
-        {:halt, socket}
+      {:halt, socket}
+    end
+  end
 
-      match?({:ok, _user}, Administration.authorize_platform_admin(socket.assigns.current_scope)) ->
+  defp authorize_platform_admin_mount(socket) do
+    connected? = Phoenix.LiveView.connected?(socket)
+
+    if connected? do
+      :ok = Administration.subscribe_to_platform_authority(socket.assigns.current_scope)
+    end
+
+    case Administration.authorize_platform_admin(socket.assigns.current_scope) do
+      {:ok, _user} when connected? ->
+        {:cont,
+         Phoenix.LiveView.attach_hook(
+           socket,
+           :platform_authority,
+           :handle_info,
+           &handle_platform_authority_change/2
+         )}
+
+      {:ok, _user} ->
         {:cont, socket}
 
-      true ->
+      {:error, :forbidden} ->
         raise TextbinWeb.ForbiddenError
     end
   end
+
+  defp handle_platform_authority_change(:platform_authority_changed, socket) do
+    case Administration.authorize_platform_admin(socket.assigns.current_scope) do
+      {:ok, _user} ->
+        {:cont, socket}
+
+      {:error, :forbidden} ->
+        socket =
+          socket
+          |> Phoenix.LiveView.put_flash(:error, "Your platform access has changed.")
+          |> Phoenix.LiveView.redirect(to: ~p"/")
+
+        {:halt, socket}
+    end
+  end
+
+  defp handle_platform_authority_change(_message, socket), do: {:cont, socket}
 
   defp mount_current_scope(socket, session) do
     Phoenix.Component.assign_new(socket, :current_scope, fn ->
