@@ -261,8 +261,9 @@ jobs:
           }
           trap cleanup EXIT
 
-          docker run --detach --name "$container_name" --network host \
+          docker run --detach --name "$container_name" --network host --read-only \
             --mount "type=bind,src=$tls_dir,dst=/run/secrets/textbin,readonly" \
+            --tmpfs /app/tmp:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=1000,gid=1000 \
             -e DATABASE_URL="ecto://${DATABASE_USER}:${DATABASE_PASSWORD}@localhost:5432/textbin_container_test" \
             -e SECRET_KEY_BASE="$secret_key_base" \
             -e PHX_HOST=localhost \
@@ -288,3 +289,20 @@ jobs:
           test "$ready" = "true"
           curl --fail --silent --show-error --output /dev/null http://127.0.0.1:4100/healthz
           curl --fail --silent --show-error --output /dev/null http://127.0.0.1:4100/readyz
+
+          docker exec "$container_name" /app/bin/textbin rpc '
+            {:ok, user} = Textbin.Accounts.register_user(%{email: "admin@example.com"})
+            user |> Textbin.Accounts.User.confirm_changeset() |> Textbin.Repo.update!()
+            :ok
+          '
+          docker exec "$container_name" /app/bin/grant-platform-admin 'Admin@Example.COM'
+          docker exec "$container_name" /app/bin/textbin rpc '
+            user = Textbin.Accounts.get_user_by_email("admin@example.com")
+            true = user.platform_role == "admin"
+            Textbin.Repo.get_by!(Textbin.Administration.PlatformAuditEvent,
+              action: "platform.admin.bootstrap",
+              actor_kind: "bootstrap",
+              target_id: user.id
+            )
+            :ok
+          '

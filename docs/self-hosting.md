@@ -204,9 +204,14 @@ docker run --name textbin --read-only --restart unless-stopped \
   --network textbin-private --env-file /run/textbin/runtime.env \
   --mount type=volume,src=textbin-pastes,dst=/var/lib/textbin/pastes \
   --mount type=volume,src=textbin-uploads,dst=/var/lib/textbin/uploads \
+  --tmpfs /app/tmp:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=1000,gid=1000 \
   --publish 127.0.0.1:4000:4000 \
   ghcr.io/chaba-dev/textbin:0.1.0
 ```
+
+The private `/app/tmp` tmpfs is required with `--read-only`: the OTP release
+launcher writes evaluated runtime configuration there before boot. Keep it
+ephemeral because that configuration contains resolved secrets.
 
 The volume must already be writable by UID/GID `1000`. Verify before migration:
 
@@ -254,6 +259,7 @@ docker run --rm --user 0:0 \
 docker run --name textbin --read-only --restart unless-stopped \
   --network textbin-private --env-file /run/textbin/runtime.env \
   --mount type=volume,src=textbin-uploads,dst=/var/lib/textbin/uploads \
+  --tmpfs /app/tmp:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=1000,gid=1000 \
   --publish 127.0.0.1:4000:4000 \
   ghcr.io/chaba-dev/textbin:0.1.0
 ```
@@ -347,36 +353,62 @@ For a full database-and-blob smoke test, use a dedicated operator account with a
 password. Keep the returned token out of shell tracing and revoke it afterward:
 
 ```sh
-set +x
-BASE_URL=https://textbin.example.com
-TOKEN="$({
-  printf '{"email":"%s","password":"%s","name":"restore-drill"}' \
-    'operator@example.com' "$TEXTBIN_OPERATOR_PASSWORD"
-} | curl --fail --silent --show-error \
-  -H 'content-type: application/json' --data-binary @- \
-  "$BASE_URL/api/v1/auth/tokens" | jq -er '.data.api_token')"
+(
+  set -euo pipefail
+  set +x
+  : "${TEXTBIN_OPERATOR_PASSWORD:?set TEXTBIN_OPERATOR_PASSWORD}"
 
-dd if=/dev/urandom bs=16384 count=1 2>/dev/null > /tmp/textbin-probe.bin
-EXPECTED_SHA256="$(sha256sum /tmp/textbin-probe.bin | cut -d' ' -f1)"
-PASTE_ID="$(curl --fail --silent --show-error \
-  -H "authorization: Bearer $TOKEN" \
-  -H 'content-type: application/octet-stream' \
-  --data-binary @/tmp/textbin-probe.bin \
-  "$BASE_URL/api/v1/pastes" | jq -er '.data.id')"
+  BASE_URL=https://textbin.example.com
+  TOKEN=
+  PASTE_ID=
 
-curl --fail --silent --show-error \
-  -H "authorization: Bearer $TOKEN" \
-  "$BASE_URL/api/v1/pastes/$PASTE_ID" \
-  | jq -er '.data.data_base64' | base64 -d > /tmp/textbin-probe-restored.bin
-test "$(sha256sum /tmp/textbin-probe-restored.bin | cut -d' ' -f1)" = "$EXPECTED_SHA256"
+  cleanup() {
+    status=$?
+    trap - EXIT
+    set +e
+    if [[ -n "$TOKEN" && -n "$PASTE_ID" ]]; then
+      curl --fail --silent --show-error --output /dev/null -X DELETE \
+        -H "authorization: Bearer $TOKEN" \
+        "$BASE_URL/api/v1/pastes/$PASTE_ID"
+    fi
+    if [[ -n "$TOKEN" ]]; then
+      curl --fail --silent --show-error --output /dev/null -X DELETE \
+        -H "authorization: Bearer $TOKEN" "$BASE_URL/api/v1/me/token"
+    fi
+    rm -f /tmp/textbin-probe.bin /tmp/textbin-probe-restored.bin
+    unset TOKEN TEXTBIN_OPERATOR_PASSWORD
+    exit "$status"
+  }
+  trap cleanup EXIT
 
-curl --fail --silent --show-error -X DELETE \
-  -H "authorization: Bearer $TOKEN" \
-  "$BASE_URL/api/v1/pastes/$PASTE_ID"
-curl --fail --silent --show-error -X DELETE \
-  -H "authorization: Bearer $TOKEN" "$BASE_URL/api/v1/me/token"
-rm -f /tmp/textbin-probe.bin /tmp/textbin-probe-restored.bin
-unset TOKEN TEXTBIN_OPERATOR_PASSWORD
+  TOKEN="$(
+    jq -cn \
+      --arg email 'operator@example.com' \
+      --arg password "$TEXTBIN_OPERATOR_PASSWORD" \
+      --arg name 'restore-drill' \
+      '{email: $email, password: $password, name: $name}' \
+      | curl --fail --silent --show-error \
+          -H 'content-type: application/json' --data-binary @- \
+          "$BASE_URL/api/v1/auth/tokens" \
+      | jq -er '.data.api_token'
+  )"
+
+  dd if=/dev/urandom bs=16384 count=1 2>/dev/null > /tmp/textbin-probe.bin
+  EXPECTED_SHA256="$(sha256sum /tmp/textbin-probe.bin | cut -d' ' -f1)"
+  PASTE_ID="$(curl --fail --silent --show-error \
+    -H "authorization: Bearer $TOKEN" \
+    -H 'content-type: application/octet-stream' \
+    --data-binary @/tmp/textbin-probe.bin \
+    "$BASE_URL/api/v1/pastes" | jq -er '.data.id')"
+
+  curl --fail --silent --show-error \
+    -H "authorization: Bearer $TOKEN" \
+    "$BASE_URL/api/v1/pastes/$PASTE_ID" \
+    | jq -er '.data.data_base64' \
+    | base64 -d > /tmp/textbin-probe-restored.bin
+  test "$(sha256sum /tmp/textbin-probe-restored.bin | cut -d' ' -f1)" = "$EXPECTED_SHA256"
+  echo "Textbin external paste integrity verified"
+)
 ```
 
 The random 16 KiB binary body exceeds the default inline threshold and therefore
