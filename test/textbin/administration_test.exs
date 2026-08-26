@@ -67,6 +67,37 @@ defmodule Textbin.AdministrationTest do
       assert {:error, :forbidden} = Administration.authorize_platform_admin(scope)
     end
 
+    test "queues an authority notification before follow-up authorization" do
+      actor = admin_fixture()
+      target = admin_fixture()
+      target_scope = admin_scope(target)
+      parent = self()
+
+      watcher =
+        Task.async(fn ->
+          assert :ok = Administration.subscribe_to_platform_authority(target_scope)
+          send(parent, {:subscribed, self()})
+          assert_receive :authorize
+
+          authorization = Administration.authorize_platform_admin(target_scope)
+          assert_receive notification
+          {authorization, notification}
+        end)
+
+      assert_receive {:subscribed, watcher_pid}
+
+      assert {:ok, %User{platform_role: nil}} =
+               Administration.revoke_platform_admin(
+                 admin_scope(actor),
+                 target,
+                 "subscription race"
+               )
+
+      send(watcher_pid, :authorize)
+
+      assert {{:error, :forbidden}, :platform_authority_changed} = Task.await(watcher)
+    end
+
     test "organization owners and admins have no platform authority" do
       owner = user_fixture()
       organization_admin = user_fixture()

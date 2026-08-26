@@ -27,8 +27,8 @@ for every transport.
 
 - [X] A non-admin cannot mount an admin route or obtain admin data by calling a
   context function directly.
-- [X] Every context call reloads current platform authority, and a mounted admin
-  loses panel access promptly after revocation or suspension.
+- [X] Every administrative read and mutation reloads current platform authority,
+  and a mounted admin loses panel access promptly after revocation or suspension.
 - [X] Every privilege change, suspension, restoration, and administrative deletion
   is audited.
 - [X] Administrative mutations and their audit events commit atomically, and the

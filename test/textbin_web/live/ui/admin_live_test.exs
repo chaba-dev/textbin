@@ -32,6 +32,7 @@ defmodule TextbinWeb.UI.AdminLiveTest do
     target_conn = log_in_user(conn, target)
 
     assert {:ok, view, _html} = live(target_conn, ~p"/admin")
+    monitor = monitor_proxy(view)
 
     assert {:ok, _target} =
              Administration.revoke_platform_admin(
@@ -41,6 +42,7 @@ defmodule TextbinWeb.UI.AdminLiveTest do
              )
 
     assert_redirect(view, ~p"/")
+    assert_full_redirect(monitor, ~p"/")
   end
 
   test "leaves the panel promptly when the administrator is suspended", %{conn: conn} do
@@ -48,11 +50,21 @@ defmodule TextbinWeb.UI.AdminLiveTest do
     target = platform_admin_fixture()
 
     assert {:ok, view, _html} = live(log_in_user(conn, target), ~p"/admin")
+    monitor = monitor_proxy(view)
 
     assert {:ok, {_target, _tokens}} =
              Administration.suspend_user(admin_scope(actor), target, "security response")
 
     assert_redirect(view, ~p"/")
+    assert_full_redirect(monitor, ~p"/")
+  end
+
+  defp monitor_proxy(%{proxy: {_ref, _topic, proxy_pid}}),
+    do: {proxy_pid, Process.monitor(proxy_pid)}
+
+  defp assert_full_redirect({proxy_pid, monitor_ref}, path) do
+    assert_receive {:DOWN, ^monitor_ref, :process, ^proxy_pid,
+                    {:shutdown, {:redirect, %{to: ^path}}}}
   end
 
   defp platform_admin_fixture do
