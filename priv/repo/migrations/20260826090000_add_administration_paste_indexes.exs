@@ -5,7 +5,12 @@ defmodule Textbin.Repo.Migrations.AddAdministrationPasteIndexes do
 
   def change do
     execute(
-      "UPDATE pastes SET size_bytes = octet_length(data) WHERE size_bytes IS NULL AND data IS NOT NULL",
+      """
+      UPDATE pastes
+      SET size_bytes = octet_length(data),
+          sha256 = sha256(convert_to(data, 'UTF8'))
+      WHERE data IS NOT NULL AND (size_bytes IS NULL OR sha256 IS NULL)
+      """,
       "SELECT 1"
     )
 

@@ -145,7 +145,7 @@ CREATE TABLE public.platform_audit_events (
     action character varying(255) NOT NULL,
     target_type character varying(255) NOT NULL,
     target_id uuid NOT NULL,
-    reason character varying(255) NOT NULL,
+    reason text NOT NULL,
     request_id character varying(255),
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     inserted_at timestamp without time zone NOT NULL,
