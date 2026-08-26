@@ -18,10 +18,12 @@ defmodule Textbin.Reports do
   @doc "Submits an abuse report for an active public or unlisted paste."
   def create_report(%Scope{user: %User{id: reporter_id}}, paste_id, attrs)
       when is_map(attrs) do
-    with {:ok, paste_id} <- Ecto.UUID.cast(paste_id) do
-      Repo.transact(fn -> create_report_in_transaction(reporter_id, paste_id, attrs) end)
-    else
-      :error -> {:error, :not_found}
+    case Ecto.UUID.cast(paste_id) do
+      {:ok, paste_id} ->
+        Repo.transact(fn -> create_report_in_transaction(reporter_id, paste_id, attrs) end)
+
+      :error ->
+        {:error, :not_found}
     end
   end
 
