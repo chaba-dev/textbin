@@ -8,11 +8,20 @@ config :argon2_elixir, t_cost: 1, m_cost: 8
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+#
+# Tests run against the same socket the development container exports into
+# tmp/postgres-socket, with no TCP listener to fall back to. CI sets
+# DATABASE_HOST for its Postgres service container, which is only reachable over
+# TCP, so the connection moves to host and port there and the socket directory is
+# dropped (Postgrex ignores nil options).
+database_host = System.get_env("DATABASE_HOST")
+
 config :textbin, Textbin.Repo,
   username: System.get_env("DATABASE_USER") || "postgres",
-  password: System.get_env("DATABASE_PASSWORD") || "postgres",
-  hostname: System.get_env("DATABASE_HOST") || "localhost",
-  port: String.to_integer(System.get_env("DATABASE_PORT") || "5433"),
+  password: System.get_env("DATABASE_PASSWORD"),
+  hostname: database_host,
+  port: String.to_integer(System.get_env("DATABASE_PORT") || "5432"),
+  socket_dir: if(database_host, do: nil, else: Path.expand("../tmp/postgres-socket", __DIR__)),
   database:
     System.get_env("DATABASE_TEST_NAME") ||
       "textbin_test#{System.get_env("MIX_TEST_PARTITION")}",

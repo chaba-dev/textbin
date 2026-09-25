@@ -18,17 +18,26 @@ defmodule Textbin.ConfigTest do
     on_exit(fn -> Enum.each(previous, fn {name, value} -> restore_env(name, value) end) end)
   end
 
-  test "the test database default port matches Docker Compose" do
-    database_port = System.get_env("DATABASE_PORT")
-    System.delete_env("DATABASE_PORT")
+  test "the test database reaches Postgres over the Docker Compose socket" do
+    clear_database_env(["DATABASE_HOST", "DATABASE_PORT"])
 
-    on_exit(fn -> restore_env("DATABASE_PORT", database_port) end)
-
-    config = Config.Reader.read!("config/test.exs", env: :test)
-    test_port = config[:textbin][Textbin.Repo][:port]
+    repo = test_repo_config()
     docker_compose = File.read!("docker-compose.yml")
 
-    assert docker_compose =~ ~s(- "#{test_port}:5432")
+    assert repo[:socket_dir] == Path.expand("tmp/postgres-socket")
+    assert docker_compose =~ "./tmp/postgres-socket:/var/run/postgresql"
+    refute docker_compose =~ "5433:5432"
+  end
+
+  test "the test database moves to TCP when CI provides DATABASE_HOST" do
+    clear_database_env(["DATABASE_HOST", "DATABASE_PORT"])
+    System.put_env(%{"DATABASE_HOST" => "postgres.internal", "DATABASE_PORT" => "6000"})
+
+    repo = test_repo_config()
+
+    assert repo[:hostname] == "postgres.internal"
+    assert repo[:port] == 6000
+    assert repo[:socket_dir] == nil
   end
 
   test "Phoenix and Cargo release versions stay synchronized" do
@@ -117,6 +126,19 @@ defmodule Textbin.ConfigTest do
     assert_raise RuntimeError, ~r/POOL_SIZE must be a positive integer/, fn ->
       production_endpoint_config()
     end
+  end
+
+  defp test_repo_config do
+    "config/test.exs"
+    |> Config.Reader.read!(env: :test)
+    |> get_in([:textbin, Textbin.Repo])
+  end
+
+  defp clear_database_env(names) do
+    previous = Map.new(names, &{&1, System.get_env(&1)})
+    Enum.each(names, &System.delete_env/1)
+
+    on_exit(fn -> Enum.each(previous, fn {name, value} -> restore_env(name, value) end) end)
   end
 
   defp production_endpoint_config do

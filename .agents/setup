@@ -44,53 +44,35 @@ step "Persisting the Nix development shell for Amp login shells"
 profile_marker="# textbin Nix development shell"
 profile_end_marker="# end textbin Nix development shell"
 
-if grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null &&
-     ! grep -Fqx "$profile_end_marker" "$HOME/.bash_profile" 2>/dev/null; then
-  sed -i "/^${profile_marker//\//\\/}$/,+4d" "$HOME/.bash_profile"
+# The managed block is rewritten on every run so an Orb created by an earlier
+# checkout converges on the current environment. The database variables it used
+# to export are gone: the application now reaches Postgres through the Unix
+# socket, and a stale DATABASE_HOST would send tests back to TCP.
+if grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  sed -i "/^${profile_marker}$/,/^${profile_end_marker}$/d" "$HOME/.bash_profile"
 fi
 
-if ! grep -Fqx "$profile_end_marker" "$HOME/.bash_profile" 2>/dev/null; then
-  cat >> "$HOME/.bash_profile" <<EOF
+cat >> "$HOME/.bash_profile" <<EOF
 
 $profile_marker
 if [[ -z "\${IN_NIX_SHELL:-}" && "\${PWD}" == "$repo_root" ]]; then
   eval "\$("$nix_bin" --extra-experimental-features 'nix-command flakes' print-dev-env "$repo_root")"
   export MIX_ENV=dev
-  export DATABASE_HOST=127.0.0.1
-  export DATABASE_PORT=5433
-  export DATABASE_USER=postgres
-  export DATABASE_PASSWORD=postgres
-  export DATABASE_NAME=textbin_dev
 fi
 $profile_end_marker
 EOF
-fi
 
 step "Building the Nix development shell"
 "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command true
 
 step "Starting PostgreSQL"
-postgres_data_dir="$repo_root/.nix/postgres"
-postgres_socket_dir="$repo_root/.nix/postgres-socket"
-mkdir -p "$repo_root/.nix"
-mkdir -p "$postgres_socket_dir"
-
-if [ ! -s "$postgres_data_dir/PG_VERSION" ]; then
-  "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command \
-    initdb --pgdata="$postgres_data_dir" --username=postgres --auth=trust
-fi
-
-if ! "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command \
-  pg_ctl --pgdata="$postgres_data_dir" status >/dev/null 2>&1; then
-  "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command \
-    pg_ctl --pgdata="$postgres_data_dir" --wait start \
-      --options="-p 5433 -h 127.0.0.1 -k $postgres_socket_dir"
-fi
+# scripts/local-postgres.sh owns the cluster lifecycle and its socket-only
+# configuration, so setup and resume cannot drift apart.
+"$nix_bin" "${nix_args[@]}" develop "$repo_root" --command ./scripts/local-postgres.sh start
 
 step "Installing application dependencies and preparing the database"
 "$nix_bin" "${nix_args[@]}" develop "$repo_root" --command env \
-  MIX_ENV=dev DATABASE_HOST=127.0.0.1 DATABASE_PORT=5433 DATABASE_USER=postgres \
-  DATABASE_PASSWORD=postgres DATABASE_NAME=textbin_dev bash -euc '
+  MIX_ENV=dev bash -euc '
   mix local.hex --force
   mix local.rebar --force
   mix setup

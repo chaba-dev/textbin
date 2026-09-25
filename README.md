@@ -12,8 +12,13 @@ Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 Start Postgres for local development:
 
 ```sh
-docker compose up db
+make up
 ```
+
+PostgreSQL runs in the container but is reached through the Unix socket the
+container exports into `tmp/postgres-socket` instead of a published TCP port, so
+nothing is exposed on the host network. `make down` stops the container and
+`make psql` opens a console against `textbin_dev` over that socket.
 
 Then run `mix setup` and `mix phx.server` locally as usual.
 
