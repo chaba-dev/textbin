@@ -53,6 +53,6 @@ changelog:
 bump:
 	git cliff --bump -o CHANGELOG.md
 
-.PHONY: db
-db:
-	psql -h 127.0.0.1 -U postgres -d textbin_dev -W
+.PHONY: psql
+psql:
+	psql -h "$(CURDIR)/tmp/postgres-socket" -U postgres -d textbin_dev

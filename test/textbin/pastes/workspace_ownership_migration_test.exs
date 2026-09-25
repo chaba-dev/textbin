@@ -143,9 +143,11 @@ defmodule Textbin.Pastes.WorkspaceOwnershipMigrationTest do
     workspace_id
   end
 
+  # The admin connection mirrors the repository's endpoint, which is a Unix
+  # socket in development and test and a host/port pair in CI.
   defp admin_config do
     Textbin.Repo.config()
-    |> Keyword.take([:hostname, :port, :username, :password])
+    |> Keyword.take([:hostname, :port, :socket_dir, :username, :password])
     |> Keyword.put(:database, "postgres")
   end
 

@@ -1,12 +1,15 @@
 import Config
 
 # Configure your database
+#
+# The container started by `make up` is reached through the Unix socket it
+# exports into tmp/postgres-socket, not through a TCP port, so there is no
+# hostname or port to configure. Socket connections are trusted, which is why no
+# password is needed.
 config :textbin, Textbin.Repo,
-  username: System.get_env("DATABASE_USER") || "postgres",
-  password: System.get_env("DATABASE_PASSWORD") || "postgres",
-  hostname: System.get_env("DATABASE_HOST") || "localhost",
-  port: String.to_integer(System.get_env("DATABASE_PORT") || "5433"),
-  database: System.get_env("DATABASE_NAME") || "textbin_dev",
+  username: "postgres",
+  socket_dir: Path.expand("../tmp/postgres-socket", __DIR__),
+  database: "textbin_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10

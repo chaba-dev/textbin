@@ -2,8 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-postgres_data_dir="$repo_root/.nix/postgres"
-postgres_socket_dir="$repo_root/.nix/postgres-socket"
+postgres_data_dir="$repo_root/tmp/postgres"
+legacy_postgres_data_dir="$repo_root/.nix/postgres"
 
 if [ -x "$HOME/.nix-profile/bin/nix" ]; then
   nix_bin="$HOME/.nix-profile/bin/nix"
@@ -13,15 +13,13 @@ else
   exit 0
 fi
 
-if [ ! -s "$postgres_data_dir/PG_VERSION" ]; then
+# A resumed Orb has to find the cluster it left behind; .agents/setup creates it
+# on the first run. A cluster still living under .nix/postgres counts as present
+# because the script adopts it into tmp/postgres before starting.
+if [ ! -s "$postgres_data_dir/PG_VERSION" ] &&
+  [ ! -s "$legacy_postgres_data_dir/PG_VERSION" ]; then
   exit 0
 fi
 
-mkdir -p "$postgres_socket_dir"
-
-if ! "$nix_bin" --extra-experimental-features "nix-command flakes" develop "$repo_root" --command \
-  pg_ctl --pgdata="$postgres_data_dir" status >/dev/null 2>&1; then
-  "$nix_bin" --extra-experimental-features "nix-command flakes" develop "$repo_root" --command \
-    pg_ctl --pgdata="$postgres_data_dir" --wait start \
-      --options="-p 5433 -h 127.0.0.1 -k $postgres_socket_dir"
-fi
+"$nix_bin" --extra-experimental-features "nix-command flakes" develop "$repo_root" --command \
+  ./scripts/local-postgres.sh start

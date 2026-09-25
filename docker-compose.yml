@@ -5,10 +5,14 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: textbin_dev
-    ports:
-      - "5433:5432"
+    # The application reaches this cluster through the Unix socket mounted below
+    # instead of a TCP port, so nothing is published to the host network. The
+    # image already creates its socket in /var/run/postgresql, and an empty
+    # listen_addresses keeps the container from listening on TCP at all.
+    command: ["postgres", "-c", "listen_addresses="]
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./tmp/postgres-socket:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d textbin_dev"]
       interval: 5s
