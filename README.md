@@ -24,6 +24,12 @@ Then run `mix setup` and `mix phx.server` locally as usual.
 
 Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
 
+## Design
+
+The product direction, information architecture, and visual system (type, mark,
+themes) are written up in [docs/design.md](docs/design.md), alongside the
+sequencing of the redesign work.
+
 ## Self-hosting
 
 The production OCI image is runtime-agnostic and includes an explicit migration
