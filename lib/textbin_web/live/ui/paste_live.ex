@@ -1,6 +1,7 @@
 defmodule TextbinWeb.UI.PasteLive do
   use TextbinWeb, :live_view
 
+  alias Textbin.Accounts
   alias Textbin.Accounts.User
   alias Textbin.Organizations
   alias Textbin.Organizations.Policy
@@ -35,8 +36,8 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   def handle_params(_params, _uri, %{assigns: %{live_action: :legacy_index}} = socket) do
-    organization = Organizations.get_personal_organization!(socket.assigns.current_scope.user)
-    workspace = Enum.find(organization.workspaces, & &1.is_default)
+    {:ok, %{organization: organization, workspace: workspace}} =
+      Organizations.resolve_home_scope(socket.assigns.current_scope)
 
     {:noreply,
      push_navigate(socket,
@@ -168,9 +169,11 @@ defmodule TextbinWeb.UI.PasteLive do
 
   def render(assigns), do: index(assigns)
 
+  # Every workspace page reached by its URL becomes the one home reopens.
   defp resolve_workspace_scope!(scope, organization_slug, workspace_slug) do
     case Organizations.resolve_workspace_scope_by_slugs(scope, organization_slug, workspace_slug) do
       {:ok, resolved_scope} ->
+        :ok = Accounts.remember_last_workspace(resolved_scope.user, resolved_scope.workspace.id)
         resolved_scope
 
       {:error, :not_found} ->

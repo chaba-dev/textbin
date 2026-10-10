@@ -20,9 +20,9 @@ defmodule TextbinWeb.UserSessionControllerTest do
       assert get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/"
 
-      # The authenticated landing route forwards to the pastes workspace.
+      # The authenticated landing route reopens the home workspace.
       conn = get(conn, ~p"/")
-      assert redirected_to(conn) == ~p"/pastes"
+      assert redirected_to(conn) =~ ~r{^/w/personal-[0-9a-f-]+/default/pastes$}
     end
 
     test "logs the user in with remember me", %{conn: conn, user: user} do
@@ -81,9 +81,9 @@ defmodule TextbinWeb.UserSessionControllerTest do
       assert get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/"
 
-      # The authenticated landing route forwards to the pastes workspace.
+      # The authenticated landing route reopens the home workspace.
       conn = get(conn, ~p"/")
-      assert redirected_to(conn) == ~p"/pastes"
+      assert redirected_to(conn) =~ ~r{^/w/personal-[0-9a-f-]+/default/pastes$}
     end
 
     test "confirms unconfirmed user", %{conn: conn, unconfirmed_user: user} do
@@ -102,9 +102,9 @@ defmodule TextbinWeb.UserSessionControllerTest do
 
       assert Accounts.get_user!(user.id).confirmed_at
 
-      # The authenticated landing route forwards to the pastes workspace.
+      # The authenticated landing route reopens the home workspace.
       conn = get(conn, ~p"/")
-      assert redirected_to(conn) == ~p"/pastes"
+      assert redirected_to(conn) =~ ~r{^/w/personal-[0-9a-f-]+/default/pastes$}
     end
 
     test "redirects to login page when magic link is invalid", %{conn: conn} do
