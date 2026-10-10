@@ -350,6 +350,62 @@ defmodule TextbinWeb.ApiV1.PasteController do
   defp delete_scoped_paste(scope, paste, _params),
     do: Pastes.delete_personal_paste(scope, paste)
 
+  def deleted(conn, params) do
+    with_paste_scope(conn, params, fn scope ->
+      render(conn, :deleted,
+        pastes: Pastes.list_removed_pastes(scope),
+        organization_id: scope.organization.id,
+        workspace_id: scope.workspace.id,
+        recovery_window_days: scope.workspace.recovery_window_days
+      )
+    end)
+  end
+
+  # Restoring and deleting for good answer 404 alike for an unknown id, a paste
+  # the caller cannot manage, and one whose recovery window has passed, so the
+  # response never confirms another member's paste exists.
+  def restore(conn, %{"id" => id} = params) do
+    with_paste_scope(conn, params, fn scope ->
+      with {:ok, paste_id} <- Ecto.UUID.cast(id),
+           {:ok, paste} <- Pastes.restore_paste(scope, paste_id) do
+        render(conn, :restored,
+          paste: paste,
+          organization_id: scope.organization.id,
+          workspace_id: scope.workspace.id
+        )
+      else
+        :error -> render_invalid_paste_id(conn)
+        {:error, _reason} -> render_removed_paste_not_found(conn)
+      end
+    end)
+  end
+
+  def purge(conn, %{"id" => id} = params) do
+    with_paste_scope(conn, params, fn scope ->
+      with {:ok, paste_id} <- Ecto.UUID.cast(id),
+           {:ok, _paste} <- Pastes.purge_paste(scope, paste_id) do
+        send_resp(conn, :no_content, "")
+      else
+        :error ->
+          render_invalid_paste_id(conn)
+
+        {:error, :not_found} ->
+          render_removed_paste_not_found(conn)
+
+        {:error, _reason} ->
+          conn
+          |> put_status(:service_unavailable)
+          |> json(%{errors: %{detail: "Paste could not be permanently deleted"}})
+      end
+    end)
+  end
+
+  defp render_removed_paste_not_found(conn) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{errors: %{detail: "Removed paste not found"}})
+  end
+
   defp validate_paste_size(%{"data" => data}) when is_binary(data) do
     if byte_size(data) <= max_paste_bytes() do
       :ok
