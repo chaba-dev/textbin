@@ -61,6 +61,8 @@ defmodule Textbin.Pastes do
                select:
                  struct(p, [
                    :id,
+                   :title,
+                   :reference_url,
                    :storage_key,
                    :size_bytes,
                    :sha256,
@@ -75,6 +77,7 @@ defmodule Textbin.Pastes do
                  ]),
                order_by: [desc: p.inserted_at]
            )
+           |> preload_author()
          end) do
       {:ok, pastes} ->
         pastes
@@ -83,6 +86,11 @@ defmodule Textbin.Pastes do
         []
     end
   end
+
+  @doc """
+  Loads the author so lists and headings can name who created a paste.
+  """
+  def preload_author(paste_or_pastes), do: Repo.preload(paste_or_pastes, :created_by_user)
 
   def get_paste(%Scope{user: %User{}} = scope, id) when is_binary(id) do
     with {:ok, paste_id} <- Ecto.UUID.cast(id),
@@ -164,7 +172,10 @@ defmodule Textbin.Pastes do
 
   def create_paste(%Scope{user: %User{} = user} = scope, attrs \\ %{}) do
     with {:ok, workspace} <- authorized_workspace(scope) do
-      attrs = attrs_with_defaults(attrs, user, ContentType.text_safe?(attr_data(attrs)))
+      attrs =
+        attrs
+        |> attrs_with_defaults(user, ContentType.text_safe?(attr_data(attrs)))
+        |> attrs_with_derived_title()
       paste = new_paste(user, workspace.id)
 
       changeset =
@@ -670,6 +681,23 @@ defmodule Textbin.Pastes do
   end
 
   defp attr_data(attrs), do: Map.get(attrs, "data") || Map.get(attrs, :data)
+
+  # Only creation derives a title. Live validation leaves the field alone so the
+  # form does not overwrite what the person is typing.
+  defp attrs_with_derived_title(attrs) when is_map(attrs) do
+    title = Map.get(attrs, "title") || Map.get(attrs, :title)
+
+    if is_binary(title) and String.trim(title) != "" do
+      attrs
+    else
+      case Paste.derive_title(attr_data(attrs)) do
+        nil -> attrs
+        derived -> Map.put(attrs, attr_key(attrs, "title", :title), derived)
+      end
+    end
+  end
+
+  defp attrs_with_derived_title(attrs), do: attrs
 
   defp attrs_with_default_ttl(attrs, user) do
     if ttl_provided?(attrs) do

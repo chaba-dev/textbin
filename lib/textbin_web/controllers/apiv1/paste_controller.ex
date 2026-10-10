@@ -117,6 +117,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   defp put_paste_params(attrs, params) do
     attrs
+    |> put_string_param(params, "title")
+    |> put_string_param(params, "reference_url")
     |> put_string_param(params, "content_type")
     |> put_string_param(params, "syntax_highlight")
     |> put_string_param(params, "audience")

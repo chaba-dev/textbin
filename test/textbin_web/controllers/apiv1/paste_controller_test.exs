@@ -92,6 +92,35 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert_millisecond_timestamp(updated_at)
     end
 
+    test "stores and returns a title and reference link", %{conn: conn} do
+      conn =
+        post(conn, ~p"/api/v1/pastes", %{
+          "data" => "some data",
+          "title" => "Compose override",
+          "reference_url" => "https://tracker.example.com/INC-2041"
+        })
+
+      assert %{
+               "id" => id,
+               "title" => "Compose override",
+               "reference_url" => "https://tracker.example.com/INC-2041"
+             } = json_response(conn, 201)["data"]
+
+      conn = get(conn, ~p"/api/v1/pastes/#{id}")
+
+      assert %{
+               "title" => "Compose override",
+               "reference_url" => "https://tracker.example.com/INC-2041"
+             } = json_response(conn, 200)["data"]
+    end
+
+    test "derives a title from the first line when none is given", %{conn: conn} do
+      conn = post(conn, ~p"/api/v1/pastes", %{"data" => "first line\nsecond line"})
+
+      assert %{"title" => "first line", "reference_url" => nil} =
+               json_response(conn, 201)["data"]
+    end
+
     test "renders paste from flat JSON data", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 

@@ -10,10 +10,27 @@
         <p class="text-sm font-medium uppercase tracking-wide text-base-content/60">
           Paste
         </p>
-        <h1 class="break-all font-mono text-lg font-semibold text-base-content">
-          {@paste.id}
+        <h1
+          id="paste-title"
+          class="break-words text-2xl font-semibold tracking-tight text-base-content"
+        >
+          {Paste.display_title(@paste)}
         </h1>
+        <p class="break-all font-mono text-xs text-base-content/50">{@paste.id}</p>
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span id="paste-author" class="text-sm text-base-content/70">
+            {author_label(@paste, @current_scope)}
+          </span>
+          <a
+            :if={@paste.reference_url}
+            id="paste-reference"
+            href={@paste.reference_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="break-all text-sm text-primary hover:underline"
+          >
+            {@paste.reference_url}
+          </a>
           <span id="paste-content-type" class="badge badge-sm badge-outline">
             {@paste.content_type}
           </span>

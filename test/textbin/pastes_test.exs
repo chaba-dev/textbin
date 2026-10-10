@@ -260,6 +260,59 @@ defmodule Textbin.PastesTest do
       assert Pastes.get_shared_paste(member_scope, pastes["public"].id)
     end
 
+    test "create_paste/2 derives a title from the first non-blank line", %{scope: scope} do
+      data = "\n   # docker-compose.override.yml   \r\nservices:\n  postgres: {}\n"
+
+      assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, %{data: data})
+      assert paste.title == "# docker-compose.override.yml"
+      assert Paste.display_title(paste) == "# docker-compose.override.yml"
+    end
+
+    test "create_paste/2 keeps an explicit title and reference link", %{scope: scope} do
+      assert {:ok, %Paste{} = paste} =
+               Pastes.create_paste(scope, %{
+                 data: "first line is not the title",
+                 title: "  Compose override  ",
+                 reference_url: " https://tracker.example.com/INC-2041 "
+               })
+
+      assert paste.title == "Compose override"
+      assert paste.reference_url == "https://tracker.example.com/INC-2041"
+      assert Repo.get!(Paste, paste.id).title == "Compose override"
+    end
+
+    test "create_paste/2 leaves binary pastes untitled", %{scope: scope} do
+      assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, %{data: <<255, 254, 253>>})
+      assert is_nil(paste.title)
+      assert Paste.display_title(paste) == "Untitled paste"
+    end
+
+    test "create_paste/2 rejects a reference link that is not http or https", %{scope: scope} do
+      assert {:error, changeset} =
+               Pastes.create_paste(scope, %{data: "some data", reference_url: "INC-2041"})
+
+      assert %{reference_url: ["must start with http:// or https://"]} = errors_on(changeset)
+    end
+
+    test "create_paste/2 rejects a title over 200 characters", %{scope: scope} do
+      assert {:error, changeset} =
+               Pastes.create_paste(scope, %{
+                 data: "some data",
+                 title: String.duplicate("t", 201)
+               })
+
+      assert %{title: ["should be at most 200 character(s)"]} = errors_on(changeset)
+    end
+
+    test "list_paste_metadata/1 returns titles and authors", %{scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "find me later\nsecond line"})
+
+      assert [listed] = Pastes.list_paste_metadata(scope)
+      assert listed.id == paste.id
+      assert listed.title == "find me later"
+      assert listed.created_by_user.id == scope.user.id
+    end
+
     test "create_paste/2 stores content at the inline threshold in PostgreSQL", %{scope: scope} do
       data = String.duplicate("a", 8_192)
 

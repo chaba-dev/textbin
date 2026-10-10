@@ -12,6 +12,10 @@ defmodule Textbin.Pastes.Paste do
   # stay stable across adapters and reloads.
   @timestamps_opts [type: :utc_datetime_usec, autogenerate: {__MODULE__, :utc_now_ms, []}]
   @audiences ["workspace", "unlisted", "public"]
+  @title_max_length 200
+  @derived_title_length 120
+  @reference_url_max_length 2048
+  @untitled "Untitled paste"
   @ttl_presets %{
     "10m" => 10 * 60,
     "1h" => 60 * 60,
@@ -23,6 +27,8 @@ defmodule Textbin.Pastes.Paste do
   }
 
   schema "pastes" do
+    field :title, :string
+    field :reference_url, :string
     field :data, :string
     field :storage_key, :string
     field :size_bytes, :integer
@@ -43,9 +49,24 @@ defmodule Textbin.Pastes.Paste do
     attrs = normalize_legacy_visibility(attrs)
 
     paste
-    |> cast(attrs, [:data, :content_type, :syntax_highlight, :audience, :expires_in])
+    |> cast(attrs, [
+      :title,
+      :reference_url,
+      :data,
+      :content_type,
+      :syntax_highlight,
+      :audience,
+      :expires_in
+    ])
     |> put_expires_at(attrs)
     |> validate_required([:content_type, :syntax_highlight, :audience, :workspace_id])
+    |> update_change(:title, &trim_to_nil/1)
+    |> validate_length(:title, max: @title_max_length)
+    |> update_change(:reference_url, &trim_to_nil/1)
+    |> validate_length(:reference_url, max: @reference_url_max_length)
+    |> validate_format(:reference_url, ~r{\Ahttps?://\S+\z}i,
+      message: "must start with http:// or https://"
+    )
     |> validate_content_location()
     |> validate_length(:content_type, max: 255)
     |> validate_change(:content_type, &validate_content_type/2)
@@ -54,6 +75,41 @@ defmodule Textbin.Pastes.Paste do
     |> foreign_key_constraint(:workspace_id)
     |> foreign_key_constraint(:created_by_user_id)
   end
+
+  @doc """
+  The title shown in lists and headings. A paste never shows its id as its name.
+  """
+  def display_title(%__MODULE__{title: title}) when is_binary(title) and title != "", do: title
+  def display_title(_paste), do: @untitled
+
+  @doc """
+  Derives a title from the first non-blank line of textual data, so a paste
+  created without a title is still findable later. Returns nil for binary or
+  blank data.
+  """
+  def derive_title(data) when is_binary(data) do
+    if String.valid?(data) do
+      data
+      |> String.split(~r/\r?\n/)
+      |> Enum.map(&String.trim/1)
+      |> Enum.find(&(&1 != ""))
+      |> case do
+        nil -> nil
+        line -> String.slice(line, 0, @derived_title_length)
+      end
+    end
+  end
+
+  def derive_title(_data), do: nil
+
+  defp trim_to_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp trim_to_nil(value), do: value
 
   defp normalize_legacy_visibility(attrs) when is_map(attrs) do
     cond do

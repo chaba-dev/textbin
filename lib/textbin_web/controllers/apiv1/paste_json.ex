@@ -33,6 +33,8 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
       id: paste.id,
       organization_id: assigns.organization_id,
       workspace_id: assigns.workspace_id,
+      title: paste.title,
+      reference_url: paste.reference_url,
       content_type: paste.content_type,
       syntax_highlight: paste.syntax_highlight,
       audience: paste.audience,
