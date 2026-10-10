@@ -6,8 +6,9 @@ defmodule Textbin.Repo.Migrations.AddPasteTitleAndReference do
   # the caller does not supply one, so no backfill is needed.
   def change do
     alter table(:pastes) do
-      add :title, :string, size: 200
-      add :reference_url, :string, size: 2048
+      # Application limits count graphemes, not PostgreSQL's codepoints.
+      add :title, :text
+      add :reference_url, :text
     end
   end
 end

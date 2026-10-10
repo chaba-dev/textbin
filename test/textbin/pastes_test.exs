@@ -268,6 +268,27 @@ defmodule Textbin.PastesTest do
       assert Paste.display_title(paste) == "# docker-compose.override.yml"
     end
 
+    test "Unicode metadata persists with grapheme-based limits", %{scope: scope} do
+      for grapheme <- ["e\u0301", "👩‍💻"] do
+        expected = String.duplicate(grapheme, 120)
+
+        assert {:ok, paste} =
+                 Pastes.create_paste(scope, %{data: String.duplicate(grapheme, 121)})
+
+        assert Repo.get!(Paste, paste.id).title == expected
+
+        title = String.duplicate(grapheme, 200)
+        url = "https://example.com/" <> String.duplicate(grapheme, 2028)
+
+        assert {:ok, paste} =
+                 Pastes.create_paste(scope, %{data: "body", title: title, reference_url: url})
+
+        reloaded = Repo.get!(Paste, paste.id)
+        assert reloaded.title == title
+        assert reloaded.reference_url == url
+      end
+    end
+
     test "create_paste/2 keeps an explicit title and reference link", %{scope: scope} do
       assert {:ok, %Paste{} = paste} =
                Pastes.create_paste(scope, %{
@@ -282,9 +303,16 @@ defmodule Textbin.PastesTest do
     end
 
     test "create_paste/2 leaves binary pastes untitled", %{scope: scope} do
-      assert {:ok, %Paste{} = paste} = Pastes.create_paste(scope, %{data: <<255, 254, 253>>})
-      assert is_nil(paste.title)
-      assert Paste.display_title(paste) == "Untitled paste"
+      for data <- [<<255, 254, 253>>, "valid UTF-8 binary"] do
+        assert {:ok, %Paste{} = paste} =
+                 Pastes.create_paste(scope, %{
+                   data: data,
+                   content_type: "application/octet-stream"
+                 })
+
+        assert is_nil(paste.title)
+        assert Paste.display_title(paste) == "Untitled paste"
+      end
     end
 
     test "create_paste/2 rejects a reference link that is not http or https", %{scope: scope} do
