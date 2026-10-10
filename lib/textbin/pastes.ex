@@ -685,7 +685,7 @@ defmodule Textbin.Pastes do
 
   # Only creation derives a title. Live validation leaves the field alone so the
   # form does not overwrite what the person is typing.
-  defp attrs_with_derived_title(attrs) when is_map(attrs) do
+  defp attrs_with_derived_title(attrs) do
     title = Map.get(attrs, "title") || Map.get(attrs, :title)
 
     if is_binary(title) and String.trim(title) != "" do
@@ -697,8 +697,6 @@ defmodule Textbin.Pastes do
       end
     end
   end
-
-  defp attrs_with_derived_title(attrs), do: attrs
 
   defp attrs_with_default_ttl(attrs, user) do
     if ttl_provided?(attrs) do
