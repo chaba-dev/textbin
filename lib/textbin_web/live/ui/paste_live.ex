@@ -1,6 +1,7 @@
 defmodule TextbinWeb.UI.PasteLive do
   use TextbinWeb, :live_view
 
+  alias Textbin.Accounts.User
   alias Textbin.Organizations
   alias Textbin.Organizations.Policy
   alias Textbin.Pastes
@@ -120,7 +121,7 @@ defmodule TextbinWeb.UI.PasteLive do
          socket
          |> put_flash(:info, "Paste created")
          |> assign_paste_form()
-         |> stream_insert(:pastes, paste, at: 0)}
+         |> stream_insert(:pastes, Pastes.preload_author(paste), at: 0)}
 
       {:error, :not_found} ->
         {:noreply,
@@ -155,11 +156,13 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   defp show_paste(socket, scope, paste) do
+    paste = Pastes.preload_author(paste)
+
     {:noreply,
      socket
      |> assign(:current_scope, scope)
      |> assign(:navigation_workspaces, navigation_workspaces(scope))
-     |> assign(:page_title, "Paste #{paste.id}")
+     |> assign(:page_title, Paste.display_title(paste))
      |> assign(:paste, paste)
      |> assign(:text_content?, text_content?(paste))
      |> assign(:owner?, Pastes.manage_paste?(scope, paste))
@@ -189,6 +192,26 @@ defmodule TextbinWeb.UI.PasteLive do
        do: Organizations.list_joined_workspaces(scope, organization)
 
   defp navigation_workspaces(_scope), do: []
+
+  # Sharing content does not share an account's email. Workspace scopes are
+  # resolved through membership authorization before reaching this label.
+  defp author_label(%Paste{created_by_user: %User{id: id} = user} = paste, scope) do
+    cond do
+      match?(%{user: %User{id: ^id}}, scope) ->
+        "You"
+
+      User.guest?(user) ->
+        "Guest"
+
+      match?(%{workspace: %{id: workspace_id}} when workspace_id == paste.workspace_id, scope) ->
+        user.email
+
+      true ->
+        "Registered user"
+    end
+  end
+
+  defp author_label(_paste, _scope), do: "Unknown"
 
   defp assign_paste_form(socket) do
     new_paste = Pastes.prepare_paste(socket.assigns.current_scope)

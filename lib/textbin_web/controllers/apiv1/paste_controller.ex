@@ -81,29 +81,28 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   # Non-JSON uploads keep the body unread after Plug.Parsers, so streamed
   # CLI/stdin data can be consumed here.
-  defp paste_attrs(conn, params)
-       when map_size(params) == 0 or is_map_key(params, "syntax_highlight") or
-              is_map_key(params, "content_type") or
-              is_map_key(params, "audience") or is_map_key(params, "visibility") or
-              is_map_key(params, "expires_in") or is_map_key(params, "ttl") do
-    case read_request_body(conn) do
-      {:ok, path, metadata, conn} ->
-        paste_attrs =
-          params
-          |> build_paste_attrs()
-          |> Map.put_new("content_type", request_content_type(conn))
+  defp paste_attrs(conn, params) do
+    metadata_keys =
+      ~w(title reference_url syntax_highlight content_type audience visibility expires_in ttl)
 
-        {:ok, {:file, path, metadata, paste_attrs}, conn}
+    if map_size(params) == 0 or Enum.any?(metadata_keys, &Map.has_key?(params, &1)) do
+      case read_request_body(conn) do
+        {:ok, path, metadata, conn} ->
+          paste_attrs =
+            params
+            |> build_paste_attrs()
+            |> Map.put_new("content_type", request_content_type(conn))
 
-      {:error, reason, conn} ->
-        {:error, reason, conn}
+          {:ok, {:file, path, metadata, paste_attrs}, conn}
+
+        {:error, reason, conn} ->
+          {:error, reason, conn}
+      end
+    else
+      # Let the changeset produce the canonical "data can't be blank" error for
+      # unsupported payload shapes instead of inventing a separate controller error.
+      {:ok, {:data, %{"data" => nil}}, conn}
     end
-  end
-
-  # Let the changeset produce the canonical "data can't be blank" error for
-  # unsupported payload shapes instead of inventing a separate controller error.
-  defp paste_attrs(conn, _params) do
-    {:ok, {:data, %{"data" => nil}}, conn}
   end
 
   defp build_paste_attrs(data, params) do
@@ -117,6 +116,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   defp put_paste_params(attrs, params) do
     attrs
+    |> put_string_param(params, "title")
+    |> put_string_param(params, "reference_url")
     |> put_string_param(params, "content_type")
     |> put_string_param(params, "syntax_highlight")
     |> put_string_param(params, "audience")

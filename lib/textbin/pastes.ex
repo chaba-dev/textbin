@@ -61,6 +61,8 @@ defmodule Textbin.Pastes do
                select:
                  struct(p, [
                    :id,
+                   :title,
+                   :reference_url,
                    :storage_key,
                    :size_bytes,
                    :sha256,
@@ -75,6 +77,7 @@ defmodule Textbin.Pastes do
                  ]),
                order_by: [desc: p.inserted_at]
            )
+           |> preload_author()
          end) do
       {:ok, pastes} ->
         pastes
@@ -83,6 +86,11 @@ defmodule Textbin.Pastes do
         []
     end
   end
+
+  @doc """
+  Loads the author so lists and headings can name who created a paste.
+  """
+  def preload_author(paste_or_pastes), do: Repo.preload(paste_or_pastes, :created_by_user)
 
   def get_paste(%Scope{user: %User{}} = scope, id) when is_binary(id) do
     with {:ok, paste_id} <- Ecto.UUID.cast(id),
@@ -164,7 +172,10 @@ defmodule Textbin.Pastes do
 
   def create_paste(%Scope{user: %User{} = user} = scope, attrs \\ %{}) do
     with {:ok, workspace} <- authorized_workspace(scope) do
-      attrs = attrs_with_defaults(attrs, user, ContentType.text_safe?(attr_data(attrs)))
+      attrs =
+        attrs
+        |> attrs_with_defaults(user, ContentType.text_safe?(attr_data(attrs)))
+
       paste = new_paste(user, workspace.id)
 
       changeset =
@@ -172,6 +183,7 @@ defmodule Textbin.Pastes do
         |> Paste.changeset(attrs)
         |> validate_audience(workspace)
         |> validate_data_size()
+        |> with_derived_title(fn -> Paste.derive_title(attr_data(attrs)) end)
 
       if changeset.valid? do
         store_paste(scope, changeset)
@@ -199,6 +211,11 @@ defmodule Textbin.Pastes do
         |> Paste.changeset(attrs)
         |> validate_audience(workspace)
         |> validate_uploaded_file(path, metadata)
+        |> with_derived_title(fn ->
+          # Validate the upload size first, bounding even a single long line by
+          # the paste limit; do not load the entire file just to find its title.
+          path |> File.stream!() |> Enum.find_value(&Paste.derive_title/1)
+        end)
 
       if changeset.valid? do
         store_paste_file(scope, changeset, path, metadata)
@@ -670,6 +687,17 @@ defmodule Textbin.Pastes do
   end
 
   defp attr_data(attrs), do: Map.get(attrs, "data") || Map.get(attrs, :data)
+
+  # Only creation derives a title. Live validation leaves the field alone so the
+  # form does not overwrite what the person is typing.
+  defp with_derived_title(changeset, derive) do
+    if changeset.valid? and is_nil(Ecto.Changeset.get_field(changeset, :title)) and
+         ContentType.textual?(Ecto.Changeset.get_field(changeset, :content_type)) do
+      Ecto.Changeset.put_change(changeset, :title, derive.())
+    else
+      changeset
+    end
+  end
 
   defp attrs_with_default_ttl(attrs, user) do
     if ttl_provided?(attrs) do

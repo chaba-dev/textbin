@@ -92,6 +92,35 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert_millisecond_timestamp(updated_at)
     end
 
+    test "stores and returns a title and reference link", %{conn: conn} do
+      conn =
+        post(conn, ~p"/api/v1/pastes", %{
+          "data" => "some data",
+          "title" => "Compose override",
+          "reference_url" => "https://tracker.example.com/INC-2041"
+        })
+
+      assert %{
+               "id" => id,
+               "title" => "Compose override",
+               "reference_url" => "https://tracker.example.com/INC-2041"
+             } = json_response(conn, 201)["data"]
+
+      conn = get(conn, ~p"/api/v1/pastes/#{id}")
+
+      assert %{
+               "title" => "Compose override",
+               "reference_url" => "https://tracker.example.com/INC-2041"
+             } = json_response(conn, 200)["data"]
+    end
+
+    test "derives a title from the first line when none is given", %{conn: conn} do
+      conn = post(conn, ~p"/api/v1/pastes", %{"data" => "first line\nsecond line"})
+
+      assert %{"title" => "first line", "reference_url" => nil} =
+               json_response(conn, 201)["data"]
+    end
+
     test "renders paste from flat JSON data", %{conn: conn, scope: scope} do
       conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 
@@ -126,6 +155,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
       assert response_data["syntax_highlight"] == "plain"
+      assert response_data["title"] == "streamed data"
       assert is_nil(response_data["expires_at"])
       refute Map.has_key?(response_data, "data")
       assert_stored_paste(scope, id, "streamed data", "plain")
@@ -137,6 +167,35 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert {:ok, %{mode: mode}} = File.stat(upload_tmp_dir)
       assert Bitwise.band(mode, 0o777) == 0o700
       assert File.ls!(upload_tmp_dir) == []
+    end
+
+    test "raw uploads derive titles and accept title/reference-only parameters", %{
+      conn: conn,
+      scope: scope
+    } do
+      reference = "https://example.com/issue"
+
+      for size <- [100, 8_193],
+          params <- [
+            %{},
+            %{"title" => "Explicit"},
+            %{"reference_url" => reference},
+            %{"title" => "Explicit", "reference_url" => reference}
+          ] do
+        body = "\n \r\n  first line  \r\n" <> String.duplicate("x", size)
+
+        response =
+          conn
+          |> put_req_header("content-type", "text/plain")
+          |> post("/api/v1/pastes?" <> URI.encode_query(params), body)
+          |> json_response(201)
+
+        assert response["data"]["title"] == Map.get(params, "title", "first line")
+        assert response["data"]["reference_url"] == params["reference_url"]
+        paste = Pastes.get_paste!(scope, response["data"]["id"])
+        assert paste.title == Map.get(params, "title", "first line")
+        assert paste.data == body
+      end
     end
 
     test "renders paste from raw request body with syntax highlight", %{conn: conn, scope: scope} do

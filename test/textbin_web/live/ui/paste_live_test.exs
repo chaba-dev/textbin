@@ -67,7 +67,11 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
   test "lists scoped pastes", %{conn: conn, scope: scope, user: user} do
     {:ok, paste} =
-      Pastes.create_paste(scope, %{data: "live paste data", syntax_highlight: "elixir"})
+      Pastes.create_paste(scope, %{
+        data: "live paste data",
+        title: "Live paste",
+        syntax_highlight: "elixir"
+      })
 
     {:ok, other_paste} =
       Pastes.create_paste(user_scope_fixture(), %{data: "other user data"})
@@ -82,13 +86,78 @@ defmodule TextbinWeb.UI.PasteLiveTest do
              "#organization-menu a[href='/o/#{organization.slug}']"
            )
 
-    assert has_element?(view, "##{stream_id(paste)}", paste.id)
+    assert has_element?(view, "#paste-title-#{paste.id}", "Live paste")
+    assert has_element?(view, "#paste-author-#{paste.id}", "You")
+    refute has_element?(view, "##{stream_id(paste)}", paste.id)
     assert has_element?(view, "##{stream_id(paste)}", "elixir")
     assert has_element?(view, "#paste-audience-#{paste.id}", "Workspace")
     assert has_element?(view, "#paste-expires-at-#{paste.id}", "Never expires")
     assert has_element?(view, "##{stream_id(paste)} a[href='#{path}/#{paste.id}']")
     refute has_element?(view, "##{stream_id(paste)}", "live paste data")
     refute has_element?(view, "##{stream_id(other_paste)}")
+  end
+
+  test "shows the derived title, author and reference on the detail page", %{
+    conn: conn,
+    scope: scope,
+    user: user
+  } do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{
+        data: "nginx 502s after deploy\n2026/10/10 08:41:02 [error]",
+        reference_url: "https://tracker.example.com/INC-2041"
+      })
+
+    {path, _live} = live_personal_workspace(conn, user)
+    {:ok, view, _html} = live(conn, "#{path}/#{paste.id}")
+
+    assert has_element?(view, "#paste-title", "nginx 502s after deploy")
+    assert has_element?(view, "#paste-author", "You")
+    assert has_element?(view, "#paste-reference[href='https://tracker.example.com/INC-2041']")
+  end
+
+  test "shared attribution keeps account emails inside the workspace", %{scope: scope} do
+    outsider = user_fixture()
+    member = user_fixture()
+    organization = Organizations.get_personal_organization!(scope.user)
+    {:ok, _memberships} = Organizations.add_organization_member(scope, organization, member)
+
+    for audience <- ["unlisted", "public"] do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "shared content", audience: audience})
+
+      for viewer <- [build_conn(), log_in_user(build_conn(), outsider)] do
+        {:ok, view, _html} = live(viewer, ~p"/pastes/#{paste.id}")
+        assert has_element?(view, "#paste-author", "Registered user")
+        refute has_element?(view, "#paste-author", scope.user.email)
+      end
+
+      {:ok, view, _html} = live(log_in_user(build_conn(), member), ~p"/pastes/#{paste.id}")
+      assert has_element?(view, "#paste-author", scope.user.email)
+    end
+  end
+
+  test "creates a paste with a typed title from the form", %{
+    conn: conn,
+    scope: scope,
+    user: user
+  } do
+    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
+
+    view
+    |> form("#paste-form", %{
+      "paste" => %{
+        "title" => "Typed title",
+        "data" => "the first line would otherwise be the title",
+        "syntax_highlight" => "plain",
+        "expires_in" => "never"
+      }
+    })
+    |> render_submit()
+
+    assert [paste] = Pastes.list_pastes(scope)
+    assert paste.title == "Typed title"
+    assert has_element?(view, "#paste-title-#{paste.id}", "Typed title")
+    assert has_element?(view, "#paste-author-#{paste.id}", "You")
   end
 
   test "renders an empty state", %{conn: conn, user: user} do
@@ -333,7 +402,8 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
 
-    assert has_element?(view, "h1", paste.id)
+    assert has_element?(view, "#paste-title", "individual paste data")
+    assert has_element?(view, "#paste-id", paste.id)
     assert has_element?(view, "span", "json")
     assert has_element?(view, "#paste-audience", "Workspace")
     assert has_element?(view, "#paste-expires-at", "Never expires")
