@@ -53,13 +53,15 @@ defmodule Textbin.Administration do
          workspaces: Repo.aggregate(Workspace, :count),
          active_pastes:
            Repo.aggregate(
-             from(p in Paste, where: is_nil(p.expires_at) or p.expires_at > ^now),
+             from(p in Paste,
+               where: is_nil(p.removed_at) and (is_nil(p.expires_at) or p.expires_at > ^now)
+             ),
              :count
            ),
          active_paste_bytes:
            Repo.one(
              from p in Paste,
-               where: is_nil(p.expires_at) or p.expires_at > ^now,
+               where: is_nil(p.removed_at) and (is_nil(p.expires_at) or p.expires_at > ^now),
                select:
                  fragment(
                    "COALESCE(SUM(COALESCE(?, octet_length(?), 0)), 0)::bigint",
@@ -108,7 +110,7 @@ defmodule Textbin.Administration do
             paste.audience == "public" and workspace.external_sharing_policy == "public" and
               is_nil(workspace.deletion_requested_at) and
               is_nil(organization.deletion_requested_at) and
-              (is_nil(paste.expires_at) or paste.expires_at > ^now),
+              is_nil(paste.removed_at) and (is_nil(paste.expires_at) or paste.expires_at > ^now),
           order_by: [desc: paste.inserted_at, desc: paste.id],
           limit: ^(limit + 1),
           offset: ^offset,
@@ -144,7 +146,7 @@ defmodule Textbin.Administration do
           where:
             is_nil(workspace.deletion_requested_at) and
               is_nil(organization.deletion_requested_at) and
-              (is_nil(paste.expires_at) or paste.expires_at > ^now),
+              is_nil(paste.removed_at) and (is_nil(paste.expires_at) or paste.expires_at > ^now),
           order_by: [
             desc_nulls_last: paste.size_bytes,
             desc: paste.inserted_at,
@@ -543,9 +545,15 @@ defmodule Textbin.Administration do
     now = Paste.utc_now_ms()
 
     with %Paste{} = paste <- lock_active_paste(paste_id, now),
+         # Moderated pastes skip the recovery window: the purge hard-deletes
+         # them on its next run and they never appear under Deleted.
          {:ok, expired_paste} <-
            paste
-           |> Ecto.Changeset.change(expires_at: now)
+           |> Ecto.Changeset.change(
+             removed_at: now,
+             removal_reason: "moderated",
+             removed_by_user_id: actor.id
+           )
            |> Repo.update(),
          :ok <-
            record_paste_audit(
@@ -803,7 +811,7 @@ defmodule Textbin.Administration do
       from paste in Paste,
         where:
           paste.id == ^paste_id and
-            (is_nil(paste.expires_at) or paste.expires_at > ^now),
+            is_nil(paste.removed_at) and (is_nil(paste.expires_at) or paste.expires_at > ^now),
         lock: "FOR UPDATE"
     )
   end

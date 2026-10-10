@@ -1486,7 +1486,8 @@ defmodule Textbin.Organizations do
   defp record_workspace_setting_audits(organization_id, actor_user_id, previous, updated) do
     [
       {:visibility, "workspace.visibility_changed"},
-      {:external_sharing_policy, "workspace.external_sharing_policy_changed"}
+      {:external_sharing_policy, "workspace.external_sharing_policy_changed"},
+      {:recovery_window_days, "workspace.recovery_window_changed"}
     ]
     |> Enum.reduce_while(:ok, fn {field, action}, :ok ->
       case record_workspace_setting_audit(

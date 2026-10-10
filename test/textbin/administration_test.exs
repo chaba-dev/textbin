@@ -344,7 +344,7 @@ defmodule Textbin.AdministrationTest do
       %{admin: admin, scope: admin_scope(admin), owner_scope: owner_scope}
     end
 
-    test "expires and audits the paste before retryable storage cleanup", context do
+    test "takes the paste down and audits it before retryable storage cleanup", context do
       original_storage = Application.fetch_env!(:textbin, Textbin.Storage)
 
       on_exit(fn -> Application.put_env(:textbin, Textbin.Storage, original_storage) end)
@@ -360,7 +360,7 @@ defmodule Textbin.AdministrationTest do
         opts: [test_pid: self(), delegate: original_storage]
       )
 
-      assert {:ok, %Paste{expires_at: %DateTime{}}} =
+      assert {:ok, %Paste{removal_reason: "moderated", removed_at: %DateTime{}}} =
                Administration.delete_paste(context.scope, paste.id, "malware distribution",
                  request_id: "request-456"
                )
@@ -382,7 +382,7 @@ defmodule Textbin.AdministrationTest do
                )
 
       assert target_id == paste.id
-      assert Pastes.delete_expired_pastes(limit: 1) == 0
+      assert Pastes.purge_removed_pastes(limit: 1) == 0
       assert_receive {:storage_delete_failed, storage_key}
       assert storage_key == paste.storage_key
       assert Repo.get(Paste, paste.id)

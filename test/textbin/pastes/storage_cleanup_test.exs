@@ -41,33 +41,36 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     expire!(paste)
     block_storage_deletes!(context.blocked_root)
 
-    log = capture_log(fn -> assert Pastes.delete_expired_pastes(limit: 1) == 0 end)
+    log = capture_log(fn -> assert Pastes.purge_removed_pastes(limit: 1) == 0 end)
     assert log =~ "Failed to delete stored paste content: :enotdir"
     assert Repo.get(Paste, paste.id)
 
     use_storage_root(context.root)
 
-    assert Pastes.delete_expired_pastes(limit: 1) == 1
+    assert Pastes.purge_removed_pastes(limit: 1) == 1
     refute Repo.get(Paste, paste.id)
     assert Storage.get(paste.storage_key) == {:error, :enoent}
   end
 
-  test "manual deletion leaves an invisible tombstone when storage is unavailable", context do
+  test "deleting keeps content for restore and Delete now retries storage failures", context do
     {:ok, paste} = Pastes.create_paste(context.scope, %{data: "retry manual deletion"})
     block_storage_deletes!(context.blocked_root)
 
+    assert {:ok, _paste} = Pastes.delete_paste(context.scope, paste)
+    refute Pastes.get_paste(context.scope, paste.id)
+
     log =
       capture_log(fn ->
-        assert {:error, :enotdir} = Pastes.delete_paste(context.scope, paste)
+        assert {:error, :enotdir} = Pastes.purge_paste(context.scope, paste.id)
       end)
 
     assert log =~ "Failed to delete stored paste content: :enotdir"
-    refute Pastes.get_paste(context.scope, paste.id)
     assert Repo.get(Paste, paste.id)
 
     use_storage_root(context.root)
-    assert Pastes.delete_expired_pastes(limit: 1) == 1
+    assert {:ok, _paste} = Pastes.purge_paste(context.scope, paste.id)
     refute Repo.get(Paste, paste.id)
+    assert Storage.get(paste.storage_key) == {:error, :enoent}
   end
 
   test "blob reads reject same-size content with the wrong checksum", context do
@@ -254,7 +257,7 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     assert {:ok, _workspace} = deletion_result
   end
 
-  test "manual deletion succeeds when expiration cleanup wins the hard-delete race", context do
+  test "Delete now succeeds when the cleaner wins the hard-delete race", context do
     {:ok, gate} = Agent.start_link(fn -> true end)
     delegate = Application.fetch_env!(:textbin, Storage)
 
@@ -264,11 +267,12 @@ defmodule Textbin.Pastes.StorageCleanupTest do
     )
 
     {:ok, paste} = Pastes.create_paste(context.scope, %{data: "concurrent cleanup"})
+    {:ok, _paste} = Pastes.delete_paste(context.scope, paste)
 
     deletion =
       Task.async(fn ->
         receive do
-          :delete -> Pastes.delete_paste(context.scope, paste)
+          :delete -> Pastes.purge_paste(context.scope, paste.id)
         end
       end)
 
@@ -277,7 +281,9 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
     assert_receive {:storage_delete_blocked, deleting_pid, storage_key}, 1_000
     assert storage_key == paste.storage_key
-    assert Pastes.delete_expired_pastes(limit: 1) == 1
+
+    after_window = DateTime.add(Paste.utc_now_ms(), 31, :day)
+    assert Pastes.purge_removed_pastes(now: after_window, limit: 1) == 1
 
     send(deleting_pid, {:continue_storage_delete, storage_key})
 
@@ -288,7 +294,7 @@ defmodule Textbin.Pastes.StorageCleanupTest do
 
   defp expire!(paste) do
     paste
-    |> Ecto.Changeset.change(expires_at: DateTime.add(Paste.utc_now_ms(), -1, :second))
+    |> Ecto.Changeset.change(expires_at: DateTime.add(Paste.utc_now_ms(), -31, :day))
     |> Repo.update!()
   end
 

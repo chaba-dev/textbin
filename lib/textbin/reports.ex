@@ -67,9 +67,9 @@ defmodule Textbin.Reports do
         on: workspace.id == paste.workspace_id,
         join: organization in Organization,
         on: organization.id == workspace.organization_id,
+        where: is_nil(paste.removed_at),
         where:
-          paste.id == ^paste_id and
-            (is_nil(paste.expires_at) or paste.expires_at > ^now) and
+          paste.id == ^paste_id and (is_nil(paste.expires_at) or paste.expires_at > ^now) and
             is_nil(workspace.deletion_requested_at) and
             is_nil(organization.deletion_requested_at) and
             ((paste.audience == "unlisted" and

@@ -733,7 +733,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> render_click()
 
     assert_redirect(view, personal_workspace_path(owner_scope.user))
-    refute Repo.get(Paste, paste.id)
+    assert %Paste{removal_reason: "deleted"} = Repo.get(Paste, paste.id)
   end
 
   test "workspace member deletes their own paste from the detail page", %{scope: owner_scope} do
@@ -762,7 +762,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> render_click()
 
     assert_redirect(view, personal_workspace_path(owner_scope.user))
-    refute Repo.get(Paste, paste.id)
+    assert %Paste{removal_reason: "deleted"} = Repo.get(Paste, paste.id)
   end
 
   test "workspace member cannot delete another member's paste", %{scope: owner_scope} do

@@ -148,6 +148,7 @@ defmodule Textbin.ReportsTest do
     assert Repo.get!(Report, report.id).reporter_user_id == context.reporter_scope.user.id
 
     assert {:ok, _paste} = Pastes.delete_paste(context.owner_scope, paste)
+    assert {:ok, _paste} = Pastes.purge_paste(context.owner_scope, paste.id)
     refute Repo.get(Paste, paste.id)
     assert Repo.get!(Report, report.id).paste_id == paste.id
   end

@@ -211,6 +211,7 @@ defmodule TextbinWeb.UI.AuditLogLive do
   defp event_title("workspace.external_sharing_policy_changed"),
     do: "External sharing policy changed"
 
+  defp event_title("workspace.recovery_window_changed"), do: "Recovery window changed"
   defp event_title("workspace.recovery_access_granted"), do: "Workspace access recovered"
   defp event_title("organization.membership.added"), do: "Organization member added"
   defp event_title("organization.membership.removed"), do: "Organization member removed"
@@ -295,6 +296,12 @@ defmodule TextbinWeb.UI.AuditLogLive do
          metadata: %{"old" => old, "new" => new}
        }),
        do: "Changed external sharing from #{old} to #{new}."
+
+  defp event_description(%AuditEvent{
+         action: "workspace.recovery_window_changed",
+         metadata: %{"old" => old, "new" => new}
+       }),
+       do: "Changed how long removed pastes stay restorable from #{old} to #{new} days."
 
   defp event_description(%AuditEvent{
          action: "workspace.recovery_access_granted",

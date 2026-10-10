@@ -706,41 +706,139 @@ defmodule Textbin.PastesTest do
       assert {:error, :not_found} = Pastes.delete_paste(member_scope, owner_paste)
       assert {:ok, _paste} = Pastes.delete_paste(owner_scope, member_paste)
       assert Repo.get(Paste, owner_paste.id)
-      refute Repo.get(Paste, member_paste.id)
+      assert %Paste{removal_reason: "deleted"} = Repo.get(Paste, member_paste.id)
     end
 
-    test "delete_expired_pastes/1 deletes the oldest expired rows in bounded batches", %{
+    test "removed pastes are listed with their reason and can be restored", %{scope: scope} do
+      {:ok, deleted} = Pastes.create_paste(scope, %{data: "deleted one", expires_in: "1h"})
+      {:ok, _} = Pastes.delete_paste(scope, deleted)
+      expired = insert_paste!(scope, "expired one", DateTime.add(Paste.utc_now_ms(), -1, :day))
+
+      moderated =
+        scope
+        |> insert_paste!("moderated one", nil)
+        |> Ecto.Changeset.change(removed_at: Paste.utc_now_ms(), removal_reason: "moderated")
+        |> Repo.update!()
+
+      {:ok, active} = Pastes.create_paste(scope, %{data: "still here"})
+
+      removed = Pastes.list_removed_pastes(scope)
+      assert Enum.map(removed, & &1.id) |> Enum.sort() == Enum.sort([deleted.id, expired.id])
+      assert Enum.find(removed, &(&1.id == deleted.id)).removed_by_user.id == scope.user.id
+      assert Paste.removal_reason(Enum.find(removed, &(&1.id == expired.id))) == "expired"
+      refute Enum.any?(removed, &(&1.id in [moderated.id, active.id]))
+
+      assert %Paste{id: id} = Pastes.get_removed_paste(scope, deleted.id)
+      assert id == deleted.id
+      refute Pastes.get_removed_paste(scope, moderated.id)
+
+      assert {:ok, restored} = Pastes.restore_paste(scope, deleted.id)
+      assert restored.removed_at == nil and restored.removal_reason == nil
+      assert DateTime.after?(restored.expires_at, DateTime.utc_now())
+      assert Pastes.get_paste(scope, deleted.id)
+
+      # An expired paste comes back without its expiry so it does not vanish again.
+      assert {:ok, %Paste{expires_at: nil}} = Pastes.restore_paste(scope, expired.id)
+      assert Pastes.get_paste(scope, expired.id)
+
+      assert {:error, :not_found} = Pastes.restore_paste(scope, moderated.id)
+      assert {:error, :not_found} = Pastes.restore_paste(scope, active.id)
+    end
+
+    test "only people who manage a paste can restore it or delete it now", %{scope: owner_scope} do
+      member = user_fixture()
+      organization = Organizations.get_personal_organization!(owner_scope.user)
+      workspace = personal_workspace_fixture(owner_scope.user)
+      {:ok, _} = Organizations.add_organization_member(owner_scope, organization, member)
+
+      {:ok, member_scope} =
+        Organizations.resolve_workspace_scope(user_scope_fixture(member), workspace)
+
+      {:ok, owner_scope} = Organizations.resolve_workspace_scope(owner_scope, workspace)
+      {:ok, paste} = Pastes.create_paste(owner_scope, %{data: "owner paste"})
+      {:ok, _} = Pastes.delete_paste(owner_scope, paste)
+
+      assert [%Paste{}] = Pastes.list_removed_pastes(member_scope)
+      refute Pastes.get_removed_paste(member_scope, paste.id)
+      assert {:error, :not_found} = Pastes.restore_paste(member_scope, paste.id)
+      assert {:error, :not_found} = Pastes.purge_paste(member_scope, paste.id)
+      assert Repo.get(Paste, paste.id)
+
+      assert {:ok, _} = Pastes.purge_paste(owner_scope, paste.id)
+      refute Repo.get(Paste, paste.id)
+    end
+
+    test "deleting an already removed paste is not found", %{scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "once"})
+      assert {:ok, _} = Pastes.delete_paste(scope, paste)
+      assert {:error, :not_found} = Pastes.delete_paste(scope, paste)
+    end
+
+    test "purge_removed_pastes/1 waits out the recovery window, oldest first", %{
       scope: scope
     } do
       now = Paste.utc_now_ms()
+      days_ago = fn days -> DateTime.add(now, -days, :day) end
 
-      oldest_expired =
-        insert_paste!(scope, "oldest expired", DateTime.add(now, -2, :second))
-
-      newly_expired = insert_paste!(scope, "newly expired", now)
+      long_expired = insert_paste!(scope, "long expired", days_ago.(31))
+      deleted_long_ago = remove!(insert_paste!(scope, "deleted long ago", nil), days_ago.(30))
+      recently_expired = insert_paste!(scope, "recently expired", days_ago.(1))
+      recently_deleted = remove!(insert_paste!(scope, "recently deleted", nil), days_ago.(2))
       active = insert_paste!(scope, "active", DateTime.add(now, 1, :hour))
       never_expires = insert_paste!(scope, "never", nil)
 
-      assert Pastes.delete_expired_pastes(now: now, limit: 1) == 1
-      refute Repo.get(Paste, oldest_expired.id)
-      assert Repo.get(Paste, newly_expired.id)
+      assert Pastes.purge_removed_pastes(now: now, limit: 1) == 1
+      refute Repo.get(Paste, long_expired.id)
+      assert Repo.get(Paste, deleted_long_ago.id)
 
-      assert Pastes.delete_expired_pastes(now: now, limit: 1) == 1
-      refute Repo.get(Paste, newly_expired.id)
-      assert Repo.get(Paste, active.id)
-      assert Repo.get(Paste, never_expires.id)
+      assert Pastes.purge_removed_pastes(now: now, limit: 10) == 1
+      refute Repo.get(Paste, deleted_long_ago.id)
 
-      assert Pastes.delete_expired_pastes(now: now, limit: 1) == 0
+      for kept <- [recently_expired, recently_deleted, active, never_expires] do
+        assert Repo.get(Paste, kept.id)
+      end
     end
 
-    test "delete_expired_pastes/1 rejects invalid batch limits" do
+    test "purge_removed_pastes/1 follows each workspace's recovery window", %{scope: scope} do
+      workspace = personal_workspace_fixture(scope.user)
+
+      {:ok, _workspace} =
+        Organizations.change_workspace_settings(scope, workspace, %{recovery_window_days: 7})
+
+      now = Paste.utc_now_ms()
+      expired = insert_paste!(scope, "expired 8 days ago", DateTime.add(now, -8, :day))
+
+      assert Pastes.purge_removed_pastes(now: now) == 1
+      refute Repo.get(Paste, expired.id)
+    end
+
+    test "purge_removed_pastes/1 removes moderated pastes without a recovery window", %{
+      scope: scope
+    } do
+      paste =
+        scope
+        |> insert_paste!("taken down", nil)
+        |> Ecto.Changeset.change(removed_at: Paste.utc_now_ms(), removal_reason: "moderated")
+        |> Repo.update!()
+
+      assert Pastes.purge_removed_pastes() == 1
+      refute Repo.get(Paste, paste.id)
+    end
+
+    test "purge_removed_pastes/1 rejects invalid batch limits" do
       assert_raise ArgumentError, ":limit must be a positive integer", fn ->
-        Pastes.delete_expired_pastes(limit: 0)
+        Pastes.purge_removed_pastes(limit: 0)
       end
     end
 
     test "change_paste/3 returns a paste changeset", %{scope: scope} do
       assert %Ecto.Changeset{} = Pastes.change_paste(scope, %Paste{})
+    end
+
+    defp remove!(paste, removed_at) do
+      paste
+      |> Ecto.Changeset.change(removed_at: removed_at, removal_reason: "deleted")
+      |> Repo.update!()
     end
 
     defp insert_paste!(scope, data, expires_at) do

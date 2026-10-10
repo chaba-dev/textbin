@@ -39,7 +39,7 @@ defmodule Textbin.Pastes do
       Repo.all(
         from p in Paste,
           where:
-            p.workspace_id == ^workspace.id and
+            p.workspace_id == ^workspace.id and is_nil(p.removed_at) and
               (is_nil(p.expires_at) or p.expires_at > ^now),
           order_by: [desc: p.inserted_at]
       )
@@ -56,7 +56,7 @@ defmodule Textbin.Pastes do
            Repo.all(
              from p in Paste,
                where:
-                 p.workspace_id == ^workspace.id and
+                 p.workspace_id == ^workspace.id and is_nil(p.removed_at) and
                    (is_nil(p.expires_at) or p.expires_at > ^now),
                select:
                  struct(p, [
@@ -102,7 +102,7 @@ defmodule Textbin.Pastes do
                from p in Paste,
                  where:
                    p.id == ^paste_id and p.workspace_id == ^workspace.id and
-                     (is_nil(p.expires_at) or p.expires_at > ^now)
+                     is_nil(p.removed_at) and (is_nil(p.expires_at) or p.expires_at > ^now)
              )
              |> load_data()
            end) do
@@ -166,6 +166,7 @@ defmodule Textbin.Pastes do
 
     Paste
     |> where([paste], paste.id == ^paste_id)
+    |> where([paste], is_nil(paste.removed_at))
     |> where([paste], is_nil(paste.expires_at) or paste.expires_at > ^now)
     |> allow_shared_access(current_scope)
   end
@@ -225,12 +226,22 @@ defmodule Textbin.Pastes do
     end
   end
 
-  def delete_paste(%Scope{user: %User{}} = scope, %Paste{} = paste) do
-    # Expired rows are invisible to normal reads and give cleanup a durable key
-    # to retry if storage is temporarily unavailable.
-    with {:ok, expired_paste} <- expire_manageable_paste(scope, paste.id),
-         :ok <- delete_stored_data(expired_paste) do
-      Repo.delete(expired_paste, allow_stale: true)
+  @doc """
+  Removes a paste the caller manages. The row and its content stay put so it
+  can be restored from the workspace's Deleted tab until the recovery window
+  ends; every shared link stops working immediately.
+  """
+  def delete_paste(%Scope{user: %User{} = user} = scope, %Paste{} = paste) do
+    case Ecto.UUID.cast(paste.id) do
+      {:ok, paste_id} ->
+        paste_id
+        |> manageable_paste_query(user.id)
+        |> scope_to_workspace(scope)
+        |> active_pastes(Paste.utc_now_ms())
+        |> remove_paste_matching(user)
+
+      :error ->
+        {:error, :not_found}
     end
   end
 
@@ -239,13 +250,16 @@ defmodule Textbin.Pastes do
   def delete_personal_paste(%Scope{user: %User{} = user}, %Paste{} = paste) do
     workspace_id = personal_workspace_id(user)
 
-    query =
-      from candidate in Paste,
-        where: candidate.id == ^paste.id and candidate.workspace_id == ^workspace_id
+    case Ecto.UUID.cast(paste.id) do
+      {:ok, paste_id} ->
+        from(candidate in Paste,
+          where: candidate.id == ^paste_id and candidate.workspace_id == ^workspace_id
+        )
+        |> active_pastes(Paste.utc_now_ms())
+        |> remove_paste_matching(user)
 
-    with {:ok, expired_paste} <- expire_paste_matching(query),
-         :ok <- delete_stored_data(expired_paste) do
-      Repo.delete(expired_paste, allow_stale: true)
+      :error ->
+        {:error, :not_found}
     end
   end
 
@@ -259,37 +273,179 @@ defmodule Textbin.Pastes do
 
   def manage_paste?(_scope, _paste), do: false
 
-  defp expire_manageable_paste(%Scope{user: %User{id: user_id}} = scope, paste_id) do
-    case Ecto.UUID.cast(paste_id) do
-      {:ok, paste_id} ->
-        query = manageable_paste_query(paste_id, user_id)
+  @doc """
+  Lists the workspace's removed pastes that can still be restored, newest
+  removal first. Content is not loaded.
+  """
+  def list_removed_pastes(%Scope{user: %User{}} = scope) do
+    case with_locked_read_workspace(scope, fn workspace ->
+           now = Paste.utc_now_ms()
 
-        query =
-          case scope do
-            %Scope{workspace: %{id: workspace_id}} ->
-              where(query, [paste], paste.workspace_id == ^workspace_id)
-
-            _scope ->
-              query
-          end
-
-        expire_paste_matching(query)
-
-      :error ->
-        {:error, :not_found}
+           from(p in Paste,
+             where: p.workspace_id == ^workspace.id,
+             order_by: [
+               desc: fragment("coalesce(?, ?)", p.removed_at, p.expires_at),
+               desc: p.id
+             ],
+             select:
+               struct(p, [
+                 :id,
+                 :title,
+                 :content_type,
+                 :syntax_highlight,
+                 :audience,
+                 :expires_at,
+                 :removed_at,
+                 :removal_reason,
+                 :removed_by_user_id,
+                 :workspace_id,
+                 :created_by_user_id,
+                 :inserted_at,
+                 :updated_at
+               ])
+           )
+           |> restorable_pastes(workspace, now)
+           |> Repo.all()
+           |> Repo.preload([:created_by_user, :removed_by_user])
+         end) do
+      {:ok, pastes} -> pastes
+      {:error, :not_found} -> []
     end
   end
 
-  defp expire_paste_matching(query) do
-    Repo.transact(fn ->
-      paste =
-        query
-        |> lock("FOR UPDATE")
-        |> Repo.one()
+  def list_removed_pastes(_scope), do: []
 
-      case paste do
-        %Paste{} -> expire_paste(paste)
-        nil -> {:error, :not_found}
+  @doc """
+  Returns a removed paste the caller could restore, for the page a removed
+  paste's link shows its owner. Content is not loaded.
+  """
+  def get_removed_paste(%Scope{user: %User{id: user_id}} = scope, id) when is_binary(id) do
+    with {:ok, paste_id} <- Ecto.UUID.cast(id),
+         {:ok, workspace} <- authorized_workspace(scope) do
+      paste_id
+      |> manageable_paste_query(user_id)
+      |> where([paste], paste.workspace_id == ^workspace.id)
+      |> restorable_pastes(workspace, Paste.utc_now_ms())
+      |> Repo.one()
+      |> Repo.preload([:created_by_user, :removed_by_user])
+    else
+      _error -> nil
+    end
+  end
+
+  def get_removed_paste(_scope, _id), do: nil
+
+  @doc """
+  Brings a removed paste back. Restoring an expired paste clears its expiry,
+  because otherwise it would disappear again at once.
+  """
+  def restore_paste(%Scope{user: %User{}} = scope, paste_id) when is_binary(paste_id) do
+    case Ecto.UUID.cast(paste_id) do
+      {:ok, paste_id} -> Repo.transact(fn -> restore_paste_in_transaction(scope, paste_id) end)
+      :error -> {:error, :not_found}
+    end
+  end
+
+  def restore_paste(_scope, _paste_id), do: {:error, :not_found}
+
+  @doc """
+  Hard-deletes a removed paste right away instead of waiting for the end of
+  the recovery window. Active pastes must be deleted first.
+  """
+  def purge_paste(%Scope{user: %User{id: user_id}} = scope, paste_id) when is_binary(paste_id) do
+    with {:ok, paste_id} <- Ecto.UUID.cast(paste_id),
+         {:ok, workspace} <- authorized_workspace(scope),
+         %Paste{} = paste <-
+           paste_id
+           |> manageable_paste_query(user_id)
+           |> where([paste], paste.workspace_id == ^workspace.id)
+           |> restorable_pastes(workspace, Paste.utc_now_ms())
+           |> Repo.one(),
+         :ok <- delete_stored_data(paste) do
+      Repo.delete(paste, allow_stale: true)
+    else
+      {:error, _reason} = error -> error
+      _not_found -> {:error, :not_found}
+    end
+  end
+
+  def purge_paste(_scope, _paste_id), do: {:error, :not_found}
+
+  defp restore_paste_in_transaction(%Scope{user: %User{id: user_id}} = scope, paste_id) do
+    now = Paste.utc_now_ms()
+
+    with {:ok, workspace} <- lock_authorized_workspace(scope, scope_workspace_id(scope)),
+         %Paste{} = paste <-
+           paste_id
+           |> manageable_paste_query(user_id)
+           |> where([paste], paste.workspace_id == ^workspace.id)
+           |> restorable_pastes(workspace, now)
+           |> lock("FOR UPDATE")
+           |> Repo.one() do
+      paste
+      |> Ecto.Changeset.change(
+        removed_at: nil,
+        removal_reason: nil,
+        removed_by_user_id: nil,
+        expires_at: expiry_after_restore(paste.expires_at, now)
+      )
+      |> Repo.update()
+    else
+      _error -> {:error, :not_found}
+    end
+  end
+
+  defp expiry_after_restore(nil, _now), do: nil
+
+  defp expiry_after_restore(expires_at, now) do
+    if DateTime.after?(expires_at, now), do: expires_at, else: nil
+  end
+
+  defp scope_to_workspace(query, %Scope{workspace: %{id: workspace_id}}),
+    do: where(query, [paste], paste.workspace_id == ^workspace_id)
+
+  defp scope_to_workspace(query, _scope), do: query
+
+  defp active_pastes(query, now) do
+    where(
+      query,
+      [paste],
+      is_nil(paste.removed_at) and (is_nil(paste.expires_at) or paste.expires_at > ^now)
+    )
+  end
+
+  # Deleted or expired pastes still inside the workspace's recovery window.
+  # Moderated pastes never qualify.
+  defp restorable_pastes(query, %Workspace{recovery_window_days: window_days}, now) do
+    where(
+      query,
+      [paste],
+      ((not is_nil(paste.removed_at) and paste.removal_reason == "deleted") or
+         (is_nil(paste.removed_at) and paste.expires_at <= ^now)) and
+        fragment(
+          "coalesce(?, ?) + make_interval(days => ?) > ?",
+          paste.removed_at,
+          paste.expires_at,
+          ^window_days,
+          ^now
+        )
+    )
+  end
+
+  defp remove_paste_matching(query, %User{id: user_id}) do
+    Repo.transact(fn ->
+      case query |> lock("FOR UPDATE") |> Repo.one() do
+        %Paste{} = paste ->
+          paste
+          |> Ecto.Changeset.change(
+            removed_at: Paste.utc_now_ms(),
+            removal_reason: "deleted",
+            removed_by_user_id: user_id
+          )
+          |> Repo.update()
+
+        nil ->
+          {:error, :not_found}
       end
     end)
   end
@@ -306,13 +462,17 @@ defmodule Textbin.Pastes do
   end
 
   @doc """
-  Hard-deletes one bounded batch of expired pastes and returns the number deleted.
+  Hard-deletes one bounded batch of pastes whose time is up and returns the
+  number deleted:
 
-  Rows with an expiration equal to `:now` are considered expired. The oldest
-  expirations are selected first so a backlog is drained predictably.
+    * deleted or expired pastes once their workspace's recovery window ends
+    * moderated pastes, and every paste of a workspace being deleted, at once
+
+  The oldest removals are handled first so a backlog drains predictably. A
+  paste whose stored content cannot be deleted is kept and retried later.
   """
-  @spec delete_expired_pastes(keyword()) :: non_neg_integer()
-  def delete_expired_pastes(opts \\ []) do
+  @spec purge_removed_pastes(keyword()) :: non_neg_integer()
+  def purge_removed_pastes(opts \\ []) do
     now = Keyword.get_lazy(opts, :now, &Paste.utc_now_ms/0)
     limit = Keyword.get(opts, :limit, 500)
 
@@ -320,16 +480,30 @@ defmodule Textbin.Pastes do
       raise ArgumentError, ":limit must be a positive integer"
     end
 
-    expired_pastes =
+    due_pastes =
       Repo.all(
         from p in Paste,
-          where: not is_nil(p.expires_at) and p.expires_at <= ^now,
-          order_by: [asc: p.expires_at, asc: p.id],
+          join: w in Workspace,
+          on: w.id == p.workspace_id,
+          where:
+            not is_nil(w.deletion_requested_at) or p.removal_reason == "moderated" or
+              fragment(
+                "coalesce(?, ?) + make_interval(days => ?) <= ?",
+                p.removed_at,
+                p.expires_at,
+                w.recovery_window_days,
+                ^now
+              ),
+          order_by: [
+            asc:
+              fragment("coalesce(?, ?, ?)", p.removed_at, p.expires_at, w.deletion_requested_at),
+            asc: p.id
+          ],
           limit: ^limit
       )
 
     deletable_ids =
-      for paste <- expired_pastes, delete_stored_data(paste) == :ok, do: paste.id
+      for paste <- due_pastes, delete_stored_data(paste) == :ok, do: paste.id
 
     {deleted_count, nil} = Repo.delete_all(from p in Paste, where: p.id in ^deletable_ids)
 
@@ -592,12 +766,6 @@ defmodule Textbin.Pastes do
   end
 
   defp delete_stored_data(%Paste{storage_key: storage_key}), do: delete_storage_key(storage_key)
-
-  defp expire_paste(paste) do
-    paste
-    |> Ecto.Changeset.change(expires_at: Paste.utc_now_ms())
-    |> Repo.update()
-  end
 
   defp delete_storage_key(nil), do: :ok
 
