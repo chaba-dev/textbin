@@ -2,9 +2,9 @@ use base64::Engine as _;
 use reqwest::StatusCode;
 use reqwest::blocking::Body;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use serde::Deserialize;
-use serde::Deserializer;
 use serde::de::Error as _;
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::error;
 use std::fmt;
@@ -12,6 +12,17 @@ use std::io::Read;
 use std::net::IpAddr;
 
 const DEFAULT_TEXTBIN_URL: &str = "http://localhost:4400";
+
+/// Optional attributes for a new paste. Empty strings are treated as unset so
+/// callers can pass flags straight through.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CreateOptions<'a> {
+    pub title: Option<&'a str>,
+    pub reference_url: Option<&'a str>,
+    pub syntax_highlight: Option<&'a str>,
+    pub expires_in: Option<&'a str>,
+    pub visibility: Option<&'a str>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -141,6 +152,47 @@ impl Client {
         ensure_success(&url, response)
     }
 
+    /// Lists the caller's removed pastes that can still be restored.
+    pub fn list_removed_pastes(&self) -> Result<Vec<RemovedPaste>, Error> {
+        let url = format!("{}/api/v1/pastes/deleted", self.base_url);
+        let response = self
+            .authorize(self.http.get(&url))
+            .send()
+            .map_err(|source| Error::Request {
+                url: url.clone(),
+                source,
+            })?;
+
+        Ok(decode_response::<RemovedPastesResponse>(&url, response)?.data)
+    }
+
+    pub fn restore_paste(&self, id: &str) -> Result<CreatedPaste, Error> {
+        let url = format!("{}/api/v1/pastes/deleted/{id}/restore", self.base_url);
+        let response = self
+            .authorize(self.http.post(&url))
+            .send()
+            .map_err(|source| Error::Request {
+                url: url.clone(),
+                source,
+            })?;
+
+        Ok(decode_response::<CreateResponse>(&url, response)?.data)
+    }
+
+    /// Deletes a removed paste for good, before its recovery window ends.
+    pub fn purge_paste(&self, id: &str) -> Result<(), Error> {
+        let url = format!("{}/api/v1/pastes/deleted/{id}", self.base_url);
+        let response = self
+            .authorize(self.http.delete(&url))
+            .send()
+            .map_err(|source| Error::Request {
+                url: url.clone(),
+                source,
+            })?;
+
+        ensure_success(&url, response)
+    }
+
     pub fn paste_url(&self, id: &str) -> String {
         format!("{}/pastes/{id}", self.base_url)
     }
@@ -152,34 +204,28 @@ impl Client {
     pub fn create_paste(
         &self,
         data: String,
-        syntax_highlight: Option<&str>,
-        expires_in: Option<&str>,
-        visibility: Option<&str>,
+        options: &CreateOptions<'_>,
     ) -> Result<CreatedPaste, Error> {
-        self.create_paste_body(Body::from(data), syntax_highlight, expires_in, visibility)
+        self.create_paste_body(Body::from(data), options)
     }
 
     pub fn create_paste_stream<R>(
         &self,
         reader: R,
-        syntax_highlight: Option<&str>,
-        expires_in: Option<&str>,
-        visibility: Option<&str>,
+        options: &CreateOptions<'_>,
     ) -> Result<CreatedPaste, Error>
     where
         R: Read + Send + 'static,
     {
-        self.create_paste_body(Body::new(reader), syntax_highlight, expires_in, visibility)
+        self.create_paste_body(Body::new(reader), options)
     }
 
     fn create_paste_body(
         &self,
         body: Body,
-        syntax_highlight: Option<&str>,
-        expires_in: Option<&str>,
-        visibility: Option<&str>,
+        options: &CreateOptions<'_>,
     ) -> Result<CreatedPaste, Error> {
-        let url = self.create_paste_url(syntax_highlight, expires_in, visibility)?;
+        let url = self.create_paste_url(options)?;
         let request = self
             .http
             .post(&url)
@@ -198,29 +244,19 @@ impl Client {
         Ok(response.data)
     }
 
-    fn create_paste_url(
-        &self,
-        syntax_highlight: Option<&str>,
-        expires_in: Option<&str>,
-        visibility: Option<&str>,
-    ) -> Result<String, Error> {
+    // The body is the paste itself, so metadata travels as query parameters.
+    fn create_paste_url(&self, options: &CreateOptions<'_>) -> Result<String, Error> {
         let url = format!("{}/api/v1/pastes", self.base_url);
-        let syntax_highlight = syntax_highlight.filter(|syntax| !syntax.is_empty());
-        let expires_in = expires_in.filter(|ttl| !ttl.is_empty());
-        let visibility = visibility.filter(|visibility| !visibility.is_empty());
-        let mut query = Vec::new();
-
-        if let Some(syntax_highlight) = syntax_highlight {
-            query.push(("syntax_highlight", syntax_highlight));
-        }
-
-        if let Some(expires_in) = expires_in {
-            query.push(("expires_in", expires_in));
-        }
-
-        if let Some(visibility) = visibility {
-            query.push(("visibility", visibility));
-        }
+        let query: Vec<(&str, &str)> = [
+            ("title", options.title),
+            ("reference_url", options.reference_url),
+            ("syntax_highlight", options.syntax_highlight),
+            ("expires_in", options.expires_in),
+            ("visibility", options.visibility),
+        ]
+        .into_iter()
+        .filter_map(|(key, value)| value.filter(|value| !value.is_empty()).map(|v| (key, v)))
+        .collect();
 
         let mut request = self.http.post(&url);
 
@@ -268,6 +304,11 @@ struct CreateResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct RemovedPastesResponse {
+    data: Vec<RemovedPaste>,
+}
+
+#[derive(Debug, Deserialize)]
 struct CreateApiTokenResponse {
     data: CreatedApiToken,
 }
@@ -312,13 +353,57 @@ pub struct ApiTokenMetadata {
     pub inserted_at: String,
 }
 
-#[derive(Debug, Clone)]
+/// A paste with its content. Link and title fields are optional so the client
+/// still reads responses from servers that predate them.
+#[derive(Debug, Clone, Default)]
 pub struct Paste {
+    pub id: Option<String>,
+    pub title: Option<String>,
+    pub reference_url: Option<String>,
+    pub url: Option<String>,
+    pub raw_url: Option<String>,
+    pub expires_at: Option<String>,
+    pub inserted_at: Option<String>,
     pub data: Vec<u8>,
     pub content_type: String,
     pub syntax_highlight: String,
     pub visibility: String,
     pub is_text: bool,
+}
+
+// Mirrors the server's representation: text in `data`, anything else base64
+// encoded, so `--json` output round-trips through the same rules.
+impl Serialize for Paste {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("title", &self.title)?;
+        map.serialize_entry("reference_url", &self.reference_url)?;
+        map.serialize_entry("url", &self.url)?;
+        map.serialize_entry("raw_url", &self.raw_url)?;
+        map.serialize_entry("content_type", &self.content_type)?;
+        map.serialize_entry("syntax_highlight", &self.syntax_highlight)?;
+        map.serialize_entry("visibility", &self.visibility)?;
+        map.serialize_entry("expires_at", &self.expires_at)?;
+        map.serialize_entry("inserted_at", &self.inserted_at)?;
+
+        match self.text() {
+            Some(text) => map.serialize_entry("data", text)?,
+            None => {
+                map.serialize_entry("data", &Option::<&str>::None)?;
+                map.serialize_entry(
+                    "data_base64",
+                    &base64::engine::general_purpose::STANDARD.encode(&self.data),
+                )?;
+                map.serialize_entry("data_encoding", "base64")?;
+            }
+        }
+
+        map.end()
+    }
 }
 
 impl Paste {
@@ -351,6 +436,13 @@ impl<'de> Deserialize<'de> for Paste {
         };
 
         Ok(Self {
+            id: paste.id,
+            title: paste.title,
+            reference_url: paste.reference_url,
+            url: paste.url,
+            raw_url: paste.raw_url,
+            expires_at: paste.expires_at,
+            inserted_at: paste.inserted_at,
             data,
             content_type: paste.content_type,
             syntax_highlight: paste.syntax_highlight,
@@ -362,6 +454,20 @@ impl<'de> Deserialize<'de> for Paste {
 
 #[derive(Deserialize)]
 struct PasteResponse {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    reference_url: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    raw_url: Option<String>,
+    #[serde(default)]
+    expires_at: Option<String>,
+    #[serde(default)]
+    inserted_at: Option<String>,
     data: Option<String>,
     data_base64: Option<String>,
     data_encoding: Option<String>,
@@ -375,14 +481,36 @@ fn default_content_type() -> String {
     "text/plain".to_string()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Paste metadata without content, as returned by create and restore.
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CreatedPaste {
     pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub reference_url: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub raw_url: Option<String>,
     #[serde(default = "default_content_type")]
     pub content_type: String,
     pub syntax_highlight: String,
     pub visibility: String,
     pub expires_at: Option<String>,
+}
+
+/// A deleted or expired paste that can still be restored.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RemovedPaste {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    pub removal_reason: String,
+    pub removed_at: Option<String>,
+    pub purge_after: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -799,12 +927,18 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(None, None, None).unwrap(),
+            client.create_paste_url(&CreateOptions::default()).unwrap(),
             "http://localhost:4000/api/v1/pastes"
         );
         assert_eq!(
             client
-                .create_paste_url(Some(""), Some(""), Some(""))
+                .create_paste_url(&CreateOptions {
+                    title: Some(""),
+                    reference_url: Some(""),
+                    syntax_highlight: Some(""),
+                    expires_in: Some(""),
+                    visibility: Some(""),
+                })
                 .unwrap(),
             "http://localhost:4000/api/v1/pastes"
         );
@@ -815,7 +949,12 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(Some("rust"), None, None).unwrap(),
+            client
+                .create_paste_url(&CreateOptions {
+                    syntax_highlight: Some("rust"),
+                    ..CreateOptions::default()
+                })
+                .unwrap(),
             "http://localhost:4000/api/v1/pastes?syntax_highlight=rust"
         );
     }
@@ -826,7 +965,11 @@ mod tests {
 
         assert_eq!(
             client
-                .create_paste_url(Some("rust"), Some("1h"), None)
+                .create_paste_url(&CreateOptions {
+                    syntax_highlight: Some("rust"),
+                    expires_in: Some("1h"),
+                    ..CreateOptions::default()
+                })
                 .unwrap(),
             "http://localhost:4000/api/v1/pastes?syntax_highlight=rust&expires_in=1h"
         );
@@ -837,15 +980,126 @@ mod tests {
         let client = Client::new("http://localhost:4000/");
 
         assert_eq!(
-            client.create_paste_url(None, None, Some("public")).unwrap(),
+            client
+                .create_paste_url(&CreateOptions {
+                    visibility: Some("public"),
+                    ..CreateOptions::default()
+                })
+                .unwrap(),
             "http://localhost:4000/api/v1/pastes?visibility=public"
         );
     }
 
     #[test]
+    fn create_paste_url_adds_title_and_reference_query_params() {
+        let client = Client::new("http://localhost:4000/");
+
+        assert_eq!(
+            client
+                .create_paste_url(&CreateOptions {
+                    title: Some("nginx 502s"),
+                    reference_url: Some("https://tracker.example.com/INC-2041"),
+                    ..CreateOptions::default()
+                })
+                .unwrap(),
+            "http://localhost:4000/api/v1/pastes?title=nginx+502s&reference_url=https%3A%2F%2Ftracker.example.com%2FINC-2041"
+        );
+    }
+
+    #[test]
+    fn decodes_paste_links_and_title() {
+        let paste = decode_json::<ShowResponse>(
+            r#"{"data":{"id":"p1","title":"Deploy log","reference_url":"https://t.example/1","url":"https://demo.textbin.com/pastes/p1","raw_url":"https://demo.textbin.com/pastes/p1/raw","data":"hello","content_type":"text/plain","syntax_highlight":"plain","visibility":"private"}}"#,
+        )
+        .unwrap()
+        .data;
+
+        assert_eq!(paste.title.as_deref(), Some("Deploy log"));
+        assert_eq!(
+            paste.url.as_deref(),
+            Some("https://demo.textbin.com/pastes/p1")
+        );
+        assert_eq!(
+            paste.raw_url.as_deref(),
+            Some("https://demo.textbin.com/pastes/p1/raw")
+        );
+    }
+
+    #[test]
+    fn serializes_text_and_binary_pastes_like_the_server() {
+        let text = Paste {
+            id: Some("p1".to_string()),
+            data: b"hello".to_vec(),
+            content_type: "text/plain".to_string(),
+            is_text: true,
+            ..Paste::default()
+        };
+        let binary = Paste {
+            data: vec![255, 0, 1],
+            content_type: "application/octet-stream".to_string(),
+            ..Paste::default()
+        };
+
+        let text = serde_json::to_value(&text).unwrap();
+        let binary = serde_json::to_value(&binary).unwrap();
+
+        assert_eq!(text["id"], "p1");
+        assert_eq!(text["data"], "hello");
+        assert!(text.get("data_base64").is_none());
+        assert_eq!(binary["data"], serde_json::Value::Null);
+        assert_eq!(binary["data_base64"], "/wAB");
+        assert_eq!(binary["data_encoding"], "base64");
+    }
+
+    #[test]
+    fn removed_paste_endpoints_use_the_deleted_collection() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            let responses = [
+                r#"{"data":[{"id":"p1","title":null,"url":"u","removal_reason":"deleted","removed_at":"2026-10-10T00:00:00.000Z","purge_after":"2026-11-09T00:00:00.000Z"}]}"#,
+                r#"{"data":{"id":"p1","syntax_highlight":"plain","visibility":"private","expires_at":null}}"#,
+                "",
+            ];
+
+            for body in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                requests.push(read_request_headers(&mut stream));
+                let status = if body.is_empty() {
+                    "204 No Content"
+                } else {
+                    "200 OK"
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+
+            requests
+        });
+        let client = Client::new(format!("http://{address}"))
+            .with_api_token(Some("txb_test_token".to_string()));
+
+        let removed = client.list_removed_pastes().unwrap();
+        let restored = client.restore_paste("p1").unwrap();
+        client.purge_paste("p1").unwrap();
+
+        assert_eq!(removed[0].removal_reason, "deleted");
+        assert_eq!(restored.id, "p1");
+
+        let requests = server.join().unwrap();
+        assert!(requests[0].starts_with("GET /api/v1/pastes/deleted HTTP/1.1"));
+        assert!(requests[1].starts_with("POST /api/v1/pastes/deleted/p1/restore HTTP/1.1"));
+        assert!(requests[2].starts_with("DELETE /api/v1/pastes/deleted/p1 HTTP/1.1"));
+    }
+
+    #[test]
     fn create_paste_with_invalid_base_url_returns_request_error() {
-        let result =
-            Client::new("not a valid URL").create_paste("paste body".to_string(), None, None, None);
+        let result = Client::new("not a valid URL")
+            .create_paste("paste body".to_string(), &CreateOptions::default());
 
         assert!(matches!(result, Err(Error::Request { .. })));
     }
