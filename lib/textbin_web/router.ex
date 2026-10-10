@@ -88,6 +88,9 @@ defmodule TextbinWeb.Router do
       live "/o/:organization_slug/audit-log", UI.AuditLogLive, :index
       live "/o/:organization_slug/members", UI.OrganizationLive, :members
       live "/o/:organization_slug/settings", UI.OrganizationLive, :settings
+      live "/w/:organization_slug/:workspace_slug/pastes", UI.PasteLive, :workspace_index
+      live "/w/:organization_slug/:workspace_slug/pastes/new", UI.PasteLive, :new
+      live "/w/:organization_slug/:workspace_slug/pastes/:id", UI.PasteLive, :workspace_show
       live "/w/:organization_slug/:workspace_slug/deleted", UI.DeletedLive, :index
       live "/w/:organization_slug/:workspace_slug/members", UI.WorkspaceLive, :members
       live "/w/:organization_slug/:workspace_slug/settings", UI.WorkspaceLive, :settings
@@ -102,11 +105,7 @@ defmodule TextbinWeb.Router do
 
     live_session :current_user,
       on_mount: [{TextbinWeb.UserAuth, :mount_current_scope}] do
-      live "/pastes", UI.PasteLive, :legacy_index
       live "/pastes/:id", UI.PasteLive, :show
-      live "/w/:organization_slug/:workspace_slug/pastes", UI.PasteLive, :workspace_index
-      live "/w/:organization_slug/:workspace_slug/pastes/new", UI.PasteLive, :new
-      live "/w/:organization_slug/:workspace_slug/pastes/:id", UI.PasteLive, :workspace_show
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new

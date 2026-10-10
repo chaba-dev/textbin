@@ -703,24 +703,21 @@ defmodule TextbinWeb.Layouts do
     """
   end
 
-  defp account_label(%{user: %User{} = user}) do
-    if User.guest?(user), do: "Guest", else: user.email
-  end
+  defp account_label(%{user: %User{email: email}}), do: email
+  defp account_label(_scope), do: ""
 
-  defp account_label(_scope), do: "Guest"
-
-  defp signed_in?(%{user: %User{} = user}), do: not User.guest?(user)
+  defp signed_in?(%{user: %User{}}), do: true
   defp signed_in?(_scope), do: false
 
   defp platform_admin?(%{user: %{platform_role: "admin", suspended_at: nil}}), do: true
   defp platform_admin?(_scope), do: false
 
   defp application_shell?(%{
-         user: %User{} = user,
+         user: %User{},
          organization: %Organization{},
          organization_membership: %OrganizationMembership{}
        }),
-       do: not User.guest?(user)
+       do: true
 
   defp application_shell?(_scope), do: false
 

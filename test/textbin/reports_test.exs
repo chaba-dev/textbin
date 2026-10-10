@@ -66,7 +66,7 @@ defmodule Textbin.ReportsTest do
                "category" => "spam"
              })
 
-    assert {:ok, guest} = Accounts.create_guest_user()
+    guest = retired_guest_fixture()
 
     assert {:error, :forbidden} =
              Reports.create_report(Scope.for_user(guest), workspace_paste.id, %{

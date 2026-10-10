@@ -42,6 +42,17 @@ defmodule Textbin.AccountsFixtures do
     user
   end
 
+  @doc """
+  Inserts a retired guest account. Nothing creates these anymore, but older
+  databases still hold them and eligibility checks must keep rejecting them.
+  """
+  def retired_guest_fixture do
+    Textbin.Repo.insert!(%Textbin.Accounts.User{
+      email: "guest-#{System.unique_integer([:positive])}@guest.textbin.local",
+      kind: "guest"
+    })
+  end
+
   def user_scope_fixture do
     user = user_fixture()
     user_scope_fixture(user)

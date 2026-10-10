@@ -15,57 +15,15 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     %{conn: log_in_user(conn, user), scope: user_scope_fixture(user), user: user}
   end
 
-  test "redirects unauthenticated users to login" do
-    assert {:error, {:redirect, %{to: path, flash: flash}}} = live(build_conn(), ~p"/pastes")
+  test "workspace pages send signed-out visitors to log in", %{user: user} do
+    assert {:error, {:redirect, %{to: path}}} =
+             live(build_conn(), personal_workspace_path(user))
+
     assert path == ~p"/users/log-in"
-    assert %{"error" => "You must log in to access this page."} = flash
   end
 
-  test "redirects the legacy index to the user's default workspace", %{
-    conn: conn,
-    user: user
-  } do
-    assert {:error, {:live_redirect, %{to: path}}} = live(conn, ~p"/pastes")
-    assert path == personal_workspace_path(user)
-  end
-
-  test "allows guest paste creation when enabled" do
-    put_guest_pastes_enabled(true)
-
-    conn = get(build_conn(), ~p"/pastes")
-    path = redirected_to(conn)
-    assert path =~ ~r{^/w/personal-[0-9a-f-]+/default/pastes$}
-    {:ok, index_view, _html} = live(recycle(conn), path)
-
-    assert has_element?(index_view, "#pastes-heading.sr-only", "Pastes")
-    assert has_element?(index_view, "#new-paste-link[href='#{path}/new']")
-    refute has_element?(index_view, "#paste-form")
-    refute has_element?(index_view, "#organization-overview-link")
-
-    {:ok, view, _html} = live(recycle(conn), "#{path}/new")
-
-    assert has_element?(view, "#paste-form")
-    assert has_element?(view, "#paste_audience_unlisted[checked]")
-    refute has_element?(view, "#paste_audience_workspace")
-
-    {:ok, _show_view, _html} =
-      view
-      |> form("#paste-form", %{
-        "paste" => %{"data" => "guest paste", "syntax_highlight" => "plain"}
-      })
-      |> render_submit()
-      |> follow_redirect(recycle(conn))
-
-    paste =
-      Paste
-      |> Repo.one!()
-      |> Pastes.load_data()
-      |> Repo.preload(:created_by_user)
-
-    assert paste.data == "guest paste"
-    assert paste.created_by_user.kind == "guest"
-    assert paste.audience == "unlisted"
-    assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 21_590..21_600
+  test "the legacy /pastes address no longer exists", %{conn: conn} do
+    assert response(get(conn, "/pastes"), 404)
   end
 
   test "lists scoped pastes", %{conn: conn, scope: scope, user: user} do
@@ -888,14 +846,5 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
   defp workspace_path(organization, workspace) do
     "/w/#{organization.slug}/#{workspace.slug}/pastes"
-  end
-
-  defp put_guest_pastes_enabled(enabled?) do
-    previous = Application.get_env(:textbin, :allow_guest_pastes)
-    Application.put_env(:textbin, :allow_guest_pastes, enabled?)
-
-    on_exit(fn ->
-      Application.put_env(:textbin, :allow_guest_pastes, previous)
-    end)
   end
 end
