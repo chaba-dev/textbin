@@ -344,6 +344,37 @@ defmodule Textbin.AdministrationTest do
       %{admin: admin, scope: admin_scope(admin), owner_scope: owner_scope}
     end
 
+    test "takedown remains available after author deletion or expiry", context do
+      for removal <- [:deleted, :expired] do
+        {:ok, paste} = Pastes.create_paste(context.owner_scope, %{data: "reported content"})
+
+        case removal do
+          :deleted ->
+            Pastes.delete_paste(context.owner_scope, paste)
+
+          :expired ->
+            paste
+            |> Ecto.Changeset.change(expires_at: DateTime.add(Paste.utc_now_ms(), -1, :second))
+            |> Repo.update!()
+        end
+
+        assert {:ok, %Paste{removal_reason: "moderated"}} =
+                 Administration.delete_paste(context.scope, paste.id, "reported abuse")
+
+        assert {:error, :not_found} = Pastes.restore_paste(context.owner_scope, paste.id)
+
+        assert {:error, :not_found} =
+                 Administration.delete_paste(context.scope, paste.id, "repeat")
+      end
+
+      assert Pastes.purge_removed_pastes() == 2
+
+      assert Repo.aggregate(
+               from(e in PlatformAuditEvent, where: e.action == "platform.paste.deleted"),
+               :count
+             ) == 2
+    end
+
     test "takes the paste down and audits it before retryable storage cleanup", context do
       original_storage = Application.fetch_env!(:textbin, Textbin.Storage)
 
