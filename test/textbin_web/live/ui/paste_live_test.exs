@@ -733,7 +733,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> render_click()
 
     assert_redirect(view, personal_workspace_path(owner_scope.user))
-    refute Repo.get(Paste, paste.id)
+    assert %Paste{removal_reason: "deleted"} = Repo.get(Paste, paste.id)
   end
 
   test "workspace member deletes their own paste from the detail page", %{scope: owner_scope} do
@@ -762,7 +762,41 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     |> render_click()
 
     assert_redirect(view, personal_workspace_path(owner_scope.user))
-    refute Repo.get(Paste, paste.id)
+    assert %Paste{removal_reason: "deleted"} = Repo.get(Paste, paste.id)
+  end
+
+  test "a removed paste's link offers its owner a restore page", %{
+    conn: conn,
+    scope: scope,
+    user: user
+  } do
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "restore from link", audience: "unlisted"})
+    {:ok, _} = Pastes.delete_paste(scope, paste)
+
+    for path <- ["#{personal_workspace_path(user)}/#{paste.id}", ~p"/pastes/#{paste.id}"] do
+      {:ok, view, _html} = live(conn, path)
+
+      assert has_element?(view, "#removed-paste-title", "restore from link")
+      assert has_element?(view, "#removed-paste-reason", "Deleted by you")
+      assert has_element?(view, "#removed-paste-days-left", "in 30 days")
+      refute has_element?(view, "#paste-data")
+    end
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+    view |> element("#restore-removed-paste") |> render_click()
+
+    assert_redirect(view, "#{personal_workspace_path(user)}/#{paste.id}")
+    assert Pastes.get_paste(scope, paste.id)
+  end
+
+  test "a removed paste's link is a plain 404 for everyone else", %{scope: scope} do
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "shared then removed", audience: "public"})
+    {:ok, _} = Pastes.delete_paste(scope, paste)
+
+    assert_raise Ecto.NoResultsError, fn -> live(build_conn(), ~p"/pastes/#{paste.id}") end
+
+    outsider = log_in_user(build_conn(), user_fixture())
+    assert_raise Ecto.NoResultsError, fn -> live(outsider, ~p"/pastes/#{paste.id}") end
   end
 
   test "workspace member cannot delete another member's paste", %{scope: owner_scope} do

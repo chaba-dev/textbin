@@ -7,12 +7,14 @@ defmodule Textbin.Organizations.Workspace do
   @foreign_key_type :binary_id
   @visibilities ["open", "private"]
   @external_sharing_policies ["disabled", "unlisted", "public"]
+  @recovery_windows [1, 7, 14, 30, 90]
 
   schema "workspaces" do
     field :name, :string
     field :slug, :string
     field :visibility, :string, default: "open"
     field :external_sharing_policy, :string, default: "disabled"
+    field :recovery_window_days, :integer, default: 30
     field :is_default, :boolean, default: false
     field :deletion_requested_at, :utc_datetime_usec
 
@@ -26,7 +28,7 @@ defmodule Textbin.Organizations.Workspace do
 
   def changeset(workspace, attrs) do
     workspace
-    |> cast(attrs, [:name, :slug, :visibility, :external_sharing_policy])
+    |> cast(attrs, [:name, :slug, :visibility, :external_sharing_policy, :recovery_window_days])
     |> put_default_external_sharing_policy(attrs)
     |> validate_required([
       :organization_id,
@@ -41,12 +43,16 @@ defmodule Textbin.Organizations.Workspace do
     |> validate_format(:slug, ~r/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
     |> validate_inclusion(:visibility, @visibilities)
     |> validate_inclusion(:external_sharing_policy, @external_sharing_policies)
+    |> validate_inclusion(:recovery_window_days, @recovery_windows)
     |> validate_default_visibility()
     |> unique_constraint(:slug, name: :workspaces_organization_id_slug_index)
     |> unique_constraint(:organization_id, name: :workspaces_one_default_per_organization)
     |> foreign_key_constraint(:organization_id)
     |> foreign_key_constraint(:created_by_id)
   end
+
+  @doc "Recovery windows a workspace owner can choose, in days."
+  def recovery_windows, do: @recovery_windows
 
   defp put_default_external_sharing_policy(changeset, attrs) do
     if policy_provided?(attrs) or changeset.data.id do

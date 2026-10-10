@@ -1,6 +1,8 @@
 defmodule Textbin.Pastes.ExpirationCleaner do
   @moduledoc """
-  Periodically hard-deletes expired pastes in bounded batches.
+  Periodically hard-deletes removed pastes in bounded batches: deleted and
+  expired ones once their workspace's recovery window ends, moderated ones
+  and those of deleted workspaces straight away.
   """
 
   use GenServer
@@ -82,7 +84,7 @@ defmodule Textbin.Pastes.ExpirationCleaner do
     started_at = System.monotonic_time()
 
     try do
-      deleted_count = Pastes.delete_expired_pastes(limit: state.batch_size)
+      deleted_count = Pastes.purge_removed_pastes(limit: state.batch_size)
 
       :telemetry.execute(
         @telemetry_event,
@@ -91,7 +93,7 @@ defmodule Textbin.Pastes.ExpirationCleaner do
       )
 
       if deleted_count > 0 do
-        Logger.info("Deleted #{deleted_count} expired pastes")
+        Logger.info("Deleted #{deleted_count} removed pastes")
       end
 
       deleted_count
@@ -103,7 +105,7 @@ defmodule Textbin.Pastes.ExpirationCleaner do
           %{batch_size: state.batch_size, result: :error}
         )
 
-        Logger.error("Failed to delete expired pastes: #{Exception.message(exception)}")
+        Logger.error("Failed to delete removed pastes: #{Exception.message(exception)}")
         :error
     end
   end

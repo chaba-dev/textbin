@@ -1,0 +1,40 @@
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  navigation_workspaces={@navigation_workspaces}
+  active_navigation={{:workspace, :deleted}}
+>
+  <section
+    id="removed-paste"
+    class="mx-auto mt-6 max-w-xl space-y-5 rounded-lg border border-base-300 bg-base-100 p-8 text-center shadow-sm"
+  >
+    <span class="mx-auto flex size-12 items-center justify-center rounded-full bg-warning/10 text-warning">
+      <.icon name="hero-archive-box" class="size-6" />
+    </span>
+    <div class="space-y-2">
+      <h1 id="removed-paste-title" class="break-words text-xl font-semibold text-base-content">
+        {Paste.display_title(@removed_paste)}
+      </h1>
+      <p id="removed-paste-reason" class="text-sm text-base-content/70">
+        {Removal.reason_sentence(@removed_paste, @current_scope)}. Its links stay switched off until it is restored.
+      </p>
+      <p id="removed-paste-days-left" class="text-sm font-medium text-warning">
+        {Removal.days_left_sentence(@removed_paste, @current_scope.workspace)}
+      </p>
+    </div>
+    <div class="flex flex-wrap justify-center gap-2">
+      <button id="restore-removed-paste" type="button" phx-click="restore" class="btn btn-primary">
+        <.icon name="hero-arrow-uturn-left" class="size-4" /> Restore paste
+      </button>
+      <.link
+        id="open-deleted-tab"
+        navigate={
+          "/w/#{@current_scope.organization.slug}/#{@current_scope.workspace.slug}/deleted"
+        }
+        class="btn btn-ghost"
+      >
+        Open Deleted
+      </.link>
+    </div>
+  </section>
+</Layouts.app>

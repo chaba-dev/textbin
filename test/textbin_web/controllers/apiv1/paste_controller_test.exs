@@ -529,7 +529,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert_raise Ecto.NoResultsError, fn -> Pastes.get_paste!(scope, paste.id) end
     end
 
-    test "deletes a blob without reading it", %{conn: conn, scope: scope} do
+    test "removes a blob without reading it and purges it later", %{conn: conn, scope: scope} do
       original_storage = Application.fetch_env!(:textbin, Storage)
       original_inline_bytes = Application.fetch_env!(:textbin, :inline_paste_bytes)
 
@@ -550,6 +550,13 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       conn = delete(conn, ~p"/api/v1/pastes/#{paste.id}")
 
       assert response(conn, 204)
+      refute_received {:storage_deleted, _storage_key}
+
+      assert %Textbin.Pastes.Paste{removal_reason: "deleted"} =
+               Textbin.Repo.get(Textbin.Pastes.Paste, paste.id)
+
+      after_window = DateTime.add(DateTime.utc_now(), 31, :day)
+      assert Pastes.purge_removed_pastes(now: after_window) == 1
       assert_receive {:storage_deleted, storage_key}
       assert storage_key == paste.storage_key
       refute_received {:unexpected_storage_get, _storage_key}

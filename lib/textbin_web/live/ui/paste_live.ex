@@ -8,6 +8,7 @@ defmodule TextbinWeb.UI.PasteLive do
   alias Textbin.Pastes
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
+  alias TextbinWeb.UI.Removal
 
   embed_templates "paste_live/*"
 
@@ -89,7 +90,7 @@ defmodule TextbinWeb.UI.PasteLive do
 
     case Pastes.get_paste(scope, id) do
       %Paste{} = paste -> show_paste(socket, scope, paste)
-      nil -> raise Ecto.NoResultsError, queryable: Paste
+      nil -> show_removed_paste!(socket, scope, id)
     end
   end
 
@@ -100,7 +101,7 @@ defmodule TextbinWeb.UI.PasteLive do
         show_paste(socket, scope, paste)
 
       nil ->
-        raise Ecto.NoResultsError, queryable: Paste
+        show_removed_shared_paste!(socket, id)
     end
   end
 
@@ -124,10 +125,25 @@ defmodule TextbinWeb.UI.PasteLive do
          {:ok, _paste} <- Pastes.delete_paste(socket.assigns.current_scope, socket.assigns.paste) do
       {:noreply,
        socket
-       |> put_flash(:info, "Paste deleted")
+       |> put_flash(:info, deleted_message(socket.assigns.current_scope))
        |> push_navigate(to: paste_index_path(socket.assigns.current_scope))}
     else
       _error -> {:noreply, put_flash(socket, :error, "Paste deletion could not be completed")}
+    end
+  end
+
+  def handle_event("restore", _params, %{assigns: %{removed_paste: %Paste{} = paste}} = socket) do
+    scope = socket.assigns.current_scope
+
+    case Pastes.restore_paste(scope, paste.id) do
+      {:ok, restored} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Paste restored")
+         |> push_navigate(to: paste_path(scope, restored))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "That paste can no longer be restored")}
     end
   end
 
@@ -162,6 +178,8 @@ defmodule TextbinWeb.UI.PasteLive do
     end
   end
 
+  def render(%{removed_paste: %Paste{}} = assigns), do: removed(assigns)
+
   def render(%{live_action: action} = assigns) when action in [:show, :workspace_show],
     do: detail(assigns)
 
@@ -187,11 +205,46 @@ defmodule TextbinWeb.UI.PasteLive do
     |> assign(:navigation_workspaces, navigation_workspaces(scope))
   end
 
+  # A removed paste's link stops working for everyone, but the people who can
+  # restore it land on a page that offers to. Everyone else gets a 404.
+  defp show_removed_paste!(socket, scope, id) do
+    case Pastes.get_removed_paste(scope, id) do
+      %Paste{} = paste ->
+        {:noreply,
+         socket
+         |> assign(:current_scope, scope)
+         |> assign(:navigation_workspaces, navigation_workspaces(scope))
+         |> assign(:page_title, "Removed · #{Paste.display_title(paste)}")
+         |> assign(:removed_paste, paste)}
+
+      nil ->
+        raise Ecto.NoResultsError, queryable: Paste
+    end
+  end
+
+  defp show_removed_shared_paste!(socket, id) do
+    current_scope = socket.assigns.current_scope
+
+    with workspace_id when is_binary(workspace_id) <-
+           Pastes.removed_paste_workspace_id(current_scope, id),
+         {:ok, scope} <- Organizations.resolve_workspace_scope(current_scope, workspace_id) do
+      show_removed_paste!(socket, scope, id)
+    else
+      _not_restorable -> raise Ecto.NoResultsError, queryable: Paste
+    end
+  end
+
+  defp deleted_message(%{workspace: %{recovery_window_days: days}}),
+    do: "Paste deleted. You can restore it from Deleted for #{days} days."
+
+  defp deleted_message(_scope), do: "Paste deleted"
+
   defp show_paste(socket, scope, paste) do
     paste = Pastes.preload_author(paste)
 
     {:noreply,
      socket
+     |> assign(:removed_paste, nil)
      |> assign(:current_scope, scope)
      |> assign(:navigation_workspaces, navigation_workspaces(scope))
      |> assign(:page_title, Paste.display_title(paste))

@@ -143,7 +143,9 @@ defmodule TextbinWeb.UI.AdminLiveTest do
     |> render_submit()
 
     assert_patch(view, ~p"/admin")
-    assert %Paste{expires_at: %DateTime{}} = Repo.get!(Paste, paste.id)
+
+    assert %Paste{removal_reason: "moderated", removed_at: %DateTime{}} =
+             Repo.get!(Paste, paste.id)
 
     assert Repo.exists?(
              from event in PlatformAuditEvent,

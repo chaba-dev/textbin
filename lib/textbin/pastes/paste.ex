@@ -38,9 +38,15 @@ defmodule Textbin.Pastes.Paste do
     field :audience, :string, source: :visibility, default: "workspace"
     field :expires_at, :utc_datetime_usec
     field :expires_in, :string, virtual: true
+    # Set only by Textbin.Pastes when a paste is deleted or moderated. A paste
+    # whose expires_at has passed is also removed, with the reason "expired",
+    # without any of these being written.
+    field :removed_at, :utc_datetime_usec
+    field :removal_reason, :string
 
     belongs_to :workspace, Textbin.Organizations.Workspace
     belongs_to :created_by_user, Textbin.Accounts.User
+    belongs_to :removed_by_user, Textbin.Accounts.User
 
     timestamps()
   end
@@ -74,6 +80,28 @@ defmodule Textbin.Pastes.Paste do
     |> validate_expiration()
     |> foreign_key_constraint(:workspace_id)
     |> foreign_key_constraint(:created_by_user_id)
+  end
+
+  @doc """
+  Why a removed paste is gone: "deleted", "expired" or "moderated".
+  """
+  def removal_reason(%__MODULE__{removal_reason: reason}) when is_binary(reason), do: reason
+  def removal_reason(%__MODULE__{}), do: "expired"
+
+  @doc """
+  When a removed paste left the active list. Expired pastes are removed at
+  their expiry, without a write.
+  """
+  def removed_on(%__MODULE__{removed_at: %DateTime{} = removed_at}), do: removed_at
+  def removed_on(%__MODULE__{expires_at: expires_at}), do: expires_at
+
+  @doc """
+  Whole days left before a removed paste is hard deleted, never negative.
+  """
+  def recovery_days_left(%__MODULE__{} = paste, window_days, now \\ DateTime.utc_now()) do
+    deadline = DateTime.add(removed_on(paste), window_days, :day)
+    seconds = max(DateTime.diff(deadline, now, :second), 0)
+    div(seconds + 86_399, 86_400)
   end
 
   @doc """

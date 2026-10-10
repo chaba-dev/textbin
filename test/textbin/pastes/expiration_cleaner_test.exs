@@ -17,7 +17,7 @@ defmodule Textbin.Pastes.ExpirationCleanerTest do
         audience: "workspace",
         workspace_id: workspace.id,
         created_by_user_id: user.id,
-        expires_at: DateTime.add(Paste.utc_now_ms(), -1, :second)
+        expires_at: DateTime.add(Paste.utc_now_ms(), -31, :day)
       })
 
     handler_id = "expiration-cleaner-test-#{System.unique_integer([:positive])}"
