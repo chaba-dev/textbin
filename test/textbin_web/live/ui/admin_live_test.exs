@@ -104,7 +104,7 @@ defmodule TextbinWeb.UI.AdminLiveTest do
 
   test "offers only eligible account actions", %{admin: admin, conn: conn} do
     unconfirmed = unconfirmed_user_fixture()
-    assert {:ok, guest} = Textbin.Accounts.create_guest_user()
+    guest = retired_guest_fixture()
     assert {:ok, view, _html} = live(conn, ~p"/admin")
 
     view

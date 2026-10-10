@@ -353,41 +353,6 @@ defmodule Textbin.AccountsTest do
     end
   end
 
-  describe "guest users" do
-    test "create_guest_user/1 creates a guest user with a generated email" do
-      assert {:ok, %User{} = user} = Accounts.create_guest_user()
-
-      assert user.kind == "guest"
-      assert user.default_paste_ttl == "6h"
-      assert user.email =~ ~r/^guest-.+@guest\.textbin\.local$/
-      assert User.guest?(user)
-
-      organization = Organizations.get_personal_organization!(user)
-      assert organization.personal_owner_id == user.id
-
-      assert [%{is_default: true, memberships: [%{user_id: user_id, role: "owner"}]}] =
-               organization.workspaces
-
-      assert user_id == user.id
-    end
-
-    test "create_guest_user/1 preserves atom-key overrides" do
-      assert {:ok, %User{} = user} =
-               Accounts.create_guest_user(%{default_paste_ttl: "12h"})
-
-      assert user.default_paste_ttl == "12h"
-    end
-
-    test "get_guest_user/1 returns only guest users" do
-      user = user_fixture()
-      {:ok, guest_user} = Accounts.create_guest_user()
-
-      assert Accounts.get_guest_user(guest_user.id).id == guest_user.id
-      refute Accounts.get_guest_user(user.id)
-      refute Accounts.get_guest_user("not-a-uuid")
-    end
-  end
-
   describe "generate_user_session_token/1" do
     setup do
       %{user: user_fixture()}

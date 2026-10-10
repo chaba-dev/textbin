@@ -765,7 +765,7 @@ defmodule Textbin.AdministrationTest do
   end
 
   defp guest_user do
-    assert {:ok, user} = Accounts.create_guest_user()
+    user = retired_guest_fixture()
     user
   end
 

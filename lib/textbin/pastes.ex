@@ -701,7 +701,7 @@ defmodule Textbin.Pastes do
         created_by_user_id: paste.created_by_user_id || user.id
     }
 
-    changeset = Paste.changeset(paste, attrs_with_audience(attrs, user))
+    changeset = Paste.changeset(paste, attrs_with_audience(attrs))
 
     case authorized_workspace(scope) do
       {:ok, workspace} -> validate_audience(changeset, workspace)
@@ -988,7 +988,7 @@ defmodule Textbin.Pastes do
   defp attrs_with_defaults(attrs, user, text_safe?) do
     attrs
     |> attrs_with_default_ttl(user)
-    |> attrs_with_audience(user)
+    |> attrs_with_audience()
     |> attrs_with_content_type(text_safe?)
   end
 
@@ -1027,10 +1027,8 @@ defmodule Textbin.Pastes do
     if Enum.any?(Map.keys(attrs), &is_binary/1), do: "expires_in", else: :expires_in
   end
 
-  defp attrs_with_audience(attrs, %User{} = user) when is_map(attrs) do
-    audience = if User.guest?(user), do: "unlisted", else: audience_value(attrs)
-
-    Map.put(attrs, attr_key(attrs, "audience", :audience), audience || "workspace")
+  defp attrs_with_audience(attrs) when is_map(attrs) do
+    Map.put(attrs, attr_key(attrs, "audience", :audience), audience_value(attrs) || "workspace")
   end
 
   defp audience_value(attrs) do

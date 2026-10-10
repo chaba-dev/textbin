@@ -92,9 +92,7 @@ defmodule TextbinWeb.UserLive.Confirmation do
     {:noreply, assign(socket, form: to_form(params, as: "user"), trigger_submit: true)}
   end
 
-  defp registered_scope?(%{user: %Textbin.Accounts.User{} = user}) do
-    !Textbin.Accounts.User.guest?(user)
-  end
+  defp registered_scope?(%{user: %Textbin.Accounts.User{}}), do: true
 
   defp registered_scope?(_scope), do: false
 end

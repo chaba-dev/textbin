@@ -132,15 +132,11 @@ defmodule TextbinWeb.UserLive.Login do
     Application.get_env(:textbin, Textbin.Mailer)[:adapter] == Swoosh.Adapters.Local
   end
 
-  defp current_registered_email(%{user: %Textbin.Accounts.User{} = user}) do
-    if Textbin.Accounts.User.guest?(user), do: nil, else: user.email
-  end
+  defp current_registered_email(%{user: %Textbin.Accounts.User{email: email}}), do: email
 
   defp current_registered_email(_scope), do: nil
 
-  defp registered_scope?(%{user: %Textbin.Accounts.User{} = user}) do
-    !Textbin.Accounts.User.guest?(user)
-  end
+  defp registered_scope?(%{user: %Textbin.Accounts.User{}}), do: true
 
   defp registered_scope?(_scope), do: false
 end

@@ -249,6 +249,7 @@ defmodule TextbinWeb.UI.AdminLive do
     do: Calendar.strftime(timestamp, "%Y-%m-%d %H:%M UTC")
 
   def account_status(%{suspended_at: %DateTime{}}), do: "Suspended"
+  # Retired browser-only accounts can still turn up in lookups.
   def account_status(%{kind: "guest"}), do: "Guest"
   def account_status(%{confirmed_at: nil}), do: "Unconfirmed"
   def account_status(_user), do: "Active"

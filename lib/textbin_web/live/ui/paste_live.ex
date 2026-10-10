@@ -26,27 +26,6 @@ defmodule TextbinWeb.UI.PasteLive do
   def mount(_params, _session, socket), do: {:ok, socket}
 
   def handle_params(
-        _params,
-        _uri,
-        %{assigns: %{live_action: :legacy_index, current_scope: nil}} = socket
-      ) do
-    {:noreply,
-     socket
-     |> put_flash(:error, "You must log in to access this page.")
-     |> redirect(to: ~p"/users/log-in")}
-  end
-
-  def handle_params(_params, _uri, %{assigns: %{live_action: :legacy_index}} = socket) do
-    {:ok, %{organization: organization, workspace: workspace}} =
-      Organizations.resolve_home_scope(socket.assigns.current_scope)
-
-    {:noreply,
-     push_navigate(socket,
-       to: workspace_pastes_path(organization.slug, workspace.slug)
-     )}
-  end
-
-  def handle_params(
         %{"organization_slug" => organization_slug, "workspace_slug" => workspace_slug},
         _uri,
         %{assigns: %{live_action: :workspace_index}} = socket
@@ -171,7 +150,7 @@ defmodule TextbinWeb.UI.PasteLive do
         {:noreply,
          socket
          |> put_flash(:error, "Workspace is no longer available")
-         |> push_navigate(to: ~p"/pastes")}
+         |> push_navigate(to: ~p"/")}
 
       {:error, changeset} ->
         {:noreply, assign(socket, :paste_form, to_form(changeset, action: :insert))}
@@ -262,7 +241,7 @@ defmodule TextbinWeb.UI.PasteLive do
        when not is_nil(organization) and not is_nil(workspace),
        do: workspace_pastes_path(organization.slug, workspace.slug)
 
-  defp paste_index_path(_scope), do: ~p"/pastes"
+  defp paste_index_path(_scope), do: ~p"/"
 
   defp paste_path(scope, %Paste{id: id}), do: "#{paste_index_path(scope)}/#{id}"
 
@@ -289,9 +268,6 @@ defmodule TextbinWeb.UI.PasteLive do
     cond do
       match?(%{user: %User{id: ^id}}, scope) ->
         "You"
-
-      User.guest?(user) ->
-        "Guest"
 
       match?(%{workspace: %{id: workspace_id}} when workspace_id == paste.workspace_id, scope) ->
         user.email
@@ -367,17 +343,13 @@ defmodule TextbinWeb.UI.PasteLive do
   # Every audience is listed so the policy is visible; the ones the workspace
   # forbids stay disabled with the reason instead of silently disappearing.
   defp audience_options(scope) do
-    if User.guest?(scope.user) do
-      [audience_option("unlisted", true)]
-    else
-      policy = scope.workspace.external_sharing_policy
+    policy = scope.workspace.external_sharing_policy
 
-      [
-        audience_option("workspace", true),
-        audience_option("unlisted", policy in ["unlisted", "public"]),
-        audience_option("public", policy == "public")
-      ]
-    end
+    [
+      audience_option("workspace", true),
+      audience_option("unlisted", policy in ["unlisted", "public"]),
+      audience_option("public", policy == "public")
+    ]
   end
 
   defp audience_option("workspace", allowed?),

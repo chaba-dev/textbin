@@ -428,19 +428,6 @@ defmodule Textbin.PastesTest do
       end
     end
 
-    test "create_paste/2 forces guest pastes to unlisted" do
-      {:ok, guest_user} = Textbin.Accounts.create_guest_user()
-      guest_scope = Textbin.Accounts.Scope.for_user(guest_user)
-
-      for requested_visibility <- [nil, "private", "unlisted", "public"] do
-        attrs =
-          %{data: "guest visibility"}
-          |> Map.put(:visibility, requested_visibility)
-
-        assert {:ok, %Paste{audience: "unlisted"}} = Pastes.create_paste(guest_scope, attrs)
-      end
-    end
-
     test "create_paste/2 stores a selected expiration", %{scope: scope} do
       assert {:ok, %Paste{} = paste} =
                Pastes.create_paste(scope, %{data: "short lived", expires_in: "1h"})
