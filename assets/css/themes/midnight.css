@@ -1,0 +1,36 @@
+/* Midnight theme tokens. Generated from the design canvas palette; every text
+   token clears 4.5:1 on the surfaces it sits on. */
+/* Dark only: the mode preference does not apply. */
+[data-theme="midnight"] {
+  color-scheme: dark;
+  --color-base-100: #121B30;
+  --color-base-200: #0C1322;
+  --color-base-300: #22304D;
+  --color-base-content: #E6ECF8;
+  --color-primary: #5EB8FF;
+  --color-primary-content: #0C1322;
+  --color-secondary: #5EB8FF;
+  --color-secondary-content: #0C1322;
+  --color-accent: #5EB8FF;
+  --color-accent-content: #0C1322;
+  --color-neutral: #E6ECF8;
+  --color-neutral-content: #121B30;
+  --color-info: #5EB8FF;
+  --color-info-content: #0C1322;
+  --color-success: #6CC39A;
+  --color-success-content: #121B30;
+  --color-warning: #E0A24A;
+  --color-warning-content: #121B30;
+  --color-error: #F08A80;
+  --color-error-content: #121B30;
+  --tb-code: #0F172A;
+  --tb-border-strong: #33446A;
+  --tb-ink-2: #A9B5CF;
+  --tb-ink-3: #8391B0;
+  --tb-syntax-keyword: #C39AE8;
+  --tb-syntax-string: #F2B544;
+  --tb-syntax-number: #6CC39A;
+  --tb-syntax-comment: #8391B0;
+  --tb-syntax-function: #5EB8FF;
+  --tb-syntax-type: #F08A80;
+}

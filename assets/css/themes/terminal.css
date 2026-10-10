@@ -1,0 +1,36 @@
+/* Terminal theme tokens. Generated from the design canvas palette; every text
+   token clears 4.5:1 on the surfaces it sits on. */
+/* Dark only: the mode preference does not apply. */
+[data-theme="terminal"] {
+  color-scheme: dark;
+  --color-base-100: #111418;
+  --color-base-200: #0A0C0F;
+  --color-base-300: #22272E;
+  --color-base-content: #E6E8EB;
+  --color-primary: #3DDC84;
+  --color-primary-content: #0A0C0F;
+  --color-secondary: #3DDC84;
+  --color-secondary-content: #0A0C0F;
+  --color-accent: #3DDC84;
+  --color-accent-content: #0A0C0F;
+  --color-neutral: #E6E8EB;
+  --color-neutral-content: #111418;
+  --color-info: #3DDC84;
+  --color-info-content: #0A0C0F;
+  --color-success: #6CC39A;
+  --color-success-content: #111418;
+  --color-warning: #E0A24A;
+  --color-warning-content: #111418;
+  --color-error: #F08A80;
+  --color-error-content: #111418;
+  --tb-code: #0D1013;
+  --tb-border-strong: #343B45;
+  --tb-ink-2: #A6ADB7;
+  --tb-ink-3: #848C97;
+  --tb-syntax-keyword: #C39AE8;
+  --tb-syntax-string: #E0A24A;
+  --tb-syntax-number: #3DDC84;
+  --tb-syntax-comment: #848C97;
+  --tb-syntax-function: #5FB3D1;
+  --tb-syntax-type: #F08A80;
+}
