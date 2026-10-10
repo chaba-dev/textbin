@@ -34,20 +34,24 @@ const CopyToClipboard = {
 
       if (!label) return
 
+      // Buttons carry their own label ("Copy link", "Copy content"), so the
+      // original text is restored rather than a fixed word.
+      const originalLabel = label.textContent
+
       try {
         await navigator.clipboard.writeText(this.el.dataset.copyContent)
         label.textContent = "Copied"
         this.el.dataset.copyState = "copied"
 
         window.setTimeout(() => {
-          label.textContent = "Copy"
+          label.textContent = originalLabel
           delete this.el.dataset.copyState
         }, 1600)
       } catch (_error) {
         label.textContent = "Copy failed"
 
         window.setTimeout(() => {
-          label.textContent = "Copy"
+          label.textContent = originalLabel
         }, 1600)
       }
     }
