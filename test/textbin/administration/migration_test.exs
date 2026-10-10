@@ -60,6 +60,69 @@ defmodule Textbin.Administration.MigrationTest do
     assert MigrationRepo.config()[:migration_lock] == :pg_advisory_lock
     migration = Textbin.Repo.Migrations.AddAdministrationPasteIndexes
     assert apply(migration, :__migration__, [])[:disable_ddl_transaction]
+
+    moderated_id = insert_legacy_inline_paste()
+    removed_ids = for _ <- 1..3, do: insert_legacy_inline_paste()
+
+    MigrationRepo.query!(
+      "UPDATE pastes SET expires_at = NOW() - interval '1 hour' WHERE id = $1::uuid",
+      [uuid(moderated_id)]
+    )
+
+    MigrationRepo.query!(
+      """
+      INSERT INTO platform_audit_events
+        (id, actor_kind, actor_label, action, target_type, target_id, reason, inserted_at)
+      VALUES ($1::uuid, 'bootstrap', 'Operator', 'platform.paste.deleted', 'paste', $2::uuid, 'abuse', NOW())
+      """,
+      [uuid(Ecto.UUID.generate()), uuid(moderated_id)]
+    )
+
+    lifecycle_version = 20_261_011_100_000
+    Ecto.Migrator.run(MigrationRepo, migrations, :up, to: lifecycle_version)
+
+    assert %{rows: [["moderated", true]]} =
+             MigrationRepo.query!(
+               "SELECT removal_reason, removed_at IS NOT NULL FROM pastes WHERE id = $1::uuid",
+               [uuid(moderated_id)]
+             )
+
+    for {id, reason} <- Enum.zip(removed_ids, ["deleted", "moderated", "purging"]) do
+      MigrationRepo.query!(
+        """
+        UPDATE pastes SET removed_at = NOW(), removal_reason = $2,
+          expires_at = CASE WHEN $2 = 'deleted' THEN NULL ELSE NOW() + interval '1 day' END,
+          storage_key = 'pastes/' || id::text, data = NULL
+        WHERE id = $1::uuid
+        """,
+        [uuid(id), reason]
+      )
+    end
+
+    assert [^lifecycle_version] =
+             Ecto.Migrator.run(MigrationRepo, migrations, :down, to: lifecycle_version)
+
+    for id <- [moderated_id | removed_ids] do
+      assert %{rows: [[false]]} =
+               MigrationRepo.query!(
+                 "SELECT expires_at IS NULL OR expires_at > timezone('UTC', NOW()) FROM pastes WHERE id = $1::uuid",
+                 [uuid(id)]
+               )
+    end
+
+    for id <- removed_ids do
+      assert %{rows: [["pastes/" <> ^id]]} =
+               MigrationRepo.query!(
+                 "SELECT storage_key FROM pastes WHERE id = $1::uuid",
+                 [uuid(id)]
+               )
+    end
+
+    assert %{rows: [[true]]} =
+             MigrationRepo.query!(
+               "SELECT expires_at IS NULL FROM pastes WHERE id = $1::uuid",
+               [uuid(paste_id)]
+             )
   end
 
   test "structure snapshot preserves the audit reason text column" do

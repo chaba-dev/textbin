@@ -544,7 +544,7 @@ defmodule Textbin.Administration do
   defp delete_paste_in_transaction(actor, paste_id, reason, opts) do
     now = Paste.utc_now_ms()
 
-    with %Paste{} = paste <- lock_active_paste(paste_id, now),
+    with %Paste{} = paste <- lock_moderatable_paste(paste_id),
          # Moderated pastes skip the recovery window: the purge hard-deletes
          # them on its next run and they never appear under Deleted.
          {:ok, expired_paste} <-
@@ -806,12 +806,12 @@ defmodule Textbin.Administration do
     Repo.one(from user in User, where: user.email == ^email, lock: "FOR UPDATE")
   end
 
-  defp lock_active_paste(paste_id, now) do
+  defp lock_moderatable_paste(paste_id) do
     Repo.one(
       from paste in Paste,
         where:
           paste.id == ^paste_id and
-            is_nil(paste.removed_at) and (is_nil(paste.expires_at) or paste.expires_at > ^now),
+            (is_nil(paste.removal_reason) or paste.removal_reason == "deleted"),
         lock: "FOR UPDATE"
     )
   end

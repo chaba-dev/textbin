@@ -738,6 +738,27 @@ defmodule Textbin.PastesTest do
       assert title_hit.excerpt == nil
     end
 
+    test "search only treats application structured suffixes as textual", %{scope: scope} do
+      searchable = ["application/vnd.example+json", "application/vnd.example+xml"]
+      excluded = ["image/svg+xml", "image/custom+json"]
+
+      pastes =
+        for content_type <- searchable ++ excluded do
+          {:ok, paste} =
+            Pastes.create_paste(scope, %{
+              data: "body",
+              title: "Classifier match",
+              content_type: content_type
+            })
+
+          paste
+        end
+
+      expected_ids = for paste <- pastes, paste.content_type in searchable, do: paste.id
+      actual_ids = Enum.map(Pastes.search_pastes(scope, "classifier"), & &1.paste.id)
+      assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
+    end
+
     test "search_pastes/2 treats LIKE wildcards literally and ignores blank queries", %{
       scope: scope
     } do
