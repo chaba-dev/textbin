@@ -18,6 +18,9 @@ defmodule Textbin.Pastes.ContentType do
                                "application/x-sh"
                              ])
 
+  @doc "Application media types treated as text, for queries that filter in SQL."
+  def textual_application_types, do: MapSet.to_list(@textual_application_types)
+
   def default, do: @default
   def binary, do: @binary
 
