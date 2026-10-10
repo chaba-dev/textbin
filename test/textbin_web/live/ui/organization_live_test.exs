@@ -154,93 +154,82 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     end
   end
 
-  test "mobile navigation exposes primary destinations and a modal overflow menu", context do
+  test "one navigation surface per breakpoint shares a single drawer", context do
     {:ok, view, _html} = live(context.conn, organization_path(context.organization))
 
-    assert has_element?(
-             view,
-             "#navigation-dialog-controller[phx-hook='NavigationDialog'][phx-update='ignore']"
-           )
+    refute has_element?(view, "#app-header")
 
     assert has_element?(
              view,
-             "#mobile-bottom-navigation.shrink-0.border-t[aria-label='Mobile primary']"
+             "#navigation-dialog-controller[phx-hook='NavigationDialog'][phx-update='ignore'][data-dialog-id='navigation-drawer']"
+           )
+
+    assert has_element?(view, "#application-sidebar.lg\\:flex #sidebar-navigation")
+    assert has_element?(view, "#application-rail.md\\:flex.lg\\:hidden")
+
+    assert has_element?(
+             view,
+             "#mobile-bottom-navigation.shrink-0.border-t.md\\:hidden[aria-label='Mobile primary']"
            )
 
     refute has_element?(view, "#mobile-bottom-navigation.fixed")
 
     assert has_element?(
              view,
-             "#mobile-bottom-navigation a[href='#{organization_path(context.organization)}'][aria-current='page']",
-             "Overview"
+             "#mobile-bottom-navigation a[href='#{workspace_path(context.organization, context.default_workspace)}']",
+             "Pastes"
            )
 
     assert has_element?(
              view,
-             "#mobile-bottom-navigation a[href='#{organization_members_path(context.organization)}']",
-             "Members"
+             "#mobile-bottom-navigation a[href='#{workspace_path(context.organization, context.default_workspace)}/new']",
+             "New"
            )
+
+    for opener <- ["#mobile-navigation-more", "#rail-open-navigation", "#rail-account"] do
+      assert has_element?(
+               view,
+               "button#{opener}[aria-controls='navigation-drawer'][aria-expanded='false'][data-navigation-dialog-open]"
+             )
+    end
+
+    assert has_element?(view, "dialog#navigation-drawer #drawer-navigation")
 
     assert has_element?(
              view,
-             "#mobile-bottom-navigation a[href='#{organization_settings_path(context.organization)}']",
-             "Settings"
-           )
-
-    assert has_element?(
-             view,
-             "button#mobile-navigation-more[aria-controls='mobile-navigation-dialog'][aria-expanded='false'][data-navigation-dialog-open]",
-             "More"
-           )
-
-    assert has_element?(view, "dialog#mobile-navigation-dialog.overflow-hidden.rounded-2xl")
-    assert has_element?(view, "#mobile-navigation-title", "More")
-    assert has_element?(view, "#mobile-more-navigation")
-    refute has_element?(view, "#mobile-organization-context")
-
-    assert has_element?(
-             view,
-             "#mobile-more-navigation a[href='#{workspace_path(context.organization, context.default_workspace)}']",
+             "#drawer-navigation-workspaces a[href='#{workspace_path(context.organization, context.default_workspace)}']",
              context.default_workspace.name
            )
 
     assert has_element?(
              view,
-             "#mobile-more-navigation a[href='#{organization_path(context.organization)}']",
-             "Organization overview"
+             "#drawer-navigation-manage[href='#{organization_members_path(context.organization)}']",
+             "Manage"
            )
 
     assert has_element?(
              view,
-             "#mobile-more-navigation a[href='#{organization_workspaces_path(context.organization)}']",
-             "Manage workspaces"
-           )
-
-    assert has_element?(view, "#mobile-more-navigation a[href='/orgs']", "Switch organization")
-
-    assert has_element?(
-             view,
-             "#mobile-account-navigation a[href='/users/settings']",
+             "#drawer-navigation-account-menu a[href='/users/settings']",
              "Account settings"
            )
 
     assert has_element?(
              view,
-             "#mobile-account-navigation a[href='/users/log-out']",
+             "#drawer-navigation-account-menu a[href='/users/log-out']",
              "Log out"
            )
 
     assert has_element?(
              view,
-             "#mobile-navigation-scroll-region.overflow-y-auto.overscroll-contain"
+             "#navigation-drawer-scroll-region.overflow-y-auto.overscroll-contain"
            )
+
+    assert has_element?(view, "#navigation-drawer button[data-navigation-dialog-close]")
 
     assert has_element?(
              view,
-             "#mobile-navigation-dialog button[data-navigation-dialog-close]"
+             "#rail-workspaces a[href='#{workspace_path(context.organization, context.default_workspace)}'][title='#{context.default_workspace.name}']"
            )
-
-    refute has_element?(view, "#mobile-sidebar-open")
   end
 
   test "application shell scrolls content above the docked mobile navigation", context do
@@ -249,7 +238,7 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
     assert has_element?(view, "main#main-content.overflow-y-auto[tabindex='-1']")
   end
 
-  test "organization menu remains scrollable and identifies its active destination", context do
+  test "organization switcher stays scrollable and Manage marks its pages", context do
     {:ok, overview_view, _html} = live(context.conn, organization_path(context.organization))
 
     assert has_element?(overview_view, "#organization-menu[data-dropdown]")
@@ -260,13 +249,31 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
              "#organization-menu a[href='#{organization_path(context.organization)}'][aria-current='page']"
            )
 
+    assert has_element?(
+             overview_view,
+             "#organization-menu a[href='/orgs']",
+             "Switch organization"
+           )
+
+    refute has_element?(overview_view, "#sidebar-navigation-manage[aria-current='page']")
+
     {:ok, settings_view, _html} =
       live(context.conn, organization_settings_path(context.organization))
 
+    assert has_element?(settings_view, "#sidebar-navigation-manage[aria-current='page']")
+
     assert has_element?(
              settings_view,
-             "#organization-menu a[href='#{organization_settings_path(context.organization)}'][aria-current='page']"
+             "#manage-navigation a[href='#{organization_settings_path(context.organization)}'][aria-current='page']",
+             "Organization settings"
            )
+
+    for path <- [
+          organization_members_path(context.organization),
+          organization_workspaces_path(context.organization)
+        ] do
+      assert has_element?(settings_view, "#manage-navigation a[href='#{path}']")
+    end
   end
 
   test "lists joined workspaces and links to their paste pages", context do
@@ -285,20 +292,8 @@ defmodule TextbinWeb.UI.OrganizationLiveTest do
 
     assert has_element?(
              view,
-             "#organization-menu a[href='#{organization_members_path(context.organization)}']",
-             "Manage members"
-           )
-
-    assert has_element?(
-             view,
-             "#organization-menu a[href='#{organization_workspaces_path(context.organization)}']",
-             "Manage workspaces"
-           )
-
-    assert has_element?(
-             view,
-             "#organization-menu a[href='#{organization_settings_path(context.organization)}']",
-             "Organization settings"
+             "#sidebar-navigation-manage[href='#{organization_members_path(context.organization)}']",
+             "Manage"
            )
 
     for workspace <- [context.default_workspace, context.workspace] do

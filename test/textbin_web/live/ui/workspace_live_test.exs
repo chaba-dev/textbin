@@ -57,7 +57,7 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
     {:ok, _membership} =
       Organizations.add_workspace_member(context.owner_scope, other_workspace, other_user)
 
-    {:ok, view, _html} = live(context.conn, workspace_path(context, "members"))
+    {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
 
     assert has_element?(view, "#workspace-members")
     assert has_element?(view, "#members-#{membership.id}", member.email)
@@ -65,12 +65,19 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
 
     assert has_element?(
              view,
-             "#sidebar-navigation a[href='#{workspace_path(context, "pastes")}']"
+             "#workspace-tabs a[href='#{workspace_path(context, "pastes")}']",
+             "Pastes"
            )
 
     assert has_element?(
              view,
-             "#sidebar-navigation a[href='#{workspace_path(context, "settings")}']"
+             "#workspace-tabs a[href='#{workspace_path(context, "settings")}'][aria-current='page']",
+             "Settings"
+           )
+
+    assert has_element?(
+             view,
+             "#sidebar-navigation-workspaces a[href='#{workspace_path(context, "pastes")}'][aria-current='page']"
            )
 
     assert has_element?(
@@ -79,32 +86,19 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
              "Pastes"
            )
 
-    assert has_element?(
-             view,
-             "#mobile-bottom-navigation a[href='#{workspace_path(context, "members")}'][aria-current='page']",
-             "Members"
-           )
+    assert has_element?(view, "#mobile-navigation-more[aria-current='page']")
+  end
 
-    assert has_element?(
-             view,
-             "#mobile-bottom-navigation a[href='#{workspace_path(context, "settings")}']",
-             "Settings"
-           )
+  test "the old members address opens workspace settings", context do
+    assert {:error, {:live_redirect, %{to: to}}} =
+             live(context.conn, workspace_path(context, "members"))
 
-    refute has_element?(
-             view,
-             "#mobile-more-navigation a[href='#{workspace_path(context, "members")}']"
-           )
-
-    refute has_element?(
-             view,
-             "#mobile-more-navigation a[href='#{workspace_path(context, "settings")}']"
-           )
+    assert to == workspace_path(context, "settings")
   end
 
   test "workspace owners add, promote, and remove members", context do
     member = add_organization_member(context, user_fixture())
-    {:ok, view, _html} = live(context.conn, workspace_path(context, "members"))
+    {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
 
     view
     |> form("#workspace-member-form", %{"member" => %{"email" => member.email}})
@@ -141,7 +135,7 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
       )
 
     context = %{context | workspace: default_workspace}
-    {:ok, view, _html} = live(context.conn, workspace_path(context, "members"))
+    {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
 
     assert has_element?(view, "#toggle-workspace-role-#{membership.id}")
     refute has_element?(view, "#remove-workspace-member-#{membership.id}")

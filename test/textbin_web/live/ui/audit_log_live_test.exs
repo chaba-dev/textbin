@@ -59,16 +59,11 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
 
     assert has_element?(
              view,
-             "#organization-menu a[href='#{audit_log_path(context.organization)}'][aria-current='page']",
+             "#manage-navigation a[href='#{audit_log_path(context.organization)}'][aria-current='page']",
              "Audit log"
            )
 
-    assert has_element?(
-             view,
-             "#mobile-more-navigation a[href='#{audit_log_path(context.organization)}'][aria-current='page']",
-             "Audit log"
-           )
-
+    assert has_element?(view, "#sidebar-navigation-manage[aria-current='page']")
     assert has_element?(view, "#mobile-navigation-more[aria-current='page']")
   end
 
@@ -128,16 +123,13 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
              )
 
     conn = log_in_user(build_conn(), context.member)
-    {:ok, overview, _html} = live(conn, organization_path(context.organization))
+    {:ok, members_view, _html} = live(conn, "/o/#{context.organization.slug}/members")
+
+    assert has_element?(members_view, "#manage-navigation")
 
     refute has_element?(
-             overview,
-             "#organization-menu a[href='#{audit_log_path(context.organization)}']"
-           )
-
-    refute has_element?(
-             overview,
-             "#mobile-more-navigation a[href='#{audit_log_path(context.organization)}']"
+             members_view,
+             "#manage-navigation a[href='#{audit_log_path(context.organization)}']"
            )
 
     assert {:error, {:live_redirect, %{to: path}}} =

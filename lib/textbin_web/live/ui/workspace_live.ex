@@ -8,7 +8,24 @@ defmodule TextbinWeb.UI.WorkspaceLive do
   @impl true
   def mount(_params, _session, socket), do: {:ok, socket}
 
+  # Members live inside Settings now; the old address keeps working.
   @impl true
+  def handle_params(
+        %{"organization_slug" => organization_slug, "workspace_slug" => workspace_slug},
+        _uri,
+        %{assigns: %{live_action: :members}} = socket
+      ) do
+    # Resolve first so an unreachable workspace stays concealed rather than
+    # confirming its address through a redirect.
+    _scope =
+      resolve_workspace_scope!(socket.assigns.current_scope, organization_slug, workspace_slug)
+
+    {:noreply,
+     push_navigate(socket,
+       to: "/w/#{organization_slug}/#{workspace_slug}/settings"
+     )}
+  end
+
   def handle_params(
         %{"organization_slug" => organization_slug, "workspace_slug" => workspace_slug},
         _uri,
@@ -16,6 +33,8 @@ defmodule TextbinWeb.UI.WorkspaceLive do
       ) do
     scope =
       resolve_workspace_scope!(socket.assigns.current_scope, organization_slug, workspace_slug)
+
+    :ok = Accounts.remember_last_workspace(scope.user, scope.workspace.id)
 
     {:noreply,
      socket
@@ -122,72 +141,7 @@ defmodule TextbinWeb.UI.WorkspaceLive do
   end
 
   @impl true
-  def render(%{live_action: :members} = assigns) do
-    ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      navigation_workspaces={@navigation_workspaces}
-      active_navigation={{:workspace, :members}}
-    >
-      <div class="space-y-8">
-        <.workspace_header scope={@current_scope} title="Members" />
-
-        <section
-          :if={@workspace_owner? && !@current_scope.workspace.is_default}
-          id="add-workspace-member"
-          class="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm"
-        >
-          <.form for={@member_form} id="workspace-member-form" phx-submit="add_member">
-            <.input field={@member_form[:email]} type="email" label="Member email" required />
-            <.button variant="primary" phx-disable-with="Adding...">Add member</.button>
-          </.form>
-        </section>
-
-        <div id="workspace-members" phx-update="stream" class="space-y-3">
-          <article
-            :for={{id, membership} <- @streams.members}
-            id={id}
-            class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div>
-              <p class="font-medium">{membership.user.email}</p>
-              <p class="text-sm text-base-content/60">{String.capitalize(membership.role)}</p>
-            </div>
-            <div
-              :if={@workspace_owner? && membership.user_id != @current_scope.user.id}
-              class="flex gap-2"
-            >
-              <button
-                id={"toggle-workspace-role-#{membership.id}"}
-                type="button"
-                phx-click="change_member_role"
-                phx-value-id={membership.id}
-                phx-value-role={if(membership.role == "owner", do: "member", else: "owner")}
-                class="btn btn-sm btn-ghost"
-              >
-                {if(membership.role == "owner", do: "Make member", else: "Make owner")}
-              </button>
-              <button
-                :if={!@current_scope.workspace.is_default}
-                id={"remove-workspace-member-#{membership.id}"}
-                type="button"
-                phx-click="remove_member"
-                phx-value-id={membership.id}
-                data-confirm="Remove this workspace member?"
-                class="btn btn-sm btn-error"
-              >
-                Remove
-              </button>
-            </div>
-          </article>
-        </div>
-      </div>
-    </Layouts.app>
-    """
-  end
-
-  def render(%{live_action: :settings} = assigns) do
+  def render(assigns) do
     ~H"""
     <Layouts.app
       flash={@flash}
@@ -196,13 +150,27 @@ defmodule TextbinWeb.UI.WorkspaceLive do
       active_navigation={{:workspace, :settings}}
     >
       <div class="space-y-8">
-        <.workspace_header scope={@current_scope} title="Settings" />
+        <header class="space-y-4">
+          <div>
+            <p class="text-sm font-medium text-base-content/55">
+              {@current_scope.organization.name}
+            </p>
+            <h1
+              id="workspace-heading"
+              class="mt-1 text-2xl font-semibold tracking-tight text-base-content lg:text-3xl"
+            >
+              {@current_scope.workspace.name}
+            </h1>
+          </div>
+          <Layouts.workspace_tabs scope={@current_scope} active={:settings} />
+        </header>
 
         <section
           id="workspace-settings"
           class="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm"
         >
-          <dl class="mb-6 grid gap-4 sm:grid-cols-2">
+          <h2 class="text-lg font-semibold text-base-content">General</h2>
+          <dl class="mb-6 mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <dt class="text-sm text-base-content/60">Name</dt>
               <dd class="font-medium">{@current_scope.workspace.name}</dd>
@@ -249,20 +217,67 @@ defmodule TextbinWeb.UI.WorkspaceLive do
             )}
           </p>
         </section>
+
+        <section id="workspace-members-section" class="space-y-4">
+          <div>
+            <h2 class="text-lg font-semibold text-base-content">Members</h2>
+            <p class="mt-1 text-sm text-base-content/60">
+              People who can see and create pastes in this workspace.
+            </p>
+          </div>
+
+          <div
+            :if={@workspace_owner? && !@current_scope.workspace.is_default}
+            id="add-workspace-member"
+            class="rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm"
+          >
+            <.form for={@member_form} id="workspace-member-form" phx-submit="add_member">
+              <.input field={@member_form[:email]} type="email" label="Member email" required />
+              <.button variant="primary" phx-disable-with="Adding...">Add member</.button>
+            </.form>
+          </div>
+
+          <div id="workspace-members" phx-update="stream" class="space-y-3">
+            <article
+              :for={{id, membership} <- @streams.members}
+              id={id}
+              class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <p class="font-medium">{membership.user.email}</p>
+                <p class="text-sm text-base-content/60">{String.capitalize(membership.role)}</p>
+              </div>
+              <div
+                :if={@workspace_owner? && membership.user_id != @current_scope.user.id}
+                class="flex gap-2"
+              >
+                <button
+                  id={"toggle-workspace-role-#{membership.id}"}
+                  type="button"
+                  phx-click="change_member_role"
+                  phx-value-id={membership.id}
+                  phx-value-role={if(membership.role == "owner", do: "member", else: "owner")}
+                  class="btn btn-sm btn-ghost"
+                >
+                  {if(membership.role == "owner", do: "Make member", else: "Make owner")}
+                </button>
+                <button
+                  :if={!@current_scope.workspace.is_default}
+                  id={"remove-workspace-member-#{membership.id}"}
+                  type="button"
+                  phx-click="remove_member"
+                  phx-value-id={membership.id}
+                  data-confirm="Remove this workspace member?"
+                  class="btn btn-sm btn-error"
+                >
+                  Remove
+                </button>
+              </div>
+            </article>
+          </div>
+        </section>
       </div>
     </Layouts.app>
-    """
-  end
-
-  attr :scope, :map, required: true
-  attr :title, :string, required: true
-
-  defp workspace_header(assigns) do
-    ~H"""
-    <header>
-      <p class="text-sm font-medium text-base-content/55">{@scope.workspace.name}</p>
-      <h1 class="mt-1 text-3xl font-semibold tracking-tight text-base-content">{@title}</h1>
-    </header>
     """
   end
 

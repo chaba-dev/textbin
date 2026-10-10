@@ -5,26 +5,30 @@
   active_navigation={{:workspace, :pastes}}
 >
   <div class="space-y-6">
-    <div class="flex items-end justify-between gap-4">
-      <div>
-        <p class="hidden text-sm font-medium text-base-content/55 lg:block">
-          {@current_scope.workspace.name}
-        </p>
-        <h1
-          id="pastes-heading"
-          class="sr-only lg:not-sr-only lg:mt-1 lg:text-3xl lg:font-semibold lg:tracking-tight lg:text-base-content"
+    <header class="space-y-4">
+      <div class="flex items-end justify-between gap-4">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium text-base-content/55">
+            {@current_scope.organization.name}
+          </p>
+          <h1
+            id="workspace-heading"
+            class="mt-1 truncate text-2xl font-semibold tracking-tight text-base-content lg:text-3xl"
+          >
+            {@current_scope.workspace.name}
+          </h1>
+        </div>
+        <.link
+          id="new-paste-link"
+          navigate={new_paste_path(@current_scope)}
+          class="btn btn-primary btn-sm"
         >
-          Pastes
-        </h1>
+          <.icon name="hero-plus" class="size-4" /> New paste
+        </.link>
       </div>
-      <.link
-        id="new-paste-link"
-        navigate={new_paste_path(@current_scope)}
-        class="btn btn-primary btn-sm"
-      >
-        <.icon name="hero-plus" class="size-4" /> New paste
-      </.link>
-    </div>
+      <Layouts.workspace_tabs scope={@current_scope} active={:pastes} />
+      <h2 id="pastes-heading" class="sr-only">Pastes</h2>
+    </header>
 
     <div id="pastes-list" phx-update="stream" class="space-y-3">
       <div

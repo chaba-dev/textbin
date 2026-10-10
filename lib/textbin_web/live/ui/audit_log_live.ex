@@ -79,6 +79,8 @@ defmodule TextbinWeb.UI.AuditLogLive do
           </p>
         </header>
 
+        <Layouts.manage_tabs scope={@current_scope} active={:audit_log} />
+
         <section class="overflow-hidden rounded-xl border border-base-300 bg-base-100 shadow-sm">
           <div class="flex items-start gap-3 border-b border-base-300 bg-base-200/35 px-5 py-4 sm:px-6">
             <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">

@@ -107,7 +107,7 @@ defmodule TextbinWeb.UI.WorkspaceManagementLiveTest do
 
     assert has_element?(
              index_view,
-             "#organization-menu a[href='#{organization_workspaces_path(context.organization)}'][aria-current='page']"
+             "#manage-navigation a[href='#{organization_workspaces_path(context.organization)}'][aria-current='page']"
            )
 
     {:ok, view, _html} = live(context.conn, organization_new_workspace_path(context.organization))

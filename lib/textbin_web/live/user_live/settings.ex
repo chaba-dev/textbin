@@ -6,7 +6,13 @@ defmodule TextbinWeb.UserLive.Settings do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_scope={@navigation_scope}
+      navigation_workspaces={@navigation_workspaces}
+      active_navigation={:account}
+    >
       <div class="text-center">
         <.header>
           Account Settings
@@ -194,6 +200,7 @@ defmodule TextbinWeb.UserLive.Settings do
       |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
       |> assign(:new_api_token, nil)
       |> assign(:trigger_submit, false)
+      |> TextbinWeb.Navigation.assign_home_navigation()
 
     {:ok, socket}
   end
