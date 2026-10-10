@@ -329,6 +329,23 @@ defmodule TextbinWeb.Layouts do
         <.icon name="hero-plus" class="size-4" />
       </.link>
 
+      <.link
+        id="rail-search"
+        navigate={~p"/search"}
+        aria-label="Search"
+        title="Search"
+        aria-current={@active == :search && "page"}
+        class={[
+          "flex size-10 items-center justify-center rounded-xl transition",
+          if(@active == :search,
+            do: "bg-primary/12 text-primary",
+            else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+          )
+        ]}
+      >
+        <.icon name="hero-magnifying-glass" class="size-5" />
+      </.link>
+
       <div class="my-1 h-px w-8 bg-base-300"></div>
 
       <div
@@ -394,7 +411,7 @@ defmodule TextbinWeb.Layouts do
     <nav
       id="mobile-bottom-navigation"
       aria-label="Mobile primary"
-      class="z-20 grid w-full shrink-0 grid-cols-3 gap-1 border-t border-base-300 bg-base-100 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 md:hidden"
+      class="z-20 grid w-full shrink-0 grid-cols-4 gap-1 border-t border-base-300 bg-base-100 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 md:hidden"
     >
       <.mobile_navigation_link
         :if={pastes_path(@scope, @workspaces)}
@@ -411,6 +428,13 @@ defmodule TextbinWeb.Layouts do
         icon="hero-plus-circle"
         label="New"
         active={@active == {:workspace, :new}}
+      />
+      <.mobile_navigation_link
+        id="mobile-search-link"
+        navigate={~p"/search"}
+        icon="hero-magnifying-glass"
+        label="Search"
+        active={@active == :search}
       />
 
       <button
@@ -519,6 +543,23 @@ defmodule TextbinWeb.Layouts do
         class="btn btn-primary btn-sm w-full justify-start"
       >
         <.icon name="hero-plus" class="size-4" /> New paste
+      </.link>
+
+      <.link
+        id={"#{@id}-search"}
+        navigate={~p"/search"}
+        aria-current={@active == :search && "page"}
+        class={[
+          "flex items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-sm transition",
+          if(@active == :search,
+            do: "border-primary/40 bg-primary/5 text-primary",
+            else:
+              "border-base-300 text-base-content/55 hover:border-base-content/25 hover:text-base-content"
+          )
+        ]}
+      >
+        <.icon name="hero-magnifying-glass" class="size-4 shrink-0" />
+        <span>Search</span>
       </.link>
 
       <div class="flex min-h-0 flex-1 flex-col">
