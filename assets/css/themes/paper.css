@@ -1,0 +1,105 @@
+/* Paper theme tokens. Generated from the design canvas palette; every text
+   token clears 4.5:1 on the surfaces it sits on. */
+[data-theme="paper"] {
+  color-scheme: light;
+  --color-base-100: #FBF9F4;
+  --color-base-200: #F3EFE7;
+  --color-base-300: #E3DCCF;
+  --color-base-content: #1E1A14;
+  --color-primary: #2E6B55;
+  --color-primary-content: #FFFFFF;
+  --color-secondary: #2E6B55;
+  --color-secondary-content: #FFFFFF;
+  --color-accent: #2E6B55;
+  --color-accent-content: #FFFFFF;
+  --color-neutral: #1E1A14;
+  --color-neutral-content: #FBF9F4;
+  --color-info: #2E6B55;
+  --color-info-content: #FFFFFF;
+  --color-success: #4F6A1D;
+  --color-success-content: #FBF9F4;
+  --color-warning: #8A5A10;
+  --color-warning-content: #FBF9F4;
+  --color-error: #A3342A;
+  --color-error-content: #FBF9F4;
+  --tb-code: #F6F2EA;
+  --tb-border-strong: #CFC6B5;
+  --tb-ink-2: #5A5244;
+  --tb-ink-3: #6B6353;
+  --tb-syntax-keyword: #7A3E8F;
+  --tb-syntax-string: #8A5A10;
+  --tb-syntax-number: #4F6A1D;
+  --tb-syntax-comment: #6B6353;
+  --tb-syntax-function: #2C5F86;
+  --tb-syntax-type: #A3342A;
+}
+
+[data-theme="paper"][data-mode="dark"] {
+  color-scheme: dark;
+  --color-base-100: #1E1A15;
+  --color-base-200: #16130F;
+  --color-base-300: #332D25;
+  --color-base-content: #EFE9DF;
+  --color-primary: #7FC4A4;
+  --color-primary-content: #16130F;
+  --color-secondary: #7FC4A4;
+  --color-secondary-content: #16130F;
+  --color-accent: #7FC4A4;
+  --color-accent-content: #16130F;
+  --color-neutral: #EFE9DF;
+  --color-neutral-content: #1E1A15;
+  --color-info: #7FC4A4;
+  --color-info-content: #16130F;
+  --color-success: #B6CF7A;
+  --color-success-content: #1E1A15;
+  --color-warning: #E6B35A;
+  --color-warning-content: #1E1A15;
+  --color-error: #F09A8A;
+  --color-error-content: #1E1A15;
+  --tb-code: #1A1611;
+  --tb-border-strong: #463E33;
+  --tb-ink-2: #B8AE9E;
+  --tb-ink-3: #968C7B;
+  --tb-syntax-keyword: #C9A8E8;
+  --tb-syntax-string: #E6B35A;
+  --tb-syntax-number: #B6CF7A;
+  --tb-syntax-comment: #968C7B;
+  --tb-syntax-function: #8CC4E8;
+  --tb-syntax-type: #F09A8A;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="paper"][data-mode="auto"] {
+    color-scheme: dark;
+    --color-base-100: #1E1A15;
+    --color-base-200: #16130F;
+    --color-base-300: #332D25;
+    --color-base-content: #EFE9DF;
+    --color-primary: #7FC4A4;
+    --color-primary-content: #16130F;
+    --color-secondary: #7FC4A4;
+    --color-secondary-content: #16130F;
+    --color-accent: #7FC4A4;
+    --color-accent-content: #16130F;
+    --color-neutral: #EFE9DF;
+    --color-neutral-content: #1E1A15;
+    --color-info: #7FC4A4;
+    --color-info-content: #16130F;
+    --color-success: #B6CF7A;
+    --color-success-content: #1E1A15;
+    --color-warning: #E6B35A;
+    --color-warning-content: #1E1A15;
+    --color-error: #F09A8A;
+    --color-error-content: #1E1A15;
+    --tb-code: #1A1611;
+    --tb-border-strong: #463E33;
+    --tb-ink-2: #B8AE9E;
+    --tb-ink-3: #968C7B;
+    --tb-syntax-keyword: #C9A8E8;
+    --tb-syntax-string: #E6B35A;
+    --tb-syntax-number: #B6CF7A;
+    --tb-syntax-comment: #968C7B;
+    --tb-syntax-function: #8CC4E8;
+    --tb-syntax-type: #F09A8A;
+  }
+}

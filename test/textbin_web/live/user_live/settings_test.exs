@@ -55,6 +55,52 @@ defmodule TextbinWeb.UserLive.SettingsTest do
     end
   end
 
+  describe "appearance" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "picking a theme saves it and applies it to the page", %{conn: conn, user: user} do
+      {:ok, view, _html} = live(conn, ~p"/users/settings")
+
+      assert has_element?(view, "#user_theme_harbor[checked]")
+      assert has_element?(view, "#user_color_mode_auto[checked]")
+
+      view
+      |> form("#appearance_form", %{"user" => %{"theme" => "paper", "color_mode" => "dark"}})
+      |> render_change()
+
+      assert_push_event(view, "set-appearance", %{theme: "paper", mode: "dark"})
+      assert %{theme: "paper", color_mode: "dark"} = Accounts.get_user!(user.id)
+      assert has_element?(view, "#user_theme_paper[checked]")
+    end
+
+    test "dark-only themes keep the saved mode and disable the control", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, view, _html} = live(conn, ~p"/users/settings")
+
+      view |> form("#appearance_form", %{"user" => %{"theme" => "midnight"}}) |> render_change()
+
+      assert %{theme: "midnight", color_mode: "auto"} = Accounts.get_user!(user.id)
+      assert has_element?(view, "#user_color_mode_dark[disabled]")
+      assert has_element?(view, "#color-mode-note", "only comes in dark")
+    end
+
+    test "the saved appearance is on the html element", %{conn: conn, user: user} do
+      {:ok, _user} =
+        Accounts.update_user_appearance(user, %{theme: "graphite", color_mode: "light"})
+
+      html = conn |> get(~p"/users/settings") |> html_response(200)
+      [html_tag] = Regex.run(~r/<html[^>]*>/, html)
+
+      assert html_tag =~ ~s(data-theme="graphite")
+      assert html_tag =~ ~s(data-mode="light")
+    end
+  end
+
   describe "update email form" do
     setup %{conn: conn} do
       user = user_fixture()

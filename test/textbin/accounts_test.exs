@@ -710,4 +710,25 @@ defmodule Textbin.AccountsTest do
       refute inspect(%User{password: "123456"}) =~ "password: \"123456\""
     end
   end
+
+  describe "update_user_appearance/2" do
+    test "stores a theme and color mode" do
+      user = user_fixture()
+      assert user.theme == "harbor" and user.color_mode == "auto"
+
+      assert {:ok, user} =
+               Accounts.update_user_appearance(user, %{theme: "paper", color_mode: "dark"})
+
+      assert %{theme: "paper", color_mode: "dark"} = Accounts.get_user!(user.id)
+    end
+
+    test "rejects unknown themes and modes" do
+      user = user_fixture()
+
+      assert {:error, changeset} =
+               Accounts.update_user_appearance(user, %{theme: "neon", color_mode: "dim"})
+
+      assert %{theme: ["is invalid"], color_mode: ["is invalid"]} = errors_on(changeset)
+    end
+  end
 end

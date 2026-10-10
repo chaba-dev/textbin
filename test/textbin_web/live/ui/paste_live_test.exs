@@ -747,6 +747,61 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert Pastes.get_paste(scope, paste.id)
   end
 
+  test "shared links use Harbor without losing authenticated workspace preferences", %{
+    scope: scope,
+    user: user,
+    conn: conn
+  } do
+    {:ok, user} = Textbin.Accounts.update_user_appearance(user, %{theme: "terminal"})
+
+    {:ok, outsider} =
+      Textbin.Accounts.update_user_appearance(user_fixture(), %{
+        theme: "paper",
+        color_mode: "dark"
+      })
+
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "themed", audience: "unlisted"})
+
+    for viewer <- [build_conn(), conn, log_in_user(build_conn(), outsider)] do
+      document =
+        viewer |> get(~p"/pastes/#{paste.id}") |> html_response(200) |> LazyHTML.from_document()
+
+      assert document
+             |> LazyHTML.filter("html:not([data-theme]):not([data-mode])")
+             |> Enum.count() == 1
+
+      {:ok, view, _html} = live(viewer, ~p"/pastes/#{paste.id}")
+      assert has_element?(view, "#appearance-policy:not([data-theme]):not([data-mode])")
+      assert has_element?(view, "#paste-title", "themed")
+    end
+
+    path = "#{personal_workspace_path(user)}/#{paste.id}"
+    document = conn |> get(path) |> html_response(200) |> LazyHTML.from_document()
+    assert document |> LazyHTML.filter("html[data-theme='terminal']") |> Enum.count() == 1
+    {:ok, view, _html} = live(conn, path)
+    assert has_element?(view, "#appearance-policy[data-theme='terminal']")
+
+    assert {:ok, _removed} = Pastes.delete_paste(scope, paste)
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+    assert has_element?(view, "#removed-paste")
+    assert has_element?(view, "#appearance-policy:not([data-theme]):not([data-mode])")
+    assert Textbin.Accounts.get_user!(user.id).theme == "terminal"
+  end
+
+  test "code is marked up with syntax role classes", %{conn: conn, scope: scope} do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{
+        data: ~s(defmodule A do\n  # note\n  def f, do: "s"\nend),
+        syntax_highlight: "elixir"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+
+    assert has_element?(view, "#paste-data .l-keyword-function", "defmodule")
+    assert has_element?(view, "#paste-data .l-comment", "# note")
+    assert has_element?(view, "#paste-data .l-string")
+  end
+
   test "a removed paste's link is a plain 404 for everyone else", %{scope: scope} do
     {:ok, paste} = Pastes.create_paste(scope, %{data: "shared then removed", audience: "public"})
     {:ok, _} = Pastes.delete_paste(scope, paste)

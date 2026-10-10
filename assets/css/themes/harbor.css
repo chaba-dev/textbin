@@ -1,0 +1,107 @@
+/* Harbor theme tokens. Generated from the design canvas palette; every text
+   token clears 4.5:1 on the surfaces it sits on. */
+:root,
+[data-theme="harbor"] {
+  color-scheme: light;
+  --color-base-100: #FFFFFF;
+  --color-base-200: #F4F5F7;
+  --color-base-300: #E2E5EA;
+  --color-base-content: #15181E;
+  --color-primary: #1D6F8E;
+  --color-primary-content: #FFFFFF;
+  --color-secondary: #1D6F8E;
+  --color-secondary-content: #FFFFFF;
+  --color-accent: #1D6F8E;
+  --color-accent-content: #FFFFFF;
+  --color-neutral: #15181E;
+  --color-neutral-content: #FFFFFF;
+  --color-info: #1D6F8E;
+  --color-info-content: #FFFFFF;
+  --color-success: #1B7F4B;
+  --color-success-content: #FFFFFF;
+  --color-warning: #9A5B00;
+  --color-warning-content: #FFFFFF;
+  --color-error: #B3261E;
+  --color-error-content: #FFFFFF;
+  --tb-code: #F8F9FB;
+  --tb-border-strong: #C9CED6;
+  --tb-ink-2: #4B5362;
+  --tb-ink-3: #646C7A;
+  --tb-syntax-keyword: #6A3FB5;
+  --tb-syntax-string: #9A5B00;
+  --tb-syntax-number: #1B7F4B;
+  --tb-syntax-comment: #646C7A;
+  --tb-syntax-function: #155E8C;
+  --tb-syntax-type: #B3261E;
+}
+
+[data-theme="harbor"][data-mode="dark"] {
+  color-scheme: dark;
+  --color-base-100: #161A20;
+  --color-base-200: #0F1115;
+  --color-base-300: #262B34;
+  --color-base-content: #E8EAEE;
+  --color-primary: #5FB3D1;
+  --color-primary-content: #0F1115;
+  --color-secondary: #5FB3D1;
+  --color-secondary-content: #0F1115;
+  --color-accent: #5FB3D1;
+  --color-accent-content: #0F1115;
+  --color-neutral: #E8EAEE;
+  --color-neutral-content: #161A20;
+  --color-info: #5FB3D1;
+  --color-info-content: #0F1115;
+  --color-success: #6CC39A;
+  --color-success-content: #161A20;
+  --color-warning: #E0A24A;
+  --color-warning-content: #161A20;
+  --color-error: #F08A80;
+  --color-error-content: #161A20;
+  --tb-code: #12151B;
+  --tb-border-strong: #333A45;
+  --tb-ink-2: #A3AAB6;
+  --tb-ink-3: #8A93A3;
+  --tb-syntax-keyword: #C39AE8;
+  --tb-syntax-string: #E0A24A;
+  --tb-syntax-number: #6CC39A;
+  --tb-syntax-comment: #8A93A3;
+  --tb-syntax-function: #7CC0E8;
+  --tb-syntax-type: #F08A80;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]),
+  [data-theme="harbor"][data-mode="auto"] {
+    color-scheme: dark;
+    --color-base-100: #161A20;
+    --color-base-200: #0F1115;
+    --color-base-300: #262B34;
+    --color-base-content: #E8EAEE;
+    --color-primary: #5FB3D1;
+    --color-primary-content: #0F1115;
+    --color-secondary: #5FB3D1;
+    --color-secondary-content: #0F1115;
+    --color-accent: #5FB3D1;
+    --color-accent-content: #0F1115;
+    --color-neutral: #E8EAEE;
+    --color-neutral-content: #161A20;
+    --color-info: #5FB3D1;
+    --color-info-content: #0F1115;
+    --color-success: #6CC39A;
+    --color-success-content: #161A20;
+    --color-warning: #E0A24A;
+    --color-warning-content: #161A20;
+    --color-error: #F08A80;
+    --color-error-content: #161A20;
+    --tb-code: #12151B;
+    --tb-border-strong: #333A45;
+    --tb-ink-2: #A3AAB6;
+    --tb-ink-3: #8A93A3;
+    --tb-syntax-keyword: #C39AE8;
+    --tb-syntax-string: #E0A24A;
+    --tb-syntax-number: #6CC39A;
+    --tb-syntax-comment: #8A93A3;
+    --tb-syntax-function: #7CC0E8;
+    --tb-syntax-type: #F08A80;
+  }
+}
