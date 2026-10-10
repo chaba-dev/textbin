@@ -136,7 +136,6 @@ defmodule TextbinWeb.Layouts do
             <.lockup />
           </.link>
           <div id="public-navigation" class="flex items-center gap-2">
-            <.theme_toggle />
             <%= if signed_in?(@current_scope) do %>
               <.link href={~p"/"} class="btn btn-ghost btn-sm">Open textbin</.link>
             <% else %>
@@ -650,15 +649,16 @@ defmodule TextbinWeb.Layouts do
         <.icon name="hero-chevron-up" class="size-4 shrink-0 text-base-content/40" />
       </summary>
       <div class="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl">
-        <div class="flex items-center justify-between gap-3 px-3 py-2">
-          <span class="text-xs font-medium text-base-content/60">Theme</span>
-          <.theme_toggle />
-        </div>
         <.menu_link
           href={~p"/users/settings"}
           icon="hero-user-circle"
           label="Account settings"
           active={@active == :account}
+        />
+        <.menu_link
+          href={~p"/users/settings#appearance"}
+          icon="hero-swatch"
+          label="Appearance"
         />
         <.menu_link
           :if={platform_admin?(@scope)}
@@ -829,39 +829,14 @@ defmodule TextbinWeb.Layouts do
   end
 
   @doc """
-  Provides dark vs light theme toggle based on themes defined in app.css.
-
-  See <head> in root.html.heex which applies the theme before page load.
+  The theme on `<html data-theme>`. Pages without a signed-in person render
+  no attribute, which means Harbor following the system color scheme; shared
+  links therefore always look the same to outsiders.
   """
-  def theme_toggle(assigns) do
-    ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
+  def html_theme(%{user: %User{theme: theme}}), do: theme
+  def html_theme(_scope), do: nil
 
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="system"
-      >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="light"
-      >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="dark"
-      >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-    </div>
-    """
-  end
+  @doc "The color mode on `<html data-mode>`: auto, light or dark."
+  def html_mode(%{user: %User{color_mode: mode}}), do: mode
+  def html_mode(_scope), do: nil
 end

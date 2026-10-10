@@ -183,6 +183,17 @@ defmodule Textbin.Accounts do
     |> Repo.update()
   end
 
+  def change_user_appearance(user, attrs \\ %{}), do: User.appearance_changeset(user, attrs)
+
+  @doc """
+  Updates the user's theme and color mode.
+  """
+  def update_user_appearance(user, attrs) do
+    user
+    |> User.appearance_changeset(attrs)
+    |> Repo.update()
+  end
+
   @doc """
   Records the workspace the user is working in so home can return to it.
 

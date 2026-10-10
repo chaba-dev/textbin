@@ -73,6 +73,14 @@ const liveSocket = new LiveSocket("/live", Socket, {
 
 installDismissibleDropdowns(document)
 
+// The root layout is not re-rendered by live navigation, so a saved theme or
+// color mode is applied to <html> directly. Matches data-theme/data-mode in
+// the theme CSS files.
+window.addEventListener("phx:set-appearance", ({detail}) => {
+  document.documentElement.dataset.theme = detail.theme
+  document.documentElement.dataset.mode = detail.mode
+})
+
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))

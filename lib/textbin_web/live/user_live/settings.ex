@@ -2,6 +2,7 @@ defmodule TextbinWeb.UserLive.Settings do
   use TextbinWeb, :live_view
 
   alias Textbin.Accounts
+  alias Textbin.Accounts.User
 
   @impl true
   def render(assigns) do
@@ -16,9 +17,90 @@ defmodule TextbinWeb.UserLive.Settings do
       <div class="text-center">
         <.header>
           Account Settings
-          <:subtitle>Manage your account email address, password, and paste defaults</:subtitle>
+          <:subtitle>Manage your appearance, email address, password, and paste defaults</:subtitle>
         </.header>
       </div>
+
+      <section id="appearance" class="space-y-4">
+        <.header>
+          Appearance
+          <:subtitle>
+            Only you see your theme. Links you share always open in Harbor.
+          </:subtitle>
+        </.header>
+
+        <.form for={@appearance_form} id="appearance_form" phx-change="update_appearance">
+          <fieldset class="space-y-2">
+            <legend class="label mb-1">Theme</legend>
+            <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <label
+                :for={theme <- themes()}
+                id={"theme-option-#{theme.id}"}
+                class="group cursor-pointer rounded-lg border border-base-300 p-2 transition hover:border-base-content/30 has-[:checked]:border-primary has-[:checked]:ring-2 has-[:checked]:ring-primary/30"
+              >
+                <input
+                  type="radio"
+                  id={"user_theme_#{theme.id}"}
+                  name={@appearance_form[:theme].name}
+                  value={theme.id}
+                  checked={@appearance_form[:theme].value == theme.id}
+                  class="sr-only"
+                />
+                <span
+                  class="flex h-16 overflow-hidden rounded-md border"
+                  style={"background:#{theme.ground};border-color:#{theme.border}"}
+                  aria-hidden="true"
+                >
+                  <span class="w-1/3" style={"background:#{theme.surface}"}></span>
+                  <span class="flex flex-1 flex-col justify-center gap-1.5 px-2">
+                    <span class="h-1.5 w-3/4 rounded-full" style={"background:#{theme.ink}"}></span>
+                    <span class="h-1.5 w-1/2 rounded-full" style={"background:#{theme.accent}"}>
+                    </span>
+                  </span>
+                </span>
+                <span class="mt-2 block text-sm font-medium">{theme.label}</span>
+                <span class="block text-xs text-base-content/60">{theme.note}</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset id="color-mode" class="mt-5 space-y-2">
+            <legend class="label mb-1">Mode</legend>
+            <div class="inline-flex gap-1 rounded-lg bg-base-200 p-1" role="radiogroup">
+              <label
+                :for={{label, value} <- [{"Auto", "auto"}, {"Light", "light"}, {"Dark", "dark"}]}
+                class={[
+                  "rounded-md px-3 py-1.5 text-sm font-medium transition",
+                  if(@dark_only_theme?,
+                    do: "cursor-not-allowed text-base-content/40",
+                    else:
+                      "cursor-pointer text-base-content/65 hover:text-base-content has-[:checked]:bg-base-100 has-[:checked]:text-base-content has-[:checked]:shadow-sm"
+                  )
+                ]}
+              >
+                <input
+                  type="radio"
+                  id={"user_color_mode_#{value}"}
+                  name={@appearance_form[:color_mode].name}
+                  value={value}
+                  checked={@appearance_form[:color_mode].value == value}
+                  disabled={@dark_only_theme?}
+                  class="sr-only"
+                />
+                {label}
+              </label>
+            </div>
+            <p id="color-mode-note" class="text-sm text-base-content/60">
+              {if(@dark_only_theme?,
+                do: "This theme only comes in dark.",
+                else: "Auto follows your system setting."
+              )}
+            </p>
+          </fieldset>
+        </.form>
+      </section>
+
+      <div class="divider" />
 
       <.form for={@email_form} id="email_form" phx-submit="update_email" phx-change="validate_email">
         <.input
@@ -189,6 +271,7 @@ defmodule TextbinWeb.UserLive.Settings do
     email_changeset = Accounts.change_user_email(user, %{}, validate_unique: false)
     password_changeset = Accounts.change_user_password(user, %{}, hash_password: false)
     paste_defaults_changeset = Accounts.change_user_paste_defaults(user)
+    appearance_changeset = Accounts.change_user_appearance(user)
 
     socket =
       socket
@@ -196,6 +279,8 @@ defmodule TextbinWeb.UserLive.Settings do
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
       |> assign(:paste_defaults_form, to_form(paste_defaults_changeset))
+      |> assign(:appearance_form, to_form(appearance_changeset))
+      |> assign(:dark_only_theme?, User.dark_only_theme?(user.theme))
       |> assign(:api_token_form, to_form(%{"name" => ""}, as: :api_token))
       |> assign(:api_tokens, Accounts.list_user_api_tokens(user))
       |> assign(:new_api_token, nil)
@@ -265,6 +350,26 @@ defmodule TextbinWeb.UserLive.Settings do
     end)
   end
 
+  # Appearance saves on every change, so picking a theme previews it right away.
+  def handle_event("update_appearance", %{"user" => user_params}, socket) do
+    user = socket.assigns.current_scope.user
+    # A dark-only theme submits no mode because the control is disabled.
+    user_params = Map.put_new(user_params, "color_mode", user.color_mode)
+
+    case Accounts.update_user_appearance(user, user_params) do
+      {:ok, user} ->
+        {:noreply,
+         socket
+         |> assign(:current_scope, %{socket.assigns.current_scope | user: user})
+         |> assign(:appearance_form, to_form(Accounts.change_user_appearance(user)))
+         |> assign(:dark_only_theme?, User.dark_only_theme?(user.theme))
+         |> push_event("set-appearance", %{theme: user.theme, mode: user.color_mode})}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :appearance_form, to_form(changeset, action: :update))}
+    end
+  end
+
   def handle_event("update_paste_defaults", %{"user" => user_params}, socket) do
     user = socket.assigns.current_scope.user
 
@@ -331,6 +436,63 @@ defmodule TextbinWeb.UserLive.Settings do
 
   defp format_api_token_time(%DateTime{} = timestamp) do
     Calendar.strftime(timestamp, "%Y-%m-%d %H:%M:%S UTC")
+  end
+
+  # Swatch colors mirror each theme's tokens in assets/css/themes; the card
+  # shows the theme's own colors no matter which theme is active.
+  defp themes do
+    [
+      %{
+        id: "harbor",
+        label: "Harbor",
+        note: "Default · light and dark",
+        ground: "#F4F5F7",
+        surface: "#FFFFFF",
+        border: "#E2E5EA",
+        ink: "#15181E",
+        accent: "#1D6F8E"
+      },
+      %{
+        id: "paper",
+        label: "Paper",
+        note: "Warm · light and dark",
+        ground: "#F3EFE7",
+        surface: "#FBF9F4",
+        border: "#E3DCCF",
+        ink: "#1E1A14",
+        accent: "#2E6B55"
+      },
+      %{
+        id: "graphite",
+        label: "Graphite",
+        note: "Monochrome · light and dark",
+        ground: "#EDEEF0",
+        surface: "#FFFFFF",
+        border: "#DADDE2",
+        ink: "#0F1114",
+        accent: "#1F2430"
+      },
+      %{
+        id: "midnight",
+        label: "Midnight",
+        note: "Navy · dark only",
+        ground: "#0C1322",
+        surface: "#121B30",
+        border: "#22304D",
+        ink: "#E6ECF8",
+        accent: "#5EB8FF"
+      },
+      %{
+        id: "terminal",
+        label: "Terminal",
+        note: "Near-black · dark only",
+        ground: "#0A0C0F",
+        surface: "#111418",
+        border: "#22272E",
+        ink: "#E6E8EB",
+        accent: "#3DDC84"
+      }
+    ]
   end
 
   defp paste_ttl_options do

@@ -5,6 +5,9 @@ defmodule Textbin.Accounts.User do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   @paste_ttl_values ["never", "10m", "1h", "6h", "12h", "1d", "7d", "30d"]
+  @themes ["harbor", "paper", "graphite", "midnight", "terminal"]
+  @dark_only_themes ["midnight", "terminal"]
+  @color_modes ["auto", "light", "dark"]
 
   schema "users" do
     field :email, :string
@@ -18,6 +21,8 @@ defmodule Textbin.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
     field :default_paste_ttl, :string, default: "never"
+    field :theme, :string, default: "harbor"
+    field :color_mode, :string, default: "auto"
     # Set by the app as people move between workspaces; never cast from input.
     field :last_workspace_id, :binary_id
 
@@ -132,6 +137,23 @@ defmodule Textbin.Accounts.User do
     |> validate_required([:default_paste_ttl])
     |> validate_inclusion(:default_paste_ttl, @paste_ttl_values)
   end
+
+  @doc """
+  A user changeset for the personal theme and color mode.
+  """
+  def appearance_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:theme, :color_mode])
+    |> validate_required([:theme, :color_mode])
+    |> validate_inclusion(:theme, @themes)
+    |> validate_inclusion(:color_mode, @color_modes)
+  end
+
+  def themes, do: @themes
+  def color_modes, do: @color_modes
+
+  @doc "Themes that only come in dark, where the color mode does not apply."
+  def dark_only_theme?(theme), do: theme in @dark_only_themes
 
   @doc """
   Confirms the account by setting `confirmed_at`.
