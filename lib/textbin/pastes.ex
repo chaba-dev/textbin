@@ -160,7 +160,7 @@ defmodule Textbin.Pastes do
       [p],
       like(p.content_type, "text/%") or
         p.content_type in ^ContentType.textual_application_types() or
-        like(p.content_type, "%+json") or like(p.content_type, "%+xml")
+        like(p.content_type, "application/%+json") or like(p.content_type, "application/%+xml")
     )
   end
 
