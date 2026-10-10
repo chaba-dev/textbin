@@ -223,6 +223,25 @@ defmodule Textbin.Accounts do
   end
 
   @doc """
+  Records the workspace the user is working in so home can return to it.
+
+  Only writes when the workspace changes, because this runs on every
+  workspace page load.
+  """
+  def remember_last_workspace(%User{id: user_id}, workspace_id) when is_binary(workspace_id) do
+    from(user in User,
+      where:
+        user.id == ^user_id and
+          (is_nil(user.last_workspace_id) or user.last_workspace_id != ^workspace_id)
+    )
+    |> Repo.update_all(set: [last_workspace_id: workspace_id])
+
+    :ok
+  end
+
+  def remember_last_workspace(_user, _workspace_id), do: :ok
+
+  @doc """
   Updates the user password.
 
   Returns a tuple with the updated user, as well as a list of expired tokens.

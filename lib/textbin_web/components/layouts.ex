@@ -1,22 +1,27 @@
 defmodule TextbinWeb.Layouts do
   @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
+  Layouts and the application shell.
+
+  The shell has exactly one navigation surface per breakpoint, never a header
+  plus a sidebar:
+
+    * desktop (lg and up): a full sidebar
+    * tablet (md to lg): a 64px rail of initials that opens the same sidebar
+      as an overlay drawer, so it never pushes content
+    * phone (below md): a bottom bar whose More button opens that drawer
+
+  Pages outside an organization (log in, shared links seen by outsiders)
+  render a minimal public frame instead.
   """
   use TextbinWeb, :html
 
-  # Embed all files in layouts/* within this module.
-  # The default root.html.heex file contains the HTML
-  # skeleton of your application, namely HTML headers
-  # and other static content.
+  alias Textbin.Accounts.User
+  alias Textbin.Organizations.{Organization, OrganizationMembership}
+
   embed_templates "layouts/*"
 
   @doc """
-  Renders your app layout.
-
-  This function is typically invoked from every template,
-  and it often contains your application menu, sidebar,
-  or similar.
+  Renders the app layout.
 
   ## Examples
 
@@ -31,41 +36,41 @@ defmodule TextbinWeb.Layouts do
     default: nil,
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
 
+  attr :navigation_scope, :map,
+    default: nil,
+    doc: "scope that draws the shell when the page itself is outside a workspace"
+
   attr :navigation_workspaces, :list,
     default: [],
     doc: "workspaces available in the active organization"
 
   attr :active_navigation, :any,
     default: nil,
-    doc: "the active organization or workspace navigation destination"
+    doc: "the active destination, such as {:workspace, :pastes} or {:organization, :members}"
 
   slot :inner_block, required: true
 
   def app(assigns) do
+    assigns = assign(assigns, :shell_scope, assigns.navigation_scope || assigns.current_scope)
+
     ~H"""
-    <%= if application_shell?(@current_scope) do %>
-      <div
-        id="application-shell"
-        class="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden bg-base-200/45 lg:h-auto lg:min-h-[calc(100vh-4rem)] lg:flex-row lg:overflow-visible"
-      >
+    <%= if application_shell?(@shell_scope) do %>
+      <div id="application-shell" class="flex h-dvh flex-col bg-base-200/45 md:flex-row">
         <div
           id="navigation-dialog-controller"
           phx-hook="NavigationDialog"
           phx-update="ignore"
-          data-dialog-id="mobile-navigation-dialog"
+          data-dialog-id="navigation-drawer"
         >
         </div>
 
         <dialog
-          id="mobile-navigation-dialog"
-          class="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] top-auto m-0 h-auto max-h-[calc(100dvh-6rem)] w-auto max-w-none overflow-hidden rounded-2xl border border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
-          aria-labelledby="mobile-navigation-title"
+          id="navigation-drawer"
+          class="fixed inset-y-0 left-0 right-auto m-0 h-dvh max-h-dvh w-72 max-w-[calc(100vw-3rem)] overflow-hidden border-r border-base-300 bg-base-100 p-0 text-base-content shadow-2xl backdrop:bg-neutral/45 backdrop:backdrop-blur-[2px] lg:hidden"
+          aria-label="Navigation"
         >
-          <div class="flex max-h-[calc(100dvh-6rem)] min-h-0 flex-col p-4">
-            <div class="mb-3 flex items-center justify-between gap-3">
-              <p id="mobile-navigation-title" class="text-sm font-semibold text-base-content">
-                More
-              </p>
+          <div class="flex h-full min-h-0 flex-col px-4 pb-4 pt-3">
+            <div class="mb-1 flex justify-end">
               <button
                 type="button"
                 class="btn btn-square btn-ghost btn-sm"
@@ -77,11 +82,12 @@ defmodule TextbinWeb.Layouts do
               </button>
             </div>
             <div
-              id="mobile-navigation-scroll-region"
+              id="navigation-drawer-scroll-region"
               class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
             >
-              <.mobile_more_navigation
-                scope={@current_scope}
+              <.application_sidebar
+                id="drawer-navigation"
+                scope={@shell_scope}
                 workspaces={@navigation_workspaces}
                 active={@active_navigation}
               />
@@ -89,45 +95,292 @@ defmodule TextbinWeb.Layouts do
           </div>
         </dialog>
 
+        <.navigation_rail
+          scope={@shell_scope}
+          workspaces={@navigation_workspaces}
+          active={@active_navigation}
+        />
+
         <aside
           id="application-sidebar"
-          class="sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col border-r border-base-300 bg-base-100 p-5 lg:flex"
+          class="hidden h-dvh w-64 shrink-0 flex-col border-r border-base-300 bg-base-100 px-3 py-5 lg:flex"
         >
-          <div class="min-h-0 flex-1 overflow-visible">
-            <.application_sidebar
-              id="sidebar-navigation"
-              scope={@current_scope}
-              workspaces={@navigation_workspaces}
-              active={@active_navigation}
-            />
-          </div>
+          <.application_sidebar
+            id="sidebar-navigation"
+            scope={@shell_scope}
+            workspaces={@navigation_workspaces}
+            active={@active_navigation}
+          />
         </aside>
 
         <main
           id="main-content"
           tabindex="-1"
-          class="min-h-0 min-w-0 flex-1 scroll-mt-20 overflow-y-auto overscroll-contain px-4 py-8 sm:px-6 lg:overflow-visible lg:px-10 lg:py-10"
+          class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 md:py-8 lg:px-10 lg:py-10"
         >
           <div class="mx-auto max-w-6xl space-y-4">
             {render_slot(@inner_block)}
           </div>
         </main>
 
-        <.mobile_bottom_navigation scope={@current_scope} active={@active_navigation} />
+        <.mobile_bottom_navigation
+          scope={@shell_scope}
+          workspaces={@navigation_workspaces}
+          active={@active_navigation}
+        />
       </div>
     <% else %>
-      <main id="main-content" tabindex="-1" class="scroll-mt-20 px-4 py-20 sm:px-6 lg:px-8">
-        <div class="mx-auto max-w-7xl space-y-4">
-          {render_slot(@inner_block)}
+      <div id="public-shell" class="min-h-dvh">
+        <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+          <.link href={~p"/"} id="brand-home" class="rounded-lg" aria-label="textbin home">
+            <.lockup />
+          </.link>
+          <div id="public-navigation" class="flex items-center gap-2">
+            <.theme_toggle />
+            <%= if signed_in?(@current_scope) do %>
+              <.link href={~p"/"} class="btn btn-ghost btn-sm">Open textbin</.link>
+            <% else %>
+              <.link href={~p"/users/log-in"} class="btn btn-ghost btn-sm">Log in</.link>
+              <.link href={~p"/users/register"} class="btn btn-primary btn-sm">Register</.link>
+            <% end %>
+          </div>
         </div>
-      </main>
+        <main id="main-content" tabindex="-1" class="px-4 pb-20 pt-8 sm:px-6 lg:px-8">
+          <div class="mx-auto max-w-7xl space-y-4">
+            {render_slot(@inner_block)}
+          </div>
+        </main>
+      </div>
     <% end %>
 
     <.flash_group flash={@flash} />
     """
   end
 
+  @doc """
+  The bracket mark: a pair of square brackets around two lines of text.
+  Drawn with `currentColor` so it follows the surrounding text color.
+  """
+  attr :class, :string, default: "size-6"
+
+  def mark(assigns) do
+    ~H"""
+    <svg
+      class={@class}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8.5 4H4v16h4.5M15.5 4H20v16h-4.5M9.5 9.5h5M9.5 14.5h3" />
+    </svg>
+    """
+  end
+
+  @doc """
+  The mark beside the lowercase wordmark. The gap is one bracket width.
+  """
+  attr :class, :string, default: nil
+
+  def lockup(assigns) do
+    ~H"""
+    <span class={["inline-flex items-center gap-2 text-base-content", @class]}>
+      <.mark class="size-6 text-primary" />
+      <span class="text-lg font-semibold leading-none tracking-[-0.025em]">textbin</span>
+    </span>
+    """
+  end
+
+  @doc """
+  Tabs for a workspace's own pages.
+  """
   attr :scope, :map, required: true
+  attr :active, :atom, required: true
+
+  def workspace_tabs(assigns) do
+    ~H"""
+    <nav
+      id="workspace-tabs"
+      aria-label="Workspace"
+      class="flex gap-1 overflow-x-auto border-b border-base-300"
+    >
+      <.tab
+        id="workspace-tab-pastes"
+        navigate={workspace_path(@scope.organization, @scope.workspace, "pastes")}
+        label="Pastes"
+        active={@active == :pastes}
+      />
+      <.tab
+        id="workspace-tab-settings"
+        navigate={workspace_path(@scope.organization, @scope.workspace, "settings")}
+        label="Settings"
+        active={@active == :settings}
+      />
+    </nav>
+    """
+  end
+
+  @doc """
+  Tabs for the organization pages gathered under Manage.
+  """
+  attr :scope, :map, required: true
+  attr :active, :atom, required: true
+
+  def manage_tabs(assigns) do
+    ~H"""
+    <nav
+      id="manage-navigation"
+      aria-label="Manage"
+      class="flex gap-1 overflow-x-auto border-b border-base-300"
+    >
+      <.tab
+        id="manage-tab-members"
+        navigate={organization_members_path(@scope.organization)}
+        label="Members"
+        active={@active == :members}
+      />
+      <.tab
+        id="manage-tab-workspaces"
+        navigate={organization_workspaces_path(@scope.organization)}
+        label="Workspaces"
+        active={@active == :workspaces}
+      />
+      <.tab
+        :if={organization_owner?(@scope)}
+        id="manage-tab-audit-log"
+        navigate={organization_audit_log_path(@scope.organization)}
+        label="Audit log"
+        active={@active == :audit_log}
+      />
+      <.tab
+        id="manage-tab-settings"
+        navigate={organization_settings_path(@scope.organization)}
+        label="Organization settings"
+        active={@active == :settings}
+      />
+    </nav>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :navigate, :string, required: true
+  attr :label, :string, required: true
+  attr :active, :boolean, default: false
+
+  defp tab(assigns) do
+    ~H"""
+    <.link
+      id={@id}
+      navigate={@navigate}
+      aria-current={@active && "page"}
+      class={[
+        "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition",
+        if(@active,
+          do: "border-primary text-base-content",
+          else: "border-transparent text-base-content/60 hover:text-base-content"
+        )
+      ]}
+    >
+      {@label}
+    </.link>
+    """
+  end
+
+  attr :scope, :map, required: true
+  attr :workspaces, :list, required: true
+  attr :active, :any, default: nil
+
+  defp navigation_rail(assigns) do
+    ~H"""
+    <nav
+      id="application-rail"
+      aria-label="Application rail"
+      class="hidden h-dvh w-16 shrink-0 flex-col items-center gap-2 border-r border-base-300 bg-base-100 py-4 md:flex lg:hidden"
+    >
+      <button
+        id="rail-open-navigation"
+        type="button"
+        class="flex size-10 items-center justify-center rounded-xl text-primary transition hover:bg-base-200"
+        aria-label="Open navigation"
+        aria-controls="navigation-drawer"
+        aria-expanded="false"
+        data-navigation-dialog-open
+      >
+        <.mark class="size-6" />
+      </button>
+
+      <.link
+        :if={new_paste_path(@scope, @workspaces)}
+        id="rail-new-paste"
+        navigate={new_paste_path(@scope, @workspaces)}
+        class="btn btn-primary btn-square btn-sm"
+        aria-label="New paste"
+        title="New paste"
+      >
+        <.icon name="hero-plus" class="size-4" />
+      </.link>
+
+      <div class="my-1 h-px w-8 bg-base-300"></div>
+
+      <div
+        id="rail-workspaces"
+        class="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto"
+      >
+        <.link
+          :for={workspace <- @workspaces}
+          navigate={workspace_path(@scope.organization, workspace, "pastes")}
+          title={workspace.name}
+          aria-label={workspace.name}
+          aria-current={workspace_active?(@scope, workspace, @active) && "page"}
+          class={[
+            "flex size-10 shrink-0 items-center justify-center rounded-xl text-xs font-semibold transition",
+            if(workspace_active?(@scope, workspace, @active),
+              do: "bg-primary/12 text-primary",
+              else: "bg-base-200 text-base-content/70 hover:bg-base-300 hover:text-base-content"
+            )
+          ]}
+        >
+          {initials(workspace.name)}
+        </.link>
+      </div>
+
+      <.link
+        id="rail-manage"
+        navigate={organization_members_path(@scope.organization)}
+        aria-label="Manage"
+        title="Manage"
+        aria-current={manage_active?(@active) && "page"}
+        class={[
+          "flex size-10 items-center justify-center rounded-xl transition",
+          if(manage_active?(@active),
+            do: "bg-primary/12 text-primary",
+            else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+          )
+        ]}
+      >
+        <.icon name="hero-adjustments-horizontal" class="size-5" />
+      </.link>
+
+      <button
+        id="rail-account"
+        type="button"
+        class="flex size-9 items-center justify-center rounded-full bg-base-300 text-xs font-semibold text-base-content transition hover:ring-2 hover:ring-primary/30"
+        aria-label={"Account: #{account_label(@scope)}"}
+        aria-controls="navigation-drawer"
+        aria-expanded="false"
+        data-navigation-dialog-open
+      >
+        {initials(account_label(@scope))}
+      </button>
+    </nav>
+    """
+  end
+
+  attr :scope, :map, required: true
+  attr :workspaces, :list, required: true
   attr :active, :any, default: nil
 
   defp mobile_bottom_navigation(assigns) do
@@ -135,47 +388,24 @@ defmodule TextbinWeb.Layouts do
     <nav
       id="mobile-bottom-navigation"
       aria-label="Mobile primary"
-      class="z-20 grid w-full shrink-0 grid-cols-4 gap-1 border-t border-base-300 bg-base-100 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden"
+      class="z-20 grid w-full shrink-0 grid-cols-3 gap-1 border-t border-base-300 bg-base-100 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 md:hidden"
     >
-      <%= if @scope.workspace do %>
-        <.mobile_navigation_link
-          navigate={workspace_path(@scope.organization, @scope.workspace, "pastes")}
-          icon="hero-document-text"
-          label="Pastes"
-          active={@active == {:workspace, :pastes}}
-        />
-        <.mobile_navigation_link
-          navigate={workspace_path(@scope.organization, @scope.workspace, "members")}
-          icon="hero-user-group"
-          label="Members"
-          active={@active == {:workspace, :members}}
-        />
-        <.mobile_navigation_link
-          navigate={workspace_path(@scope.organization, @scope.workspace, "settings")}
-          icon="hero-cog-6-tooth"
-          label="Settings"
-          active={@active == {:workspace, :settings}}
-        />
-      <% else %>
-        <.mobile_navigation_link
-          navigate={organization_path(@scope.organization)}
-          icon="hero-squares-2x2"
-          label="Overview"
-          active={@active == {:organization, :overview}}
-        />
-        <.mobile_navigation_link
-          navigate={organization_members_path(@scope.organization)}
-          icon="hero-user-group"
-          label="Members"
-          active={@active == {:organization, :members}}
-        />
-        <.mobile_navigation_link
-          navigate={organization_settings_path(@scope.organization)}
-          icon="hero-cog-6-tooth"
-          label="Settings"
-          active={@active == {:organization, :settings}}
-        />
-      <% end %>
+      <.mobile_navigation_link
+        :if={pastes_path(@scope, @workspaces)}
+        id="mobile-pastes-link"
+        navigate={pastes_path(@scope, @workspaces)}
+        icon="hero-document-text"
+        label="Pastes"
+        active={@active == {:workspace, :pastes}}
+      />
+      <.mobile_navigation_link
+        :if={new_paste_path(@scope, @workspaces)}
+        id="mobile-new-paste-link"
+        navigate={new_paste_path(@scope, @workspaces)}
+        icon="hero-plus-circle"
+        label="New"
+        active={@active == {:workspace, :new}}
+      />
 
       <button
         type="button"
@@ -189,17 +419,18 @@ defmodule TextbinWeb.Layouts do
         ]}
         aria-label="Open more navigation"
         aria-current={more_navigation_active?(@active) && "page"}
-        aria-controls="mobile-navigation-dialog"
+        aria-controls="navigation-drawer"
         aria-expanded="false"
         data-navigation-dialog-open
       >
-        <.icon name="hero-ellipsis-horizontal-circle" class="size-5" />
+        <.icon name="hero-bars-3" class="size-5" />
         <span>More</span>
       </button>
     </nav>
     """
   end
 
+  attr :id, :string, required: true
   attr :navigate, :string, required: true
   attr :icon, :string, required: true
   attr :label, :string, required: true
@@ -208,6 +439,7 @@ defmodule TextbinWeb.Layouts do
   defp mobile_navigation_link(assigns) do
     ~H"""
     <.link
+      id={@id}
       navigate={@navigate}
       aria-current={@active && "page"}
       class={[
@@ -224,125 +456,6 @@ defmodule TextbinWeb.Layouts do
     """
   end
 
-  attr :scope, :map, required: true
-  attr :workspaces, :list, required: true
-  attr :active, :any, default: nil
-
-  defp mobile_more_navigation(assigns) do
-    ~H"""
-    <nav id="mobile-more-navigation" class="space-y-4" aria-label="More navigation">
-      <section aria-labelledby="mobile-workspaces-heading">
-        <div class="mb-2 flex items-center justify-between gap-3 px-2">
-          <p
-            id="mobile-workspaces-heading"
-            class="text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/45"
-          >
-            Workspaces
-          </p>
-          <span class="rounded-full bg-base-200 px-2 py-0.5 text-[0.6875rem] font-semibold text-base-content/50">
-            {length(@workspaces)}
-          </span>
-        </div>
-        <div class="space-y-1">
-          <p :if={@workspaces == []} class="px-2 py-2 text-sm text-base-content/55">
-            No joined workspaces.
-          </p>
-          <.link
-            :for={workspace <- @workspaces}
-            navigate={workspace_path(@scope.organization, workspace, "pastes")}
-            class={[
-              "group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition",
-              if(active_workspace?(@scope, workspace),
-                do: "bg-primary/10 font-semibold text-primary",
-                else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
-              )
-            ]}
-          >
-            <span class={[
-              "size-2 rounded-full border",
-              if(active_workspace?(@scope, workspace),
-                do: "border-primary bg-primary",
-                else: "border-base-content/25 bg-base-100"
-              )
-            ]}>
-            </span>
-            <span class="min-w-0 flex-1 truncate">{workspace.name}</span>
-            <.icon :if={workspace.is_default} name="hero-star" class="size-3.5 opacity-55" />
-          </.link>
-        </div>
-      </section>
-
-      <div class="space-y-1 border-t border-base-300 pt-3">
-        <.link
-          navigate={organization_path(@scope.organization)}
-          class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
-        >
-          <.icon name="hero-building-office-2" class="size-4.5" /> Organization overview
-        </.link>
-        <.link
-          navigate={organization_workspaces_path(@scope.organization)}
-          class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
-        >
-          <.icon name="hero-squares-2x2" class="size-4.5" /> Manage workspaces
-        </.link>
-        <.link
-          :if={organization_owner?(@scope)}
-          navigate={organization_audit_log_path(@scope.organization)}
-          aria-current={@active == {:organization, :audit_log} && "page"}
-          class={[
-            "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition",
-            if(@active == {:organization, :audit_log},
-              do: "bg-primary/10 text-primary",
-              else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
-            )
-          ]}
-        >
-          <.icon name="hero-shield-check" class="size-4.5" /> Audit log
-        </.link>
-        <.link
-          navigate={~p"/orgs"}
-          class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
-        >
-          <.icon name="hero-arrows-right-left" class="size-4.5" /> Switch organization
-        </.link>
-      </div>
-
-      <section
-        id="mobile-account-navigation"
-        class="border-t border-base-300 pt-4"
-        aria-labelledby="mobile-account-heading"
-      >
-        <div class="flex items-center justify-between gap-3 px-2">
-          <div class="min-w-0">
-            <p id="mobile-account-heading" class="text-xs font-semibold text-base-content/55">
-              Account
-            </p>
-            <p class="mt-1 truncate text-sm font-medium text-base-content">
-              {account_label(@scope)}
-            </p>
-          </div>
-          <.theme_toggle />
-        </div>
-        <div class="mt-3 space-y-1">
-          <.link
-            href={~p"/users/settings"}
-            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-base-content/65 transition hover:bg-base-200 hover:text-base-content"
-          >
-            <.icon name="hero-user-circle" class="size-4.5" /> Account settings
-          </.link>
-          <.link
-            href={~p"/users/log-out"}
-            method="delete"
-            class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-error transition hover:bg-error/10"
-          >
-            <.icon name="hero-arrow-right-start-on-rectangle" class="size-4.5" /> Log out
-          </.link>
-        </div>
-      </section>
-    </nav>
-    """
-  end
-
   attr :id, :string, required: true
   attr :scope, :map, required: true
   attr :workspaces, :list, required: true
@@ -350,75 +463,60 @@ defmodule TextbinWeb.Layouts do
 
   defp application_sidebar(assigns) do
     ~H"""
-    <nav id={@id} class="flex h-full min-h-0 flex-col" aria-label="Application">
-      <div class="border-b border-base-300 pb-5">
-        <details id={organization_menu_id(@id)} class="group relative" data-dropdown>
-          <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl p-2 transition hover:bg-base-200">
-            <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
-              <.icon name="hero-building-office-2" class="size-5" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="truncate font-semibold text-base-content">{@scope.organization.name}</p>
-              <p class="mt-0.5 truncate font-mono text-xs text-base-content/45">
-                /o/{@scope.organization.slug}
-              </p>
-            </div>
-            <.icon
-              name="hero-chevron-down"
-              class="size-4 shrink-0 text-base-content/40 transition group-open:rotate-180"
-            />
-          </summary>
-          <div
-            id={organization_menu_panel_id(@id)}
-            class="absolute left-0 right-0 z-20 mt-2 max-h-[min(20rem,calc(100dvh-8rem))] overflow-y-auto overscroll-contain rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl"
-          >
-            <p class="px-3 py-2 text-xs font-medium capitalize text-base-content/50">
-              {@scope.organization_membership.role}
-            </p>
-            <.sidebar_link
-              navigate={organization_path(@scope.organization)}
-              icon="hero-squares-2x2"
-              label="Overview"
-              active={@active == {:organization, :overview}}
-            />
-            <.sidebar_link
-              navigate={organization_members_path(@scope.organization)}
-              icon="hero-user-group"
-              label="Manage members"
-              active={@active == {:organization, :members}}
-            />
-            <.sidebar_link
-              navigate={organization_workspaces_path(@scope.organization)}
-              icon="hero-squares-2x2"
-              label="Manage workspaces"
-              active={@active == {:organization, :workspaces}}
-            />
-            <.sidebar_link
-              :if={organization_owner?(@scope)}
-              navigate={organization_audit_log_path(@scope.organization)}
-              icon="hero-shield-check"
-              label="Audit log"
-              active={@active == {:organization, :audit_log}}
-            />
-            <.sidebar_link
-              navigate={organization_settings_path(@scope.organization)}
-              icon="hero-cog-6-tooth"
-              label="Organization settings"
-              active={@active == {:organization, :settings}}
-            />
-            <div class="my-1 border-t border-base-300"></div>
-            <.link
-              navigate={~p"/orgs"}
-              class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
-            >
-              <.icon name="hero-arrows-right-left" class="size-4" /> Switch organization
-            </.link>
-          </div>
-        </details>
-      </div>
+    <nav id={@id} class="flex h-full min-h-0 flex-col gap-4" aria-label="Application">
+      <.link
+        id={"#{@id}-home"}
+        navigate={pastes_path(@scope, @workspaces) || ~p"/orgs"}
+        class="flex w-fit items-center rounded-lg px-2 py-1"
+        aria-label="textbin home"
+      >
+        <.lockup />
+      </.link>
 
-      <div class="flex min-h-0 flex-1 flex-col py-5">
-        <div class="mb-2 flex items-center justify-between gap-3 px-2">
+      <details id={organization_menu_id(@id)} class="group relative" data-dropdown>
+        <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl border border-base-300 p-2 transition hover:bg-base-200">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-xs font-semibold text-primary">
+            {initials(@scope.organization.name)}
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-semibold text-base-content">
+              {@scope.organization.name}
+            </span>
+            <span class="block truncate text-xs capitalize text-base-content/50">
+              {@scope.organization_membership.role}
+            </span>
+          </span>
+          <.icon
+            name="hero-chevron-up-down"
+            class="size-4 shrink-0 text-base-content/40"
+          />
+        </summary>
+        <div
+          id={organization_menu_panel_id(@id)}
+          class="absolute left-0 right-0 z-20 mt-2 max-h-[min(20rem,calc(100dvh-8rem))] overflow-y-auto overscroll-contain rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl"
+        >
+          <.menu_link
+            navigate={organization_path(@scope.organization)}
+            icon="hero-squares-2x2"
+            label="Organization overview"
+            active={@active == {:organization, :overview}}
+          />
+          <.menu_link navigate={~p"/orgs"} icon="hero-arrows-right-left" label="Switch organization" />
+          <.menu_link navigate={~p"/orgs/new"} icon="hero-plus" label="New organization" />
+        </div>
+      </details>
+
+      <.link
+        :if={new_paste_path(@scope, @workspaces)}
+        id={"#{@id}-new-paste"}
+        navigate={new_paste_path(@scope, @workspaces)}
+        class="btn btn-primary btn-sm w-full justify-start"
+      >
+        <.icon name="hero-plus" class="size-4" /> New paste
+      </.link>
+
+      <div class="flex min-h-0 flex-1 flex-col">
+        <div class="mb-1.5 flex items-center justify-between gap-3 px-2">
           <p class="text-[0.6875rem] font-bold uppercase tracking-[0.16em] text-base-content/40">
             Workspaces
           </p>
@@ -428,7 +526,7 @@ defmodule TextbinWeb.Layouts do
         </div>
         <div
           id={"#{@id}-workspaces"}
-          class="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1"
+          class="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain"
         >
           <p :if={@workspaces == []} class="px-2 py-3 text-sm leading-5 text-base-content/50">
             No joined workspaces.
@@ -436,218 +534,197 @@ defmodule TextbinWeb.Layouts do
           <.link
             :for={workspace <- @workspaces}
             navigate={workspace_path(@scope.organization, workspace, "pastes")}
+            aria-current={workspace_active?(@scope, workspace, @active) && "page"}
             class={[
-              "group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition",
-              if(active_workspace?(@scope, workspace),
+              "group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition",
+              if(workspace_active?(@scope, workspace, @active),
                 do: "bg-primary/10 font-semibold text-primary",
-                else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
+                else: "text-base-content/70 hover:bg-base-200 hover:text-base-content"
               )
             ]}
           >
             <span class={[
-              "size-2 rounded-full border",
-              if(active_workspace?(@scope, workspace),
-                do: "border-primary bg-primary",
-                else: "border-base-content/25 bg-base-100 group-hover:border-base-content/45"
+              "flex size-6 shrink-0 items-center justify-center rounded-md text-[0.625rem] font-semibold",
+              if(workspace_active?(@scope, workspace, @active),
+                do: "bg-primary/15 text-primary",
+                else: "bg-base-200 text-base-content/60"
               )
             ]}>
+              {initials(workspace.name)}
             </span>
             <span class="min-w-0 flex-1 truncate">{workspace.name}</span>
             <.icon :if={workspace.is_default} name="hero-star" class="size-3.5 opacity-55" />
           </.link>
         </div>
+      </div>
 
-        <div :if={@scope.workspace} class="mt-5 border-t border-base-300 pt-5">
-          <p class="mb-2 truncate px-2 text-xs font-semibold text-base-content/55">
-            {@scope.workspace.name}
-          </p>
-          <div class="space-y-1">
-            <.sidebar_link
-              navigate={workspace_path(@scope.organization, @scope.workspace, "pastes")}
-              icon="hero-document-text"
-              label="Pastes"
-              active={@active == {:workspace, :pastes}}
-            />
-            <.sidebar_link
-              navigate={workspace_path(@scope.organization, @scope.workspace, "members")}
-              icon="hero-user-group"
-              label="Members"
-              active={@active == {:workspace, :members}}
-            />
-            <.sidebar_link
-              navigate={workspace_path(@scope.organization, @scope.workspace, "settings")}
-              icon="hero-cog-6-tooth"
-              label="Settings"
-              active={@active == {:workspace, :settings}}
-            />
-          </div>
-        </div>
+      <div class="space-y-1 border-t border-base-300 pt-3">
+        <.link
+          id={"#{@id}-manage"}
+          navigate={organization_members_path(@scope.organization)}
+          aria-current={manage_active?(@active) && "page"}
+          class={[
+            "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition",
+            if(manage_active?(@active),
+              do: "bg-primary/10 text-primary",
+              else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
+            )
+          ]}
+        >
+          <.icon name="hero-adjustments-horizontal" class="size-4.5 shrink-0" /> Manage
+        </.link>
+
+        <.account_menu id={"#{@id}-account-menu"} scope={@scope} active={@active} />
       </div>
     </nav>
     """
   end
 
-  attr :navigate, :string, required: true
+  attr :id, :string, required: true
+  attr :scope, :map, required: true
+  attr :active, :any, default: nil
+
+  defp account_menu(assigns) do
+    ~H"""
+    <details id={@id} class="group relative" data-dropdown>
+      <summary
+        class={[
+          "flex cursor-pointer list-none items-center gap-3 rounded-lg p-2 transition hover:bg-base-200",
+          @active == :account && "bg-primary/10"
+        ]}
+        aria-label={"Open account menu for #{account_label(@scope)}"}
+      >
+        <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-base-300 text-[0.625rem] font-semibold text-base-content">
+          {initials(account_label(@scope))}
+        </span>
+        <span class="min-w-0 flex-1 truncate text-sm text-base-content/80">
+          {account_label(@scope)}
+        </span>
+        <.icon name="hero-chevron-up" class="size-4 shrink-0 text-base-content/40" />
+      </summary>
+      <div class="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl">
+        <div class="flex items-center justify-between gap-3 px-3 py-2">
+          <span class="text-xs font-medium text-base-content/60">Theme</span>
+          <.theme_toggle />
+        </div>
+        <.menu_link
+          href={~p"/users/settings"}
+          icon="hero-user-circle"
+          label="Account settings"
+          active={@active == :account}
+        />
+        <.menu_link
+          :if={platform_admin?(@scope)}
+          navigate={~p"/admin"}
+          icon="hero-shield-check"
+          label="Administration"
+        />
+        <.link
+          href={~p"/users/log-out"}
+          method="delete"
+          class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-error transition hover:bg-error/10"
+        >
+          <.icon name="hero-arrow-right-start-on-rectangle" class="size-4" /> Log out
+        </.link>
+      </div>
+    </details>
+    """
+  end
+
+  attr :navigate, :string, default: nil
+  attr :href, :string, default: nil
   attr :icon, :string, required: true
   attr :label, :string, required: true
   attr :active, :boolean, default: false
 
-  defp sidebar_link(assigns) do
+  defp menu_link(assigns) do
     ~H"""
     <.link
       navigate={@navigate}
+      href={@href}
       aria-current={@active && "page"}
       class={[
-        "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition",
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition",
         if(@active,
-          do: "bg-primary/10 text-primary",
-          else: "text-base-content/65 hover:bg-base-200 hover:text-base-content"
+          do: "bg-primary/10 font-medium text-primary",
+          else: "text-base-content/70 hover:bg-base-200 hover:text-base-content"
         )
       ]}
     >
-      <.icon name={@icon} class="size-4.5 shrink-0" />
-      <span>{@label}</span>
+      <.icon name={@icon} class="size-4 shrink-0" /> {@label}
     </.link>
     """
   end
 
-  attr :current_scope, :map,
-    default: nil,
-    doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
-
-  def app_header(assigns) do
-    ~H"""
-    <header
-      id="app-header"
-      class="navbar sticky top-0 z-30 h-16 min-h-16 gap-4 border-b border-base-300 bg-base-100/95 px-4 backdrop-blur sm:px-6 lg:px-8"
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-4">
-        <a href="/" class="flex w-fit shrink-0 items-center">
-          <span class="text-xl font-bold tracking-tight text-base-content">Textbin</span>
-        </a>
-        <div
-          :if={application_shell?(@current_scope)}
-          id="mobile-header-context"
-          class="ml-auto min-w-0 max-w-[55vw] text-right lg:hidden"
-        >
-          <p class="truncate text-sm font-semibold text-base-content">
-            {@current_scope.organization.name}
-          </p>
-          <p :if={@current_scope.workspace} class="truncate text-xs text-base-content/55">
-            {@current_scope.workspace.name}
-          </p>
-        </div>
-      </div>
-      <div class={[
-        "min-w-0 flex-none",
-        application_shell?(@current_scope) && "hidden lg:block"
-      ]}>
-        <ul id="app-header-nav" class="flex flex-wrap items-center justify-end gap-2 px-1">
-          <%= unless @current_scope do %>
-            <li>
-              <.theme_toggle />
-            </li>
-          <% end %>
-          <li>
-            <%= if @current_scope do %>
-              <details id="account-menu" class="relative" data-dropdown>
-                <summary
-                  class="btn btn-ghost w-10 cursor-pointer list-none px-0 sm:w-auto sm:max-w-56 sm:px-4"
-                  aria-label={"Open account menu for #{account_label(@current_scope)}"}
-                >
-                  <.icon name="hero-user-circle" class="size-5 shrink-0" />
-                  <span class="sr-only sm:not-sr-only sm:truncate">
-                    {account_label(@current_scope)}
-                  </span>
-                </summary>
-                <div class="absolute right-0 z-20 mt-2 max-h-[calc(100dvh-5rem)] w-[min(14rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
-                  <div class="truncate px-3 py-2 text-xs text-base-content/60">
-                    {account_label(@current_scope)}
-                  </div>
-                  <div class="flex items-center justify-between gap-3 px-3 py-2">
-                    <span class="text-xs font-medium text-base-content/60">Theme</span>
-                    <.theme_toggle />
-                  </div>
-                  <%= if guest_scope?(@current_scope) do %>
-                    <.link href={~p"/users/log-in"} class="btn btn-ghost btn-sm w-full justify-start">
-                      Log in
-                    </.link>
-                    <.link
-                      href={~p"/users/register"}
-                      class="btn btn-ghost btn-sm w-full justify-start"
-                    >
-                      Register
-                    </.link>
-                  <% else %>
-                    <.link
-                      :if={platform_admin?(@current_scope)}
-                      navigate={~p"/admin"}
-                      class="btn btn-ghost btn-sm w-full justify-start"
-                    >
-                      <.icon name="hero-shield-check" class="size-4" /> Administration
-                    </.link>
-                    <.link
-                      href={~p"/users/settings"}
-                      class="btn btn-ghost btn-sm w-full justify-start"
-                    >
-                      Settings
-                    </.link>
-                    <.link
-                      href={~p"/users/log-out"}
-                      method="delete"
-                      class="btn btn-ghost btn-sm w-full justify-start text-error hover:bg-error/10"
-                    >
-                      Log out
-                    </.link>
-                  <% end %>
-                </div>
-              </details>
-            <% else %>
-              <.link href={~p"/users/log-in"} class="btn btn-ghost">Log in</.link>
-            <% end %>
-          </li>
-          <%= unless @current_scope do %>
-            <li>
-              <.link href={~p"/users/register"} class="btn btn-primary">Register</.link>
-            </li>
-          <% end %>
-        </ul>
-      </div>
-    </header>
-    """
-  end
-
-  defp account_label(%{user: %Textbin.Accounts.User{} = user}) do
-    if Textbin.Accounts.User.guest?(user), do: "Guest", else: user.email
+  defp account_label(%{user: %User{} = user}) do
+    if User.guest?(user), do: "Guest", else: user.email
   end
 
   defp account_label(_scope), do: "Guest"
 
-  defp guest_scope?(%{user: %Textbin.Accounts.User{} = user}),
-    do: Textbin.Accounts.User.guest?(user)
-
-  defp guest_scope?(_scope), do: false
+  defp signed_in?(%{user: %User{} = user}), do: not User.guest?(user)
+  defp signed_in?(_scope), do: false
 
   defp platform_admin?(%{user: %{platform_role: "admin", suspended_at: nil}}), do: true
   defp platform_admin?(_scope), do: false
 
   defp application_shell?(%{
-         user: %Textbin.Accounts.User{} = user,
-         organization: %Textbin.Organizations.Organization{},
-         organization_membership: %Textbin.Organizations.OrganizationMembership{}
+         user: %User{} = user,
+         organization: %Organization{},
+         organization_membership: %OrganizationMembership{}
        }),
-       do: not Textbin.Accounts.User.guest?(user)
+       do: not User.guest?(user)
 
   defp application_shell?(_scope), do: false
 
-  defp active_workspace?(%{workspace: %{id: workspace_id}}, %{id: workspace_id}), do: true
-  defp active_workspace?(_scope, _workspace), do: false
+  # A workspace is highlighted only while one of its own pages is open, not
+  # while Manage or account pages carry it as the navigation context.
+  defp workspace_active?(%{workspace: %{id: id}}, %{id: id}, {:workspace, _page}), do: true
+  defp workspace_active?(_scope, _workspace, _active), do: false
+
+  defp manage_active?({:organization, page}), do: page != :overview
+  defp manage_active?(_active), do: false
 
   defp more_navigation_active?(active),
-    do: active in [{:organization, :workspaces}, {:organization, :audit_log}]
+    do: manage_active?(active) or active in [:account, {:workspace, :settings}]
 
   defp organization_owner?(%{organization_membership: %{role: "owner"}}), do: true
   defp organization_owner?(_scope), do: false
+
+  # The workspace New paste and Pastes point at: the open one, or the first
+  # joined workspace (the default sorts first) on organization pages.
+  defp context_workspace(%{workspace: %{} = workspace}, _workspaces), do: workspace
+  defp context_workspace(_scope, [workspace | _rest]), do: workspace
+  defp context_workspace(_scope, []), do: nil
+
+  defp pastes_path(scope, workspaces) do
+    case context_workspace(scope, workspaces) do
+      nil -> nil
+      workspace -> workspace_path(scope.organization, workspace, "pastes")
+    end
+  end
+
+  defp new_paste_path(scope, workspaces) do
+    case context_workspace(scope, workspaces) do
+      nil -> nil
+      workspace -> workspace_path(scope.organization, workspace, "pastes/new")
+    end
+  end
+
+  @doc false
+  def initials(name) when is_binary(name) do
+    name
+    |> String.split(~r/[\s@._-]+/, trim: true)
+    |> Enum.take(2)
+    |> Enum.map_join(&String.first/1)
+    |> String.upcase()
+    |> case do
+      "" -> "?"
+      initials -> initials
+    end
+  end
+
+  def initials(_name), do: "?"
 
   defp organization_menu_id("sidebar-navigation"), do: "organization-menu"
   defp organization_menu_id(id), do: "#{id}-organization-menu"

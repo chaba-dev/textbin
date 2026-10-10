@@ -248,6 +248,13 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     refute Repo.get_by(Paste, workspace_id: workspace.id, data: "created after revocation")
   end
 
+  test "opening a workspace makes it the one home reopens", %{conn: conn, scope: scope} do
+    {organization, _default_workspace, workspace} = team_workspaces(scope)
+    {:ok, _view, _html} = live(conn, workspace_path(organization, workspace))
+
+    assert redirected_to(get(conn, ~p"/")) == workspace_path(organization, workspace)
+  end
+
   test "sidebar workspace navigation loads the selected workspace", %{
     conn: conn,
     scope: scope

@@ -17,6 +17,7 @@ defmodule TextbinWeb.UI.AdminLive do
     {:ok,
      socket
      |> assign(:page_title, "Platform administration")
+     |> TextbinWeb.Navigation.assign_home_navigation()
      |> assign(:lookup_form, to_form(%{"query" => ""}, as: :lookup))
      |> assign(:moderation_form, to_form(%{"paste_id" => "", "reason" => ""}, as: :moderation))
      |> assign(:account_action_form, to_form(%{"reason" => ""}, as: :account_action))

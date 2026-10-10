@@ -75,6 +75,24 @@ defmodule Textbin.Organizations do
     )
   end
 
+  @doc """
+  Resolves the workspace home should open: the last one the user worked in
+  while they can still reach it, otherwise their personal workspace.
+  """
+  def resolve_home_scope(%Scope{user: %User{} = user} = scope) do
+    last_workspace_id =
+      Repo.one(from u in User, where: u.id == ^user.id, select: u.last_workspace_id)
+
+    with {:error, :not_found} <- resolve_last_workspace(scope, last_workspace_id) do
+      resolve_workspace_scope(scope, get_personal_default_workspace!(user))
+    end
+  end
+
+  def resolve_home_scope(_scope), do: {:error, :not_found}
+
+  defp resolve_last_workspace(_scope, nil), do: {:error, :not_found}
+  defp resolve_last_workspace(scope, id), do: resolve_workspace_scope(scope, id)
+
   @doc "Resolves a workspace and both memberships without disclosing inaccessible records."
   def resolve_workspace_scope(%Scope{user: %User{id: user_id}} = scope, workspace_or_id) do
     with {:ok, user_id} <- public_id(user_id),

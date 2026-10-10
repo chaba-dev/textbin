@@ -13,6 +13,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
     {:noreply,
      socket
      |> assign(:page_title, "Organizations")
+     |> TextbinWeb.Navigation.assign_home_navigation()
      |> stream(
        :organizations,
        Organizations.list_available_organizations(socket.assigns.current_scope),
@@ -24,6 +25,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
     {:noreply,
      socket
      |> assign(:page_title, "Create organization")
+     |> TextbinWeb.Navigation.assign_home_navigation()
      |> assign_organization_form()}
   end
 
@@ -200,7 +202,12 @@ defmodule TextbinWeb.UI.OrganizationLive do
   @impl true
   def render(%{live_action: :index} = assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_scope={@navigation_scope}
+      navigation_workspaces={@navigation_workspaces}
+    >
       <div id="organizations-index" class="space-y-8">
         <header class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div class="max-w-2xl">
@@ -262,7 +269,12 @@ defmodule TextbinWeb.UI.OrganizationLive do
 
   def render(%{live_action: :new} = assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      navigation_scope={@navigation_scope}
+      navigation_workspaces={@navigation_workspaces}
+    >
       <div id="new-organization-page" class="mx-auto max-w-5xl">
         <.link
           id="back-to-organizations"
@@ -443,7 +455,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
       active_navigation={{:organization, :members}}
     >
       <div id="organization-members-page" class="space-y-8">
-        <.organization_header scope={@current_scope} title="Members" />
+        <.organization_header scope={@current_scope} title="Members" manage={:members} />
 
         <section
           :if={@organization_manager?}
@@ -537,7 +549,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
       active_navigation={{:organization, :settings}}
     >
       <div id="organization-settings-page" class="space-y-8">
-        <.organization_header scope={@current_scope} title="Settings" />
+        <.organization_header scope={@current_scope} title="Settings" manage={:settings} />
 
         <section class="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm sm:p-6">
           <div class="mb-6">
@@ -595,10 +607,11 @@ defmodule TextbinWeb.UI.OrganizationLive do
 
   attr :scope, :map, required: true
   attr :title, :string, required: true
+  attr :manage, :atom, default: nil, doc: "the Manage tab this page belongs to, if any"
 
   defp organization_header(assigns) do
     ~H"""
-    <header>
+    <header class="space-y-6">
       <div>
         <p class="text-sm font-medium text-base-content/55">{@scope.organization.name}</p>
         <h1
@@ -608,6 +621,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
           {@title}
         </h1>
       </div>
+      <Layouts.manage_tabs :if={@manage} scope={@scope} active={@manage} />
     </header>
     """
   end

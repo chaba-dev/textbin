@@ -158,6 +158,8 @@ defmodule TextbinWeb.UI.WorkspaceManagementLive do
           </.link>
         </header>
 
+        <Layouts.manage_tabs scope={@current_scope} active={:workspaces} />
+
         <section class="overflow-hidden rounded-xl border border-base-300 bg-base-100 shadow-sm">
           <div class="border-b border-base-300 px-5 py-4 sm:px-6">
             <h2 class="font-semibold text-base-content">Available workspaces</h2>

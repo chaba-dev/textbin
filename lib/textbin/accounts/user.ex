@@ -17,6 +17,8 @@ defmodule Textbin.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
     field :default_paste_ttl, :string, default: "never"
+    # Set by the app as people move between workspaces; never cast from input.
+    field :last_workspace_id, :binary_id
 
     has_one :personal_organization, Textbin.Organizations.Organization,
       foreign_key: :personal_owner_id

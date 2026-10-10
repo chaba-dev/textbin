@@ -1,6 +1,7 @@
 defmodule Textbin.OrganizationsTest do
   use Textbin.DataCase
 
+  alias Textbin.Accounts
   alias Textbin.Accounts.Scope
   alias Textbin.Organizations
   alias Textbin.Organizations.AuditEvent
@@ -12,6 +13,46 @@ defmodule Textbin.OrganizationsTest do
   alias Textbin.Storage
 
   import Textbin.AccountsFixtures
+
+  describe "resolve_home_scope/1" do
+    test "falls back to the personal workspace until another one is remembered" do
+      user = user_fixture()
+      scope = Scope.for_user(user)
+      personal = personal_workspace_fixture(user)
+
+      assert {:ok, %{workspace: %Workspace{id: id}}} = Organizations.resolve_home_scope(scope)
+      assert id == personal.id
+
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Home team", slug: "home-team"})
+
+      [team_workspace] = organization.workspaces
+      assert :ok = Accounts.remember_last_workspace(user, team_workspace.id)
+
+      assert {:ok, %{workspace: %Workspace{id: id}, organization: home_organization}} =
+               Organizations.resolve_home_scope(scope)
+
+      assert id == team_workspace.id
+      assert home_organization.id == organization.id
+    end
+
+    test "ignores a remembered workspace the user can no longer reach" do
+      owner = user_fixture()
+      user = user_fixture()
+      owner_scope = Scope.for_user(owner)
+
+      {:ok, organization} =
+        Organizations.create_organization(owner_scope, %{name: "Gone", slug: "gone-team"})
+
+      workspace = non_default_workspace_fixture(organization, owner)
+      assert :ok = Accounts.remember_last_workspace(user, workspace.id)
+
+      assert {:ok, %{workspace: %Workspace{id: id}}} =
+               Organizations.resolve_home_scope(Scope.for_user(user))
+
+      assert id == personal_workspace_fixture(user).id
+    end
+  end
 
   describe "create_organization/2" do
     test "the transaction-free personal organization helper rejects calls outside a transaction" do

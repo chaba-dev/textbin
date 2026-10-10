@@ -17,6 +17,24 @@ defmodule TextbinWeb.UserLive.SettingsTest do
       assert html =~ "Paste Defaults"
     end
 
+    test "keeps the application shell around account settings", %{conn: conn} do
+      user = user_fixture()
+      workspace = personal_workspace_fixture(user)
+
+      {:ok, view, _html} = conn |> log_in_user(user) |> live(~p"/users/settings")
+
+      assert has_element?(view, "#application-sidebar #sidebar-navigation")
+
+      assert has_element?(
+               view,
+               "#sidebar-navigation-account-menu a[href='/users/settings'][aria-current='page']"
+             )
+
+      # The home workspace only provides navigation here; it is not the page.
+      assert has_element?(view, "#sidebar-navigation-workspaces a", workspace.name)
+      refute has_element?(view, "#sidebar-navigation-workspaces a[aria-current='page']")
+    end
+
     test "redirects if user is not logged in", %{conn: conn} do
       assert {:error, redirect} = live(conn, ~p"/users/settings")
 
