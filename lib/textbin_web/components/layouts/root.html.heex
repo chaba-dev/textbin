@@ -1,8 +1,12 @@
 <!DOCTYPE html>
 <html
   lang="en"
-  data-theme={html_theme(assigns[:current_scope])}
-  data-mode={html_mode(assigns[:current_scope])}
+  data-theme={
+    html_theme(if @conn.private[:default_appearance], do: nil, else: assigns[:current_scope])
+  }
+  data-mode={
+    html_mode(if @conn.private[:default_appearance], do: nil, else: assigns[:current_scope])
+  }
 >
   <head>
     <meta charset="utf-8" />

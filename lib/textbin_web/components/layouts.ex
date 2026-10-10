@@ -48,12 +48,24 @@ defmodule TextbinWeb.Layouts do
     default: nil,
     doc: "the active destination, such as {:workspace, :pastes} or {:organization, :members}"
 
+  attr :default_appearance, :boolean,
+    default: false,
+    doc: "shared links use Harbor without changing the viewer's authentication"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     assigns = assign(assigns, :shell_scope, assigns.navigation_scope || assigns.current_scope)
 
     ~H"""
+    <div
+      id="appearance-policy"
+      hidden
+      phx-hook="Appearance"
+      data-theme={html_theme(if @default_appearance, do: nil, else: @current_scope)}
+      data-mode={html_mode(if @default_appearance, do: nil, else: @current_scope)}
+    >
+    </div>
     <%= if application_shell?(@shell_scope) do %>
       <div id="application-shell" class="flex h-dvh flex-col bg-base-200/45 md:flex-row">
         <div
@@ -829,9 +841,9 @@ defmodule TextbinWeb.Layouts do
   end
 
   @doc """
-  The theme on `<html data-theme>`. Pages without a signed-in person render
-  no attribute, which means Harbor following the system color scheme; shared
-  links therefore always look the same to outsiders.
+  The theme on `<html data-theme>`. A nil appearance scope renders no attribute:
+  Harbor following the system color scheme. Shared-link presentation supplies
+  nil here without changing the scope used for authentication and authorization.
   """
   def html_theme(%{user: %User{theme: theme}}), do: theme
   def html_theme(_scope), do: nil

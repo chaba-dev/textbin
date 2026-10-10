@@ -64,22 +64,30 @@ const CopyToClipboard = {
   },
 }
 
+// Root layouts survive live navigation. Reapply each page's presentation policy
+// so shared Harbor pages cannot inherit (or overwrite) the account preference.
+const setAppearance = ({theme, mode}) => {
+  for (const [key, value] of Object.entries({theme, mode})) {
+    if (value) document.documentElement.dataset[key] = value
+    else delete document.documentElement.dataset[key]
+  }
+}
+
+const Appearance = {
+  mounted() { setAppearance(this.el.dataset) },
+  updated() { setAppearance(this.el.dataset) },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, CopyToClipboard, NavigationDialog},
+  hooks: {...colocatedHooks, CopyToClipboard, NavigationDialog, Appearance},
 })
 
 installDismissibleDropdowns(document)
 
-// The root layout is not re-rendered by live navigation, so a saved theme or
-// color mode is applied to <html> directly. Matches data-theme/data-mode in
-// the theme CSS files.
-window.addEventListener("phx:set-appearance", ({detail}) => {
-  document.documentElement.dataset.theme = detail.theme
-  document.documentElement.dataset.mode = detail.mode
-})
+window.addEventListener("phx:set-appearance", ({detail}) => setAppearance(detail))
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
