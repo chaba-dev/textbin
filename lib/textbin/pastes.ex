@@ -378,15 +378,10 @@ defmodule Textbin.Pastes do
   Hard-deletes a removed paste right away instead of waiting for the end of
   the recovery window. Active pastes must be deleted first.
   """
-  def purge_paste(%Scope{user: %User{id: user_id}} = scope, paste_id) when is_binary(paste_id) do
+  def purge_paste(%Scope{user: %User{}} = scope, paste_id) when is_binary(paste_id) do
     with {:ok, paste_id} <- Ecto.UUID.cast(paste_id),
-         {:ok, workspace} <- authorized_workspace(scope),
-         %Paste{} = paste <-
-           paste_id
-           |> manageable_paste_query(user_id)
-           |> where([paste], paste.workspace_id == ^workspace.id)
-           |> restorable_pastes(workspace, Paste.utc_now_ms())
-           |> Repo.one(),
+         {:ok, paste} <-
+           Repo.transact(fn -> claim_manual_purge(scope, paste_id) end),
          :ok <- delete_stored_data(paste) do
       Repo.delete(paste, allow_stale: true)
     else
@@ -396,6 +391,36 @@ defmodule Textbin.Pastes do
   end
 
   def purge_paste(_scope, _paste_id), do: {:error, :not_found}
+
+  defp claim_manual_purge(%Scope{user: %User{id: user_id}} = scope, paste_id) do
+    with {:ok, workspace} <- lock_authorized_workspace(scope, scope_workspace_id(scope)) do
+      now = Paste.utc_now_ms()
+      restorable = restorable_pastes(Paste, workspace, now) |> select([p], p.id)
+
+      paste_id
+      |> manageable_paste_query(user_id)
+      |> where([p], p.workspace_id == ^workspace.id)
+      |> where([p], p.removal_reason == "purging" or p.id in subquery(restorable))
+      |> claim_purge(now)
+    end
+  end
+
+  # Commit the irreversible intent before touching object storage. Restore uses
+  # the same workspace/paste lock order and excludes this durable retry state.
+  defp claim_purge(query, now) do
+    case query |> lock("FOR UPDATE") |> Repo.one() do
+      %Paste{} = paste ->
+        paste
+        |> Ecto.Changeset.change(
+          removed_at: paste.removed_at || paste.expires_at || now,
+          removal_reason: "purging"
+        )
+        |> Repo.update()
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
 
   defp restore_paste_in_transaction(%Scope{user: %User{id: user_id}} = scope, paste_id) do
     now = Paste.utc_now_ms()
@@ -507,33 +532,54 @@ defmodule Textbin.Pastes do
     end
 
     due_pastes =
-      Repo.all(
-        from p in Paste,
-          join: w in Workspace,
-          on: w.id == p.workspace_id,
-          where:
-            not is_nil(w.deletion_requested_at) or p.removal_reason == "moderated" or
-              fragment(
-                "coalesce(?, ?) + make_interval(days => ?) <= ?",
-                p.removed_at,
-                p.expires_at,
-                w.recovery_window_days,
-                ^now
-              ),
-          order_by: [
-            asc:
-              fragment("coalesce(?, ?, ?)", p.removed_at, p.expires_at, w.deletion_requested_at),
-            asc: p.id
-          ],
-          limit: ^limit
+      due_pastes(now)
+      |> order_by([p, w],
+        asc: fragment("coalesce(?, ?, ?)", p.removed_at, p.expires_at, w.deletion_requested_at),
+        asc: p.id
       )
+      |> limit(^limit)
+      |> Repo.all()
 
     deletable_ids =
-      for paste <- due_pastes, delete_stored_data(paste) == :ok, do: paste.id
+      for candidate <- due_pastes,
+          {:ok, paste} <- [claim_due_purge(candidate, now)],
+          delete_stored_data(paste) == :ok,
+          do: paste.id
 
     {deleted_count, nil} = Repo.delete_all(from p in Paste, where: p.id in ^deletable_ids)
 
     deleted_count
+  end
+
+  defp due_pastes(now) do
+    from p in Paste,
+      join: w in Workspace,
+      on: w.id == p.workspace_id,
+      where:
+        not is_nil(w.deletion_requested_at) or p.removal_reason in ["moderated", "purging"] or
+          fragment(
+            "coalesce(?, ?) + make_interval(days => ?) <= ?",
+            p.removed_at,
+            p.expires_at,
+            w.recovery_window_days,
+            ^now
+          )
+  end
+
+  defp claim_due_purge(candidate, now) do
+    Repo.transact(fn ->
+      # Recheck eligibility after locking: a restore or window change may have
+      # won since this bounded batch was selected.
+      case lock_workspace(candidate.workspace_id, "FOR UPDATE") do
+        %Workspace{} ->
+          due_pastes(now)
+          |> where([p], p.id == ^candidate.id)
+          |> claim_purge(now)
+
+        nil ->
+          {:error, :not_found}
+      end
+    end)
   end
 
   def delete_workspace_pastes(workspace_id) when is_binary(workspace_id) do
