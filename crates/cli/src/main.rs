@@ -80,6 +80,37 @@ mod tests {
     }
 
     #[test]
+    fn parses_paste_metadata_and_lifecycle_commands() {
+        for args in [
+            &[
+                "textbin",
+                "create",
+                "hello",
+                "--title",
+                "Notes",
+                "--ref",
+                "https://t.example/1",
+            ][..],
+            &["textbin", "create", "hello", "--json"],
+            &["textbin", "show", "p1", "--json"],
+            &["textbin", "delete", "p1", "--permanent", "--json"],
+            &["textbin", "deleted", "--json"],
+            &["textbin", "restore", "p1", "--json"],
+        ] {
+            assert!(TextbinCli::try_parse_from(args).is_ok(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn show_json_excludes_other_output_modes() {
+        for flag in ["--raw", "--open", "--no-color"] {
+            let result = TextbinCli::try_parse_from(["textbin", "show", "p1", "--json", flag]);
+
+            assert!(result.is_err(), "{flag}");
+        }
+    }
+
+    #[test]
     fn parses_auth_workflows() {
         assert!(TextbinCli::try_parse_from(["textbin", "auth", "whoami"]).is_ok());
         assert!(
