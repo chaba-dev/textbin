@@ -176,6 +176,7 @@ defmodule Textbin.Pastes do
         attrs
         |> attrs_with_defaults(user, ContentType.text_safe?(attr_data(attrs)))
         |> attrs_with_derived_title()
+
       paste = new_paste(user, workspace.id)
 
       changeset =
