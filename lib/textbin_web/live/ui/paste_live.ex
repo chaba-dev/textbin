@@ -10,6 +10,17 @@ defmodule TextbinWeb.UI.PasteLive do
 
   embed_templates "paste_live/*"
 
+  @expiry_options [
+    {"Never", "never"},
+    {"10 min", "10m"},
+    {"1 hour", "1h"},
+    {"6 hours", "6h"},
+    {"12 hours", "12h"},
+    {"1 day", "1d"},
+    {"7 days", "7d"},
+    {"30 days", "30d"}
+  ]
+
   def mount(_params, _session, socket), do: {:ok, socket}
 
   def handle_params(
@@ -44,8 +55,23 @@ defmodule TextbinWeb.UI.PasteLive do
     {:noreply,
      socket
      |> assign_workspace_navigation(scope)
-     |> assign_paste_form()
+     |> assign(:page_title, "Pastes · #{scope.workspace.name}")
      |> stream(:pastes, Pastes.list_paste_metadata(scope), reset: true)}
+  end
+
+  def handle_params(
+        %{"organization_slug" => organization_slug, "workspace_slug" => workspace_slug} = params,
+        _uri,
+        %{assigns: %{live_action: :new}} = socket
+      ) do
+    scope =
+      resolve_workspace_scope!(socket.assigns.current_scope, organization_slug, workspace_slug)
+
+    {:noreply,
+     socket
+     |> assign_workspace_navigation(scope)
+     |> assign(:page_title, "New paste · #{scope.workspace.name}")
+     |> assign_paste_form(duplicate_attrs(scope, params["from"]))}
   end
 
   def handle_params(
@@ -115,13 +141,14 @@ defmodule TextbinWeb.UI.PasteLive do
   end
 
   def handle_event("save", %{"paste" => paste_params}, socket) do
-    case Pastes.create_paste(socket.assigns.current_scope, paste_params) do
+    scope = socket.assigns.current_scope
+
+    case Pastes.create_paste(scope, paste_params) do
       {:ok, paste} ->
         {:noreply,
          socket
          |> put_flash(:info, "Paste created")
-         |> assign_paste_form()
-         |> stream_insert(:pastes, Pastes.preload_author(paste), at: 0)}
+         |> push_navigate(to: paste_path(scope, paste))}
 
       {:error, :not_found} ->
         {:noreply,
@@ -136,6 +163,8 @@ defmodule TextbinWeb.UI.PasteLive do
 
   def render(%{live_action: action} = assigns) when action in [:show, :workspace_show],
     do: detail(assigns)
+
+  def render(%{live_action: :new} = assigns), do: new(assigns)
 
   def render(assigns), do: index(assigns)
 
@@ -164,6 +193,7 @@ defmodule TextbinWeb.UI.PasteLive do
      |> assign(:navigation_workspaces, navigation_workspaces(scope))
      |> assign(:page_title, Paste.display_title(paste))
      |> assign(:paste, paste)
+     |> assign(:share_url, url(~p"/pastes/#{paste.id}"))
      |> assign(:text_content?, text_content?(paste))
      |> assign(:owner?, Pastes.manage_paste?(scope, paste))
      |> assign(:highlighted_paste_data, highlighted_paste_data(paste))}
@@ -177,6 +207,10 @@ defmodule TextbinWeb.UI.PasteLive do
        do: workspace_pastes_path(organization.slug, workspace.slug)
 
   defp paste_index_path(_scope), do: ~p"/pastes"
+
+  defp paste_path(scope, %Paste{id: id}), do: "#{paste_index_path(scope)}/#{id}"
+
+  defp new_paste_path(scope), do: "#{paste_index_path(scope)}/new"
 
   defp resolve_shared_paste_scope(nil, _paste), do: nil
 
@@ -213,17 +247,41 @@ defmodule TextbinWeb.UI.PasteLive do
 
   defp author_label(_paste, _scope), do: "Unknown"
 
-  defp assign_paste_form(socket) do
-    new_paste = Pastes.prepare_paste(socket.assigns.current_scope)
+  # The editor opens with the account's default expiry already selected so the
+  # removal date is spelled out before anything is typed.
+  defp assign_paste_form(socket, attrs) do
+    scope = socket.assigns.current_scope
+    new_paste = Pastes.prepare_paste(scope)
+    attrs = Map.put_new(attrs, "expires_in", scope.user.default_paste_ttl || "never")
 
     form =
-      socket.assigns.current_scope
-      |> Pastes.change_paste(new_paste)
+      scope
+      |> Pastes.change_paste(new_paste, attrs)
       |> to_form()
 
     socket
     |> assign(:new_paste, new_paste)
     |> assign(:paste_form, form)
+  end
+
+  # Duplicating copies what the person could already read in this workspace;
+  # binary content is left out because the editor only takes text.
+  defp duplicate_attrs(_scope, nil), do: %{}
+
+  defp duplicate_attrs(scope, source_id) do
+    case Pastes.get_paste(scope, source_id) do
+      %Paste{} = source ->
+        %{
+          "title" => source.title,
+          "reference_url" => source.reference_url,
+          "syntax_highlight" => source.syntax_highlight,
+          "audience" => source.audience,
+          "data" => if(text_content?(source), do: source.data)
+        }
+
+      nil ->
+        %{}
+    end
   end
 
   defp highlighted_paste_data(%Paste{} = paste) do
@@ -248,36 +306,89 @@ defmodule TextbinWeb.UI.PasteLive do
 
   defp highlight_language(_paste), do: "plain"
 
-  defp paste_ttl_options do
-    [
-      {"Use account default", ""},
-      {"Never", "never"},
-      {"10 minutes", "10m"},
-      {"1 hour", "1h"},
-      {"6 hours", "6h"},
-      {"12 hours", "12h"},
-      {"1 day", "1d"},
-      {"7 days", "7d"},
-      {"30 days", "30d"}
-    ]
-  end
+  defp expiry_options, do: @expiry_options
 
-  defp paste_audience_options(scope) do
-    if Textbin.Accounts.User.guest?(scope.user) do
-      [{"Unlisted", "unlisted"}]
+  # Every audience is listed so the policy is visible; the ones the workspace
+  # forbids stay disabled with the reason instead of silently disappearing.
+  defp audience_options(scope) do
+    if User.guest?(scope.user) do
+      [audience_option("unlisted", true)]
     else
-      case scope.workspace.external_sharing_policy do
-        "disabled" -> [{"Workspace", "workspace"}]
-        "unlisted" -> [{"Workspace", "workspace"}, {"Unlisted", "unlisted"}]
-        "public" -> [{"Workspace", "workspace"}, {"Unlisted", "unlisted"}, {"Public", "public"}]
-      end
+      policy = scope.workspace.external_sharing_policy
+
+      [
+        audience_option("workspace", true),
+        audience_option("unlisted", policy in ["unlisted", "public"]),
+        audience_option("public", policy == "public")
+      ]
     end
   end
 
-  defp guest_user?(%Textbin.Accounts.User{} = user), do: Textbin.Accounts.User.guest?(user)
+  defp audience_option("workspace", allowed?),
+    do: %{
+      value: "workspace",
+      label: "Workspace",
+      description: "Everyone in the workspace",
+      allowed?: allowed?
+    }
+
+  defp audience_option("unlisted", allowed?),
+    do: %{
+      value: "unlisted",
+      label: "Anyone with the link",
+      description: "Not listed anywhere; the link is the key",
+      allowed?: allowed?
+    }
+
+  defp audience_option("public", allowed?),
+    do: %{
+      value: "public",
+      label: "Public",
+      description: "Open to everyone",
+      allowed?: allowed?
+    }
+
+  defp audience_sentence(%Paste{audience: "workspace"}, %{workspace: %{name: name}}),
+    do: "Everyone in #{name} can see this paste."
+
+  defp audience_sentence(%Paste{audience: "workspace"}, _scope),
+    do: "Everyone in the workspace can see this paste."
+
+  defp audience_sentence(%Paste{audience: "unlisted"}, _scope),
+    do: "Anyone with the link can see this paste."
+
+  defp audience_sentence(%Paste{audience: "public"}, _scope), do: "This paste is public."
+
+  defp expiry_sentence(nil), do: "It never expires."
+
+  defp expiry_sentence(%DateTime{} = expires_at),
+    do: "It is removed on #{format_date(expires_at)}."
+
+  defp removal_sentence(%Phoenix.HTML.Form{source: %Ecto.Changeset{} = changeset}) do
+    case Ecto.Changeset.get_field(changeset, :expires_at) do
+      nil -> "Kept until someone deletes it."
+      %DateTime{} = expires_at -> "Removed on #{format_date(expires_at)}."
+    end
+  end
+
+  defp removal_sentence(_form), do: "Kept until someone deletes it."
+
+  defp format_date(%DateTime{} = datetime),
+    do: Calendar.strftime(datetime, "%b %-d, %Y at %H:%M UTC")
+
+  defp field_errors(%Phoenix.HTML.FormField{} = field) do
+    if Phoenix.Component.used_input?(field) do
+      Enum.map(field.errors, &translate_error/1)
+    else
+      []
+    end
+  end
 
   defp workspace_paste_manageable?(scope, paste) do
     Policy.workspace_owner?(scope.workspace_membership) or
       paste.created_by_user_id == scope.user.id
   end
+
+  defp workspace_member?(%{workspace: %{id: _id}}), do: true
+  defp workspace_member?(_scope), do: false
 end

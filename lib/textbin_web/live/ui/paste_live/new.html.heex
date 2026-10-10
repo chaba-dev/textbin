@@ -1,0 +1,162 @@
+<Layouts.app
+  flash={@flash}
+  current_scope={@current_scope}
+  navigation_workspaces={@navigation_workspaces}
+  active_navigation={{:workspace, :pastes}}
+>
+  <.form
+    for={@paste_form}
+    id="paste-form"
+    phx-change="validate"
+    phx-submit="save"
+    class="flex min-h-[calc(100dvh-10rem)] flex-col gap-5"
+  >
+    <header class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p class="text-sm font-medium text-base-content/55">{@current_scope.workspace.name}</p>
+        <h1
+          id="new-paste-heading"
+          class="mt-1 text-2xl font-semibold tracking-tight text-base-content lg:text-3xl"
+        >
+          New paste
+        </h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <.link
+          id="cancel-new-paste"
+          navigate={paste_index_path(@current_scope)}
+          class="btn btn-ghost btn-sm"
+        >
+          Cancel
+        </.link>
+        <.button variant="primary" phx-disable-with="Creating...">
+          Create paste
+        </.button>
+      </div>
+    </header>
+
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <.input
+        field={@paste_form[:title]}
+        type="text"
+        label="Title"
+        placeholder="Taken from the first line if left blank"
+      />
+      <.input
+        field={@paste_form[:reference_url]}
+        type="url"
+        label="Reference"
+        placeholder="Ticket or incident link (optional)"
+      />
+    </div>
+
+    <div class="flex min-h-[40vh] flex-1 flex-col">
+      <label for="paste_data" class="label mb-1">Content</label>
+      <textarea
+        id="paste_data"
+        name={@paste_form[:data].name}
+        class={[
+          "textarea w-full flex-1 resize-none font-mono text-sm leading-6",
+          field_errors(@paste_form[:data]) != [] && "textarea-error"
+        ]}
+        placeholder="Paste text here..."
+        spellcheck="false"
+        required
+      >{Phoenix.HTML.Form.normalize_value("textarea", @paste_form[:data].value)}</textarea>
+      <p
+        :for={message <- field_errors(@paste_form[:data])}
+        class="mt-1.5 flex items-center gap-2 text-sm text-error"
+      >
+        <.icon name="hero-exclamation-circle" class="size-5" />
+        {message}
+      </p>
+    </div>
+
+    <div class="grid gap-5 rounded-lg border border-base-300 bg-base-100 p-5 shadow-sm lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div class="space-y-5">
+        <.input
+          field={@paste_form[:syntax_highlight]}
+          type="text"
+          label="Syntax"
+          placeholder="plain"
+        />
+
+        <fieldset id="paste-expiry" class="space-y-2">
+          <legend class="label mb-1">Expires</legend>
+          <div class="flex flex-wrap gap-1 rounded-lg bg-base-200 p-1" role="radiogroup">
+            <label
+              :for={{label, value} <- expiry_options()}
+              class="cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium text-base-content/65 transition has-[:checked]:bg-base-100 has-[:checked]:text-base-content has-[:checked]:shadow-sm hover:text-base-content"
+            >
+              <input
+                type="radio"
+                id={"paste_expires_in_#{value}"}
+                name={@paste_form[:expires_in].name}
+                value={value}
+                checked={@paste_form[:expires_in].value == value}
+                class="sr-only"
+              />
+              {label}
+            </label>
+          </div>
+          <p id="paste-removal-date" class="text-sm text-base-content/60">
+            {removal_sentence(@paste_form)}
+          </p>
+          <p
+            :for={message <- field_errors(@paste_form[:expires_at])}
+            class="flex items-center gap-2 text-sm text-error"
+          >
+            <.icon name="hero-exclamation-circle" class="size-5" />
+            {message}
+          </p>
+        </fieldset>
+      </div>
+
+      <fieldset id="paste-audience" class="space-y-2">
+        <legend class="label mb-1">Who can see this</legend>
+        <div class="grid gap-2 sm:grid-cols-3">
+          <label
+            :for={option <- audience_options(@current_scope)}
+            class={[
+              "flex gap-3 rounded-lg border p-3 transition",
+              if(option.allowed?,
+                do:
+                  "cursor-pointer border-base-300 hover:border-base-content/30 has-[:checked]:border-primary has-[:checked]:bg-primary/5",
+                else: "cursor-not-allowed border-dashed border-base-300 opacity-70"
+              )
+            ]}
+          >
+            <input
+              type="radio"
+              id={"paste_audience_#{option.value}"}
+              name={@paste_form[:audience].name}
+              value={option.value}
+              checked={@paste_form[:audience].value == option.value}
+              disabled={!option.allowed?}
+              class="radio radio-sm mt-0.5"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-medium text-base-content">{option.label}</span>
+              <span class="block text-xs leading-5 text-base-content/60">
+                {option.description}
+              </span>
+              <span
+                :if={!option.allowed?}
+                class="mt-1 block text-xs font-medium text-warning"
+              >
+                Not allowed by the workspace sharing policy
+              </span>
+            </span>
+          </label>
+        </div>
+        <p
+          :for={message <- field_errors(@paste_form[:audience])}
+          class="flex items-center gap-2 text-sm text-error"
+        >
+          <.icon name="hero-exclamation-circle" class="size-5" />
+          {message}
+        </p>
+      </fieldset>
+    </div>
+  </.form>
+</Layouts.app>

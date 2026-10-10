@@ -5,13 +5,13 @@ defmodule TextbinWeb.PasteController do
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
 
-  def raw(conn, %{"id" => id}) do
+  def raw(conn, %{"id" => id} = params) do
     case Pastes.get_shared_paste(conn.assigns.current_scope, id) do
       %Paste{} = paste ->
         conn
         |> put_resp_header("x-content-type-options", "nosniff")
         |> put_resp_header("content-security-policy", "sandbox; default-src 'none'")
-        |> maybe_force_download(paste)
+        |> maybe_force_download(paste, Map.has_key?(params, "download"))
         |> put_paste_content_type(paste)
         |> send_resp(:ok, paste.data)
 
@@ -28,8 +28,10 @@ defmodule TextbinWeb.PasteController do
     end
   end
 
-  defp maybe_force_download(conn, %Paste{} = paste) do
-    if !ContentType.inline_safe?(paste.content_type) or !text_response?(paste) do
+  # Unsafe content always downloads; the detail page's Download action asks for
+  # the same treatment explicitly so safe text can be saved as a file too.
+  defp maybe_force_download(conn, %Paste{} = paste, requested?) do
+    if requested? or !ContentType.inline_safe?(paste.content_type) or !text_response?(paste) do
       put_resp_header(conn, "content-disposition", ~s(attachment; filename="paste-#{paste.id}"))
     else
       conn

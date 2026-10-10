@@ -4,62 +4,57 @@
   navigation_workspaces={@navigation_workspaces}
   active_navigation={{:workspace, :pastes}}
 >
-  <div class="space-y-8">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div class="space-y-2">
-        <p class="text-sm font-medium uppercase tracking-wide text-base-content/60">
-          Paste
-        </p>
+  <div class="space-y-6">
+    <.link
+      :if={workspace_member?(@current_scope)}
+      id="back-to-pastes"
+      navigate={paste_index_path(@current_scope)}
+      class="inline-flex items-center gap-1 text-sm text-base-content/60 transition hover:text-base-content"
+    >
+      <.icon name="hero-arrow-left" class="size-4" /> Back to pastes
+    </.link>
+
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div class="min-w-0 space-y-2">
         <h1
           id="paste-title"
-          class="break-words text-2xl font-semibold tracking-tight text-base-content"
+          class="break-words text-2xl font-semibold tracking-tight text-base-content lg:text-3xl"
         >
           {Paste.display_title(@paste)}
         </h1>
         <p id="paste-id" class="break-all font-mono text-xs text-base-content/50">{@paste.id}</p>
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span id="paste-author" class="text-sm text-base-content/70">
-            {author_label(@paste, @current_scope)}
-          </span>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-base-content/70">
+          <span id="paste-author">{author_label(@paste, @current_scope)}</span>
+          <time datetime={DateTime.to_iso8601(@paste.inserted_at)}>
+            Created {Calendar.strftime(@paste.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
+          </time>
           <a
             :if={@paste.reference_url}
             id="paste-reference"
             href={@paste.reference_url}
             target="_blank"
             rel="noopener noreferrer"
-            class="break-all text-sm text-primary hover:underline"
+            class="inline-flex max-w-full items-center gap-1 break-all text-primary hover:underline"
           >
+            <.icon name="hero-link" class="size-4 shrink-0" />
             {@paste.reference_url}
           </a>
-          <span id="paste-content-type" class="badge badge-sm badge-outline">
-            {@paste.content_type}
-          </span>
-          <span class="badge badge-sm badge-outline">{@paste.syntax_highlight}</span>
-          <span id="paste-audience" class="badge badge-sm badge-outline">
-            {String.capitalize(@paste.audience)}
-          </span>
-          <time
-            class="block text-sm text-base-content/60"
-            datetime={DateTime.to_iso8601(@paste.inserted_at)}
-          >
-            Created {Calendar.strftime(@paste.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
-          </time>
-          <%= if @paste.expires_at do %>
-            <time
-              id="paste-expires-at"
-              class="block text-sm text-base-content/60"
-              datetime={DateTime.to_iso8601(@paste.expires_at)}
-            >
-              Expires {Calendar.strftime(@paste.expires_at, "%Y-%m-%d %H:%M:%S UTC")}
-            </time>
-          <% else %>
-            <span id="paste-expires-at" class="block text-sm text-base-content/60">
-              Never expires
-            </span>
-          <% end %>
         </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        <button
+          id="copy-paste-link"
+          type="button"
+          phx-hook="CopyToClipboard"
+          phx-update="ignore"
+          data-copy-content={@share_url}
+          class="btn btn-sm btn-primary"
+          title="Copy a link to this paste"
+        >
+          <.icon name="hero-link" class="size-4" />
+          <span data-copy-label>Copy link</span>
+        </button>
         <button
           :if={@text_content?}
           id="copy-paste-content"
@@ -67,11 +62,11 @@
           phx-hook="CopyToClipboard"
           phx-update="ignore"
           data-copy-content={@paste.data}
-          class="btn btn-sm btn-primary"
+          class="btn btn-sm btn-ghost"
           title="Copy paste content"
         >
           <.icon name="hero-clipboard" class="size-4" />
-          <span data-copy-label>Copy</span>
+          <span data-copy-label>Copy content</span>
         </button>
         <.link
           id="raw-paste-link"
@@ -83,11 +78,21 @@
           <.icon name="hero-code-bracket" class="size-4" /> Raw
         </.link>
         <.link
-          :if={@owner?}
-          navigate={paste_index_path(@current_scope)}
+          id="download-paste-link"
+          href={~p"/pastes/#{@paste.id}/raw?download=1"}
           class="btn btn-sm btn-ghost"
+          title="Download this paste"
         >
-          Back to pastes
+          <.icon name="hero-arrow-down-tray" class="size-4" /> Download
+        </.link>
+        <.link
+          :if={workspace_member?(@current_scope) && @text_content?}
+          id="duplicate-paste-link"
+          navigate={"#{new_paste_path(@current_scope)}?from=#{@paste.id}"}
+          class="btn btn-sm btn-ghost"
+          title="Start a new paste from this one"
+        >
+          <.icon name="hero-document-duplicate" class="size-4" /> Duplicate
         </.link>
         <button
           :if={@owner?}
@@ -96,11 +101,52 @@
           phx-click="delete"
           phx-value-id={@paste.id}
           data-confirm="Delete this paste?"
-          class="btn btn-sm btn-error"
+          class="btn btn-sm btn-ghost text-error hover:bg-error/10"
         >
           <.icon name="hero-trash" class="size-4" /> Delete
         </button>
       </div>
+    </div>
+
+    <div
+      id="paste-audience-banner"
+      class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/80"
+    >
+      <.icon
+        name={
+          case @paste.audience do
+            "public" -> "hero-globe-alt"
+            "unlisted" -> "hero-link"
+            _audience -> "hero-user-group"
+          end
+        }
+        class="size-4 shrink-0 text-base-content/50"
+      />
+      <span id="paste-audience-sentence">
+        {audience_sentence(@paste, @current_scope)} {expiry_sentence(@paste.expires_at)}
+      </span>
+      <span class="ml-auto flex flex-wrap items-center gap-2">
+        <span id="paste-audience" class="badge badge-sm badge-outline">
+          {String.capitalize(@paste.audience)}
+        </span>
+        <%= if @paste.expires_at do %>
+          <time
+            id="paste-expires-at"
+            class="badge badge-sm badge-outline"
+            datetime={DateTime.to_iso8601(@paste.expires_at)}
+          >
+            Expires {Calendar.strftime(@paste.expires_at, "%Y-%m-%d %H:%M:%S UTC")}
+          </time>
+        <% else %>
+          <span id="paste-expires-at" class="badge badge-sm badge-outline">
+            Never expires
+          </span>
+        <% end %>
+        <span id="paste-content-type" class="badge badge-sm badge-outline">
+          {@paste.content_type}
+        </span>
+        <span class="badge badge-sm badge-outline">{@paste.syntax_highlight}</span>
+      </span>
     </div>
 
     <div
@@ -118,7 +164,7 @@
       <.icon name="hero-document-arrow-down" class="mx-auto size-8 text-base-content/50" />
       <p class="mt-3 font-medium">Binary paste</p>
       <p class="mt-1 text-sm text-base-content/60">
-        Preview is disabled. Use the raw link to download the original bytes.
+        Preview is disabled. Use Download to get the original bytes.
       </p>
     </div>
   </div>

@@ -24,6 +24,20 @@ defmodule TextbinWeb.PasteControllerTest do
     end
   end
 
+  test "raw serves safe text inline unless a download is requested", %{scope: scope} do
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "save me", visibility: "public"})
+
+    inline = get(build_conn(), ~p"/pastes/#{paste.id}/raw")
+    assert get_resp_header(inline, "content-disposition") == []
+
+    download = get(build_conn(), ~p"/pastes/#{paste.id}/raw?download=1")
+    assert response(download, 200) == "save me"
+
+    assert get_resp_header(download, "content-disposition") == [
+             ~s(attachment; filename="paste-#{paste.id}")
+           ]
+  end
+
   test "raw returns a private paste to its signed-in owner", %{scope: scope, user: user} do
     {:ok, paste} = Pastes.create_paste(scope, %{data: "private raw", visibility: "private"})
 
