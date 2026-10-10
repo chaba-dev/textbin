@@ -336,6 +336,32 @@ defmodule Textbin.Pastes do
   def get_removed_paste(_scope, _id), do: nil
 
   @doc """
+  Finds which workspace holds a removed paste the caller could restore, so
+  its shared link can send them to the restore page. Returns nil otherwise.
+  """
+  def removed_paste_workspace_id(%Scope{user: %User{id: user_id}}, id) when is_binary(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, paste_id} ->
+        now = Paste.utc_now_ms()
+
+        paste_id
+        |> manageable_paste_query(user_id)
+        |> where(
+          [paste],
+          (not is_nil(paste.removed_at) and paste.removal_reason == "deleted") or
+            (is_nil(paste.removed_at) and paste.expires_at <= ^now)
+        )
+        |> select([paste], paste.workspace_id)
+        |> Repo.one()
+
+      :error ->
+        nil
+    end
+  end
+
+  def removed_paste_workspace_id(_scope, _id), do: nil
+
+  @doc """
   Brings a removed paste back. Restoring an expired paste clears its expiry,
   because otherwise it would disappear again at once.
   """

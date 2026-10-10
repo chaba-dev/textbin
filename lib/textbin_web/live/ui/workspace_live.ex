@@ -51,7 +51,8 @@ defmodule TextbinWeb.UI.WorkspaceLive do
        to_form(
          %{
            "visibility" => scope.workspace.visibility,
-           "external_sharing_policy" => scope.workspace.external_sharing_policy
+           "external_sharing_policy" => scope.workspace.external_sharing_policy,
+           "recovery_window_days" => scope.workspace.recovery_window_days
          },
          as: :workspace
        )
@@ -128,7 +129,8 @@ defmodule TextbinWeb.UI.WorkspaceLive do
            to_form(
              %{
                "visibility" => workspace.visibility,
-               "external_sharing_policy" => workspace.external_sharing_policy
+               "external_sharing_policy" => workspace.external_sharing_policy,
+               "recovery_window_days" => workspace.recovery_window_days
              },
              as: :workspace
            )
@@ -204,6 +206,12 @@ defmodule TextbinWeb.UI.WorkspaceLive do
                 {"Public", "public"}
               ]}
             />
+            <.input
+              field={@settings_form[:recovery_window_days]}
+              type="select"
+              label="Keep removed pastes for"
+              options={recovery_window_options()}
+            />
             <.button variant="primary" phx-disable-with="Saving...">Save settings</.button>
           </.form>
 
@@ -214,7 +222,7 @@ defmodule TextbinWeb.UI.WorkspaceLive do
           >
             Visibility: {String.capitalize(@current_scope.workspace.visibility)} · External sharing: {String.capitalize(
               @current_scope.workspace.external_sharing_policy
-            )}
+            )} · Removed pastes kept for {@current_scope.workspace.recovery_window_days} days
           </p>
         </section>
 
@@ -279,6 +287,12 @@ defmodule TextbinWeb.UI.WorkspaceLive do
       </div>
     </Layouts.app>
     """
+  end
+
+  defp recovery_window_options do
+    for days <- Workspace.recovery_windows() do
+      {if(days == 1, do: "1 day", else: "#{days} days"), days}
+    end
   end
 
   defp resolve_workspace_scope!(scope, organization_slug, workspace_slug) do

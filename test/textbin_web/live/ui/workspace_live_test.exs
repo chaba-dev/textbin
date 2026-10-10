@@ -253,6 +253,21 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
            )
   end
 
+  test "workspace owners choose how long removed pastes are kept", context do
+    {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
+
+    assert has_element?(view, "#workspace_recovery_window_days option[value='30'][selected]")
+
+    view
+    |> form("#workspace-settings-form", %{"workspace" => %{"recovery_window_days" => "7"}})
+    |> render_submit()
+
+    assert Repo.get!(Textbin.Organizations.Workspace, context.workspace.id).recovery_window_days ==
+             7
+
+    assert has_element?(view, "#workspace_recovery_window_days option[value='7'][selected]")
+  end
+
   defp add_organization_member(context, user) do
     {:ok, _memberships} =
       Organizations.add_organization_member(context.owner_scope, context.organization, user)

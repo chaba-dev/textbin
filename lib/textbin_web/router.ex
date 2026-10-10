@@ -87,6 +87,7 @@ defmodule TextbinWeb.Router do
       live "/o/:organization_slug/audit-log", UI.AuditLogLive, :index
       live "/o/:organization_slug/members", UI.OrganizationLive, :members
       live "/o/:organization_slug/settings", UI.OrganizationLive, :settings
+      live "/w/:organization_slug/:workspace_slug/deleted", UI.DeletedLive, :index
       live "/w/:organization_slug/:workspace_slug/members", UI.WorkspaceLive, :members
       live "/w/:organization_slug/:workspace_slug/settings", UI.WorkspaceLive, :settings
       live "/admin", UI.AdminLive, :index

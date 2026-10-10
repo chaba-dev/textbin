@@ -214,6 +214,12 @@ defmodule TextbinWeb.Layouts do
         active={@active == :pastes}
       />
       <.tab
+        id="workspace-tab-deleted"
+        navigate={workspace_path(@scope.organization, @scope.workspace, "deleted")}
+        label="Deleted"
+        active={@active == :deleted}
+      />
+      <.tab
         id="workspace-tab-settings"
         navigate={workspace_path(@scope.organization, @scope.workspace, "settings")}
         label="Settings"
