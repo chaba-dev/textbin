@@ -103,6 +103,7 @@ defmodule TextbinWeb.Router do
       live "/pastes", UI.PasteLive, :legacy_index
       live "/pastes/:id", UI.PasteLive, :show
       live "/w/:organization_slug/:workspace_slug/pastes", UI.PasteLive, :workspace_index
+      live "/w/:organization_slug/:workspace_slug/pastes/new", UI.PasteLive, :new
       live "/w/:organization_slug/:workspace_slug/pastes/:id", UI.PasteLive, :workspace_show
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new

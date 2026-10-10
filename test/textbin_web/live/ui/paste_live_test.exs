@@ -35,22 +35,26 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     conn = get(build_conn(), ~p"/pastes")
     path = redirected_to(conn)
     assert path =~ ~r{^/w/personal-[0-9a-f-]+/default/pastes$}
-    {:ok, view, _html} = live(recycle(conn), path)
+    {:ok, index_view, _html} = live(recycle(conn), path)
+
+    assert has_element?(index_view, "#pastes-heading.sr-only", "Pastes")
+    assert has_element?(index_view, "#new-paste-link[href='#{path}/new']")
+    refute has_element?(index_view, "#paste-form")
+    refute has_element?(index_view, "#organization-overview-link")
+
+    {:ok, view, _html} = live(recycle(conn), "#{path}/new")
 
     assert has_element?(view, "#paste-form")
-    assert has_element?(view, "#pastes-heading.sr-only", "Pastes")
-    assert has_element?(view, "#paste_audience[disabled] option[value='unlisted']")
-    refute has_element?(view, "#organization-overview-link")
+    assert has_element?(view, "#paste_audience_unlisted[checked]")
+    refute has_element?(view, "#paste_audience_workspace")
 
-    view
-    |> form("#paste-form", %{
-      "paste" => %{
-        "data" => "guest paste",
-        "syntax_highlight" => "plain",
-        "expires_in" => ""
-      }
-    })
-    |> render_submit()
+    {:ok, _show_view, _html} =
+      view
+      |> form("#paste-form", %{
+        "paste" => %{"data" => "guest paste", "syntax_highlight" => "plain"}
+      })
+      |> render_submit()
+      |> follow_redirect(recycle(conn))
 
     paste =
       Paste
@@ -62,7 +66,6 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert paste.created_by_user.kind == "guest"
     assert paste.audience == "unlisted"
     assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 21_590..21_600
-    assert has_element?(view, "##{stream_id(paste)}", "plain")
   end
 
   test "lists scoped pastes", %{conn: conn, scope: scope, user: user} do
@@ -141,30 +144,34 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     scope: scope,
     user: user
   } do
-    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
+    path = personal_workspace_path(user)
+    {:ok, view, _html} = live(conn, "#{path}/new")
 
-    view
-    |> form("#paste-form", %{
-      "paste" => %{
-        "title" => "Typed title",
-        "data" => "the first line would otherwise be the title",
-        "syntax_highlight" => "plain",
-        "expires_in" => "never"
-      }
-    })
-    |> render_submit()
+    {:ok, show_view, _html} =
+      view
+      |> form("#paste-form", %{
+        "paste" => %{
+          "title" => "Typed title",
+          "data" => "the first line would otherwise be the title",
+          "syntax_highlight" => "plain",
+          "expires_in" => "never"
+        }
+      })
+      |> render_submit()
+      |> follow_redirect(conn)
 
     assert [paste] = Pastes.list_pastes(scope)
     assert paste.title == "Typed title"
-    assert has_element?(view, "#paste-title-#{paste.id}", "Typed title")
-    assert has_element?(view, "#paste-author-#{paste.id}", "You")
+    assert has_element?(show_view, "#paste-title", "Typed title")
+    assert has_element?(show_view, "#paste-author", "You")
   end
 
   test "renders an empty state", %{conn: conn, user: user} do
     {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
 
     assert has_element?(view, "#pastes-list")
-    assert has_element?(view, "#pastes-empty.min-h-56.text-base", "No pastes yet.")
+    assert has_element?(view, "#pastes-empty", "No pastes yet.")
+    assert has_element?(view, "#new-paste-link")
   end
 
   test "workspace URLs restore the selected scope and conceal other workspace pastes", %{
@@ -192,7 +199,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   test "creates pastes in the workspace selected by the URL", %{conn: conn, scope: scope} do
     {organization, _default_workspace, workspace} = team_workspaces(scope)
     path = workspace_path(organization, workspace)
-    {:ok, view, _html} = live(conn, path)
+    {:ok, view, _html} = live(conn, "#{path}/new")
 
     view
     |> form("#paste-form", %{
@@ -208,7 +215,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert [paste] = Pastes.list_pastes(workspace_scope(scope, workspace))
     assert paste.data == "team paste"
     assert paste.workspace_id == workspace.id
-    assert has_element?(view, "##{stream_id(paste)} a[href='#{path}/#{paste.id}']")
+    assert_redirect(view, "#{path}/#{paste.id}")
   end
 
   test "revoked workspace membership prevents creation from an already connected view", %{
@@ -224,7 +231,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       Organizations.add_workspace_member(owner_scope, workspace, member)
 
     conn = log_in_user(build_conn(), member)
-    {:ok, view, _html} = live(conn, workspace_path(organization, workspace))
+    {:ok, view, _html} = live(conn, "#{workspace_path(organization, workspace)}/new")
     Repo.delete!(membership)
 
     view
@@ -319,12 +326,15 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   end
 
   test "creates a paste from the UI", %{conn: conn, scope: scope, user: user} do
-    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
+    path = personal_workspace_path(user)
+    {:ok, view, _html} = live(conn, "#{path}/new")
 
     assert has_element?(view, "#paste-form")
-    assert has_element?(view, "#paste_audience option[value='workspace']")
-    assert has_element?(view, "#paste_audience option[value='unlisted']")
-    assert has_element?(view, "#paste_audience option[value='public']")
+    assert has_element?(view, "#paste_audience_workspace[checked]")
+    assert has_element?(view, "#paste_audience_unlisted:not([disabled])")
+    assert has_element?(view, "#paste_audience_public:not([disabled])")
+    assert has_element?(view, "#paste_expires_in_never[checked]")
+    assert has_element?(view, "#paste-removal-date", "Kept until someone deletes it.")
 
     view
     |> form("#paste-form", %{
@@ -342,12 +352,56 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert paste.syntax_highlight == "markdown"
     assert paste.audience == "public"
     assert is_nil(paste.expires_at)
-    assert has_element?(view, "##{stream_id(paste)}", "markdown")
-    assert has_element?(view, "#paste-audience-#{paste.id}", "Public")
+    assert_redirect(view, "#{path}/#{paste.id}")
+  end
+
+  test "the editor shows forbidden audiences disabled with the reason", %{
+    conn: conn,
+    scope: scope,
+    user: user
+  } do
+    workspace = personal_workspace_fixture(user)
+
+    {:ok, _workspace} =
+      Organizations.change_workspace_settings(scope, workspace, %{
+        external_sharing_policy: "unlisted"
+      })
+
+    {:ok, view, _html} = live(conn, "#{personal_workspace_path(user)}/new")
+
+    assert has_element?(view, "#paste_audience_workspace:not([disabled])")
+    assert has_element?(view, "#paste_audience_unlisted:not([disabled])")
+    assert has_element?(view, "#paste_audience_public[disabled]")
+    assert has_element?(view, "#paste-audience", "Not allowed by the workspace sharing policy")
+  end
+
+  test "the editor spells out the removal date for the chosen expiry", %{
+    conn: conn,
+    user: user
+  } do
+    {:ok, view, _html} = live(conn, "#{personal_workspace_path(user)}/new")
+
+    view
+    |> form("#paste-form", %{"paste" => %{"data" => "x", "expires_in" => "1d"}})
+    |> render_change()
+
+    expected = DateTime.utc_now() |> DateTime.add(1, :day) |> Calendar.strftime("%b %-d, %Y")
+    assert has_element?(view, "#paste-removal-date", "Removed on #{expected}")
+  end
+
+  test "the list links to the editor instead of embedding it", %{conn: conn, user: user} do
+    {path, {:ok, view, _html}} = live_personal_workspace(conn, user)
+
+    refute has_element?(view, "#paste-form")
+
+    assert {:error, {:live_redirect, %{to: to}}} =
+             view |> element("#new-paste-link") |> render_click()
+
+    assert to == "#{path}/new"
   end
 
   test "form validation revalidates the workspace resolved at mount", %{conn: conn, user: user} do
-    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
+    {:ok, view, _html} = live(conn, "#{personal_workspace_path(user)}/new")
     handler_id = "paste-form-query-test-#{System.unique_integer([:positive])}"
 
     :telemetry.attach(
@@ -364,7 +418,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     for data <- ["a", "ab"] do
       view
       |> form("#paste-form", %{
-        "paste" => %{"data" => data, "syntax_highlight" => "plain", "expires_in" => ""}
+        "paste" => %{"data" => data, "syntax_highlight" => "plain"}
       })
       |> render_change()
     end
@@ -379,21 +433,18 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     scope = %{scope | user: user}
     conn = log_in_user(build_conn(), user)
 
-    {_path, {:ok, view, _html}} = live_personal_workspace(conn, user)
+    {:ok, view, _html} = live(conn, "#{personal_workspace_path(user)}/new")
+
+    assert has_element?(view, "#paste_expires_in_1h[checked]")
 
     view
     |> form("#paste-form", %{
-      "paste" => %{
-        "data" => "uses account default",
-        "syntax_highlight" => "plain",
-        "expires_in" => ""
-      }
+      "paste" => %{"data" => "uses account default", "syntax_highlight" => "plain"}
     })
     |> render_submit()
 
     assert [paste] = Pastes.list_pastes(scope)
     assert DateTime.diff(paste.expires_at, DateTime.utc_now(), :second) in 3590..3600
-    assert has_element?(view, "#paste-expires-at-#{paste.id}", "Expires")
   end
 
   test "shows an individual paste", %{conn: conn, scope: scope, user: user} do
@@ -410,10 +461,46 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-data .lumis code.language-json")
     assert has_element?(view, "#paste-data .l-line[data-line='1']")
     assert has_element?(view, "#paste-data", "individual paste data")
-    assert has_element?(view, "a[href='#{personal_workspace_path(user)}']", "Back to pastes")
+    assert has_element?(view, "#back-to-pastes[href='#{personal_workspace_path(user)}']")
+    assert has_element?(view, "#copy-paste-link.btn-primary[phx-hook='CopyToClipboard']")
+    assert has_element?(view, "#copy-paste-link[data-copy-content$='/pastes/#{paste.id}']")
     assert has_element?(view, "#copy-paste-content[phx-hook='CopyToClipboard']")
     assert has_element?(view, "#raw-paste-link[href='/pastes/#{paste.id}/raw']")
+    assert has_element?(view, "#download-paste-link[href='/pastes/#{paste.id}/raw?download=1']")
+
+    assert has_element?(
+             view,
+             "#duplicate-paste-link[href='#{personal_workspace_path(user)}/new?from=#{paste.id}']"
+           )
+
     assert has_element?(view, "#delete-paste-#{paste.id}")
+
+    assert has_element?(
+             view,
+             "#paste-audience-sentence",
+             "Everyone in Default can see this paste. It never expires."
+           )
+  end
+
+  test "duplicate opens the editor prefilled from the source paste", %{
+    conn: conn,
+    scope: scope,
+    user: user
+  } do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{
+        data: "copy me",
+        title: "Original",
+        reference_url: "https://tracker.example.com/T-1",
+        syntax_highlight: "elixir"
+      })
+
+    {:ok, view, _html} = live(conn, "#{personal_workspace_path(user)}/new?from=#{paste.id}")
+
+    assert has_element?(view, "#paste_title[value='Original']")
+    assert has_element?(view, "#paste_reference_url[value='https://tracker.example.com/T-1']")
+    assert has_element?(view, "#paste_syntax_highlight[value='elixir']")
+    assert has_element?(view, "#paste_data", "copy me")
   end
 
   test "renders HTML paste content as escaped source", %{conn: conn, scope: scope} do
@@ -459,7 +546,9 @@ defmodule TextbinWeb.UI.PasteLiveTest do
       assert has_element?(view, "#paste-data", "#{visibility} paste")
       assert has_element?(view, "#copy-paste-content[phx-hook='CopyToClipboard']")
       assert has_element?(view, "#raw-paste-link[href='/pastes/#{paste.id}/raw']")
-      refute has_element?(view, "a[href='/pastes']", "Back to pastes")
+      assert has_element?(view, "#copy-paste-link")
+      refute has_element?(view, "#back-to-pastes")
+      refute has_element?(view, "#duplicate-paste-link")
       refute has_element?(view, "#delete-paste-#{paste.id}")
     end
   end
