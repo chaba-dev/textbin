@@ -79,6 +79,7 @@ defmodule TextbinWeb.Router do
       on_mount: [{TextbinWeb.UserAuth, :require_authenticated}] do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+      live "/search", UI.SearchLive, :index
       live "/orgs", UI.OrganizationLive, :index
       live "/orgs/new", UI.OrganizationLive, :new
       live "/o/:organization_slug", UI.OrganizationLive, :show

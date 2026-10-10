@@ -13,6 +13,8 @@ defmodule Textbin.Pastes do
   alias Textbin.Storage
   alias Textbin.Storage.IntegrityError
   alias Textbin.Organizations
+  alias Textbin.Organizations.Organization
+  alias Textbin.Organizations.OrganizationMembership
   alias Textbin.Organizations.Workspace
   alias Textbin.Organizations.WorkspaceMembership
   alias Textbin.Organizations.Policy
@@ -91,6 +93,126 @@ defmodule Textbin.Pastes do
   Loads the author so lists and headings can name who created a paste.
   """
   def preload_author(paste_or_pastes), do: Repo.preload(paste_or_pastes, :created_by_user)
+
+  @search_limit 50
+  @excerpt_context 60
+
+  @doc """
+  Searches active pastes in every workspace the user belongs to, newest first.
+
+  Titles always match. Content matches only for text kept inline in the
+  database; larger pastes live in object storage and are found by title.
+  Removed pastes and binary content are never searched.
+
+  Each result carries the paste (with author), its workspace and
+  organization, and an excerpt `{before, match, after}` around the first
+  content match, or nil when only the title matched.
+  """
+  def search_pastes(scope, query, opts \\ [])
+
+  def search_pastes(%Scope{user: %User{id: user_id}}, query, opts) when is_binary(query) do
+    case String.trim(query) do
+      "" ->
+        []
+
+      term ->
+        user_id
+        |> search_query("%" <> escape_like(term) <> "%", Keyword.get(opts, :limit, @search_limit))
+        |> Repo.all()
+        |> Enum.map(fn {paste, workspace, organization} ->
+          %{
+            paste: preload_author(paste),
+            workspace: workspace,
+            organization: organization,
+            excerpt: excerpt(paste.data, term)
+          }
+        end)
+    end
+  end
+
+  def search_pastes(_scope, _query, _opts), do: []
+
+  defp search_query(user_id, pattern, limit) do
+    now = Paste.utc_now_ms()
+
+    from(p in Paste,
+      join: w in Workspace,
+      on: w.id == p.workspace_id,
+      join: o in Organization,
+      on: o.id == w.organization_id,
+      join: wm in WorkspaceMembership,
+      on: wm.workspace_id == w.id and wm.user_id == ^user_id,
+      join: om in OrganizationMembership,
+      on: om.organization_id == o.id and om.user_id == ^user_id,
+      where: is_nil(w.deletion_requested_at) and is_nil(o.deletion_requested_at),
+      where: ilike(p.title, ^pattern) or ilike(p.data, ^pattern),
+      order_by: [desc: p.inserted_at, desc: p.id],
+      limit: ^limit,
+      select: {p, w, o}
+    )
+    |> active_pastes(now)
+    |> textual_pastes()
+  end
+
+  defp textual_pastes(query) do
+    where(
+      query,
+      [p],
+      like(p.content_type, "text/%") or
+        p.content_type in ^ContentType.textual_application_types() or
+        like(p.content_type, "application/%+json") or like(p.content_type, "application/%+xml")
+    )
+  end
+
+  defp escape_like(term), do: String.replace(term, ["\\", "%", "_"], &("\\" <> &1))
+
+  # Case-insensitive search for the term inside the text, returning a short
+  # window around the first hit. Matching on downcased copies keeps grapheme
+  # boundaries intact for the slices.
+  defp excerpt(data, term) when is_binary(data) do
+    if String.valid?(data) do
+      graphemes = String.graphemes(data)
+      lowered = Enum.map(graphemes, &String.downcase/1)
+      needle = term |> String.downcase() |> String.graphemes()
+
+      case find_sublist(lowered, length(lowered), needle, length(needle), 0) do
+        nil ->
+          nil
+
+        index ->
+          length = length(needle)
+          start = max(index - @excerpt_context, 0)
+
+          {
+            leading(start) <> squash(Enum.slice(graphemes, start, index - start)),
+            Enum.join(Enum.slice(graphemes, index, length)),
+            squash(Enum.slice(graphemes, index + length, @excerpt_context)) <>
+              trailing(index + length + @excerpt_context, length(graphemes))
+          }
+      end
+    end
+  end
+
+  defp excerpt(_data, _term), do: nil
+
+  defp find_sublist(_haystack, remaining, _needle, needed, _index) when remaining < needed,
+    do: nil
+
+  defp find_sublist([_ | rest] = haystack, remaining, needle, needed, index) do
+    if prefix?(haystack, needle),
+      do: index,
+      else: find_sublist(rest, remaining - 1, needle, needed, index + 1)
+  end
+
+  defp prefix?(_haystack, []), do: true
+  defp prefix?([same | haystack], [same | needle]), do: prefix?(haystack, needle)
+  defp prefix?(_haystack, _needle), do: false
+
+  defp squash(graphemes), do: graphemes |> Enum.join() |> String.replace(~r/\s+/u, " ")
+  defp leading(0), do: ""
+  defp leading(_start), do: "…"
+  defp trailing(stop, total) when stop < total, do: "…"
+  defp trailing(_stop, _total), do: ""
 
   def get_paste(%Scope{user: %User{}} = scope, id) when is_binary(id) do
     with {:ok, paste_id} <- Ecto.UUID.cast(id),

@@ -709,6 +709,82 @@ defmodule Textbin.PastesTest do
       assert %Paste{removal_reason: "deleted"} = Repo.get(Paste, member_paste.id)
     end
 
+    test "search_pastes/2 finds titles and inline content across joined workspaces", %{
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Search team", slug: "search-team"})
+
+      [team_workspace] = organization.workspaces
+      {:ok, team_scope} = Organizations.resolve_workspace_scope(scope, team_workspace)
+
+      {:ok, by_title} =
+        Pastes.create_paste(scope, %{title: "Nginx upstream notes", data: "body text"})
+
+      {:ok, by_body} =
+        Pastes.create_paste(team_scope, %{
+          data: "first line\nthe NGINX worker crashed at 08:41 while reloading config"
+        })
+
+      {:ok, unrelated} = Pastes.create_paste(scope, %{data: "postgres vacuum"})
+      {:ok, removed} = Pastes.create_paste(scope, %{data: "nginx but deleted"})
+      {:ok, _} = Pastes.delete_paste(scope, removed)
+      {:ok, _binary} = Pastes.create_paste(scope, %{data: <<0, "nginx", 255>>})
+
+      outsider_scope = user_scope_fixture()
+      {:ok, _hidden} = Pastes.create_paste(outsider_scope, %{data: "nginx elsewhere"})
+
+      results = Pastes.search_pastes(scope, "  nginx ")
+      ids = Enum.map(results, & &1.paste.id)
+
+      assert Enum.sort(ids) == Enum.sort([by_title.id, by_body.id])
+      refute unrelated.id in ids
+
+      body_hit = Enum.find(results, &(&1.paste.id == by_body.id))
+      assert body_hit.workspace.id == team_workspace.id
+      assert body_hit.organization.id == organization.id
+      assert {before, "NGINX", rest} = body_hit.excerpt
+      assert before =~ "first line the "
+      assert rest =~ "worker crashed"
+
+      title_hit = Enum.find(results, &(&1.paste.id == by_title.id))
+      assert title_hit.excerpt == nil
+    end
+
+    test "search only treats application structured suffixes as textual", %{scope: scope} do
+      searchable = ["application/vnd.example+json", "application/vnd.example+xml"]
+      excluded = ["image/svg+xml", "image/custom+json"]
+
+      pastes =
+        for content_type <- searchable ++ excluded do
+          {:ok, paste} =
+            Pastes.create_paste(scope, %{
+              data: "body",
+              title: "Classifier match",
+              content_type: content_type
+            })
+
+          paste
+        end
+
+      expected_ids = for paste <- pastes, paste.content_type in searchable, do: paste.id
+      actual_ids = Enum.map(Pastes.search_pastes(scope, "classifier"), & &1.paste.id)
+      assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
+    end
+
+    test "search_pastes/2 treats LIKE wildcards literally and ignores blank queries", %{
+      scope: scope
+    } do
+      {:ok, percent} = Pastes.create_paste(scope, %{data: "cpu at 100% on node-3"})
+      {:ok, _other} = Pastes.create_paste(scope, %{data: "cpu at 1000 on node_3"})
+
+      assert [%{paste: %{id: id}}] = Pastes.search_pastes(scope, "100%")
+      assert id == percent.id
+      assert [_] = Pastes.search_pastes(scope, "node_3")
+      assert Pastes.search_pastes(scope, "   ") == []
+      assert Pastes.search_pastes(nil, "cpu") == []
+    end
+
     test "removed pastes are listed with their reason and can be restored", %{scope: scope} do
       {:ok, deleted} = Pastes.create_paste(scope, %{data: "deleted one", expires_in: "1h"})
       {:ok, _} = Pastes.delete_paste(scope, deleted)
