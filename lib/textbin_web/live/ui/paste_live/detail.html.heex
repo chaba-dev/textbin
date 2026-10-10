@@ -16,7 +16,7 @@
         >
           {Paste.display_title(@paste)}
         </h1>
-        <p class="break-all font-mono text-xs text-base-content/50">{@paste.id}</p>
+        <p id="paste-id" class="break-all font-mono text-xs text-base-content/50">{@paste.id}</p>
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span id="paste-author" class="text-sm text-base-content/70">
             {author_label(@paste, @current_scope)}

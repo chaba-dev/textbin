@@ -88,7 +88,8 @@ defmodule Textbin.Pastes.Paste do
   blank data.
   """
   def derive_title(data) when is_binary(data) do
-    if String.valid?(data) do
+    # text_safe? also rejects NUL bytes, which a text column cannot store.
+    if ContentType.text_safe?(data) do
       data
       |> String.split(~r/\r?\n/)
       |> Enum.map(&String.trim/1)

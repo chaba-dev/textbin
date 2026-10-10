@@ -382,7 +382,8 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
 
-    assert has_element?(view, "h1", paste.id)
+    assert has_element?(view, "#paste-title", "individual paste data")
+    assert has_element?(view, "#paste-id", paste.id)
     assert has_element?(view, "span", "json")
     assert has_element?(view, "#paste-audience", "Workspace")
     assert has_element?(view, "#paste-expires-at", "Never expires")
