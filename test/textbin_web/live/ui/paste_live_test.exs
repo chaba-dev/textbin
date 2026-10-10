@@ -747,6 +747,30 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert Pastes.get_paste(scope, paste.id)
   end
 
+  test "shared links open in the default theme for outsiders", %{scope: scope, user: user} do
+    {:ok, _user} = Textbin.Accounts.update_user_appearance(user, %{theme: "terminal"})
+    {:ok, paste} = Pastes.create_paste(scope, %{data: "themed", audience: "unlisted"})
+
+    html = build_conn() |> get(~p"/pastes/#{paste.id}") |> html_response(200)
+    [html_tag] = Regex.run(~r/<html[^>]*>/, html)
+
+    refute html_tag =~ "data-theme"
+  end
+
+  test "code is marked up with syntax role classes", %{conn: conn, scope: scope} do
+    {:ok, paste} =
+      Pastes.create_paste(scope, %{
+        data: ~s(defmodule A do\n  # note\n  def f, do: "s"\nend),
+        syntax_highlight: "elixir"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/pastes/#{paste.id}")
+
+    assert has_element?(view, "#paste-data .l-keyword-function", "defmodule")
+    assert has_element?(view, "#paste-data .l-comment", "# note")
+    assert has_element?(view, "#paste-data .l-string")
+  end
+
   test "a removed paste's link is a plain 404 for everyone else", %{scope: scope} do
     {:ok, paste} = Pastes.create_paste(scope, %{data: "shared then removed", audience: "public"})
     {:ok, _} = Pastes.delete_paste(scope, paste)

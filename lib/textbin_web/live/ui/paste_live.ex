@@ -319,7 +319,9 @@ defmodule TextbinWeb.UI.PasteLive do
   defp highlighted_paste_data(%Paste{} = paste) do
     if text_content?(paste) do
       paste.data
-      |> Lumis.highlight!(formatter: {:html_inline, language: highlight_language(paste)})
+      # Linked classes, not inline colors, so the active theme's six syntax
+      # roles in app.css color the code.
+      |> Lumis.highlight!(formatter: {:html_linked, language: highlight_language(paste)})
       |> then(&{:safe, &1})
     end
   end
