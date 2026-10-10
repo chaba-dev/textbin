@@ -116,6 +116,26 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste-reference[href='https://tracker.example.com/INC-2041']")
   end
 
+  test "shared attribution keeps account emails inside the workspace", %{scope: scope} do
+    outsider = user_fixture()
+    member = user_fixture()
+    organization = Organizations.get_personal_organization!(scope.user)
+    {:ok, _memberships} = Organizations.add_organization_member(scope, organization, member)
+
+    for audience <- ["unlisted", "public"] do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "shared content", audience: audience})
+
+      for viewer <- [build_conn(), log_in_user(build_conn(), outsider)] do
+        {:ok, view, _html} = live(viewer, ~p"/pastes/#{paste.id}")
+        assert has_element?(view, "#paste-author", "Registered user")
+        refute has_element?(view, "#paste-author", scope.user.email)
+      end
+
+      {:ok, view, _html} = live(log_in_user(build_conn(), member), ~p"/pastes/#{paste.id}")
+      assert has_element?(view, "#paste-author", scope.user.email)
+    end
+  end
+
   test "creates a paste with a typed title from the form", %{
     conn: conn,
     scope: scope,

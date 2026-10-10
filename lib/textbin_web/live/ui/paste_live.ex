@@ -193,13 +193,21 @@ defmodule TextbinWeb.UI.PasteLive do
 
   defp navigation_workspaces(_scope), do: []
 
-  # Email is the only name a user has today. The viewer sees "You" so the list
-  # reads as a conversation rather than a ledger.
-  defp author_label(%Paste{created_by_user: %User{id: id} = user}, scope) do
+  # Sharing content does not share an account's email. Workspace scopes are
+  # resolved through membership authorization before reaching this label.
+  defp author_label(%Paste{created_by_user: %User{id: id} = user} = paste, scope) do
     cond do
-      match?(%{user: %User{id: ^id}}, scope) -> "You"
-      User.guest?(user) -> "Guest"
-      true -> user.email
+      match?(%{user: %User{id: ^id}}, scope) ->
+        "You"
+
+      User.guest?(user) ->
+        "Guest"
+
+      match?(%{workspace: %{id: workspace_id}} when workspace_id == paste.workspace_id, scope) ->
+        user.email
+
+      true ->
+        "Registered user"
     end
   end
 
