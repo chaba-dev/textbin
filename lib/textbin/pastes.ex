@@ -175,7 +175,6 @@ defmodule Textbin.Pastes do
       attrs =
         attrs
         |> attrs_with_defaults(user, ContentType.text_safe?(attr_data(attrs)))
-        |> attrs_with_derived_title()
 
       paste = new_paste(user, workspace.id)
 
@@ -184,6 +183,7 @@ defmodule Textbin.Pastes do
         |> Paste.changeset(attrs)
         |> validate_audience(workspace)
         |> validate_data_size()
+        |> with_derived_title(fn -> Paste.derive_title(attr_data(attrs)) end)
 
       if changeset.valid? do
         store_paste(scope, changeset)
@@ -211,6 +211,11 @@ defmodule Textbin.Pastes do
         |> Paste.changeset(attrs)
         |> validate_audience(workspace)
         |> validate_uploaded_file(path, metadata)
+        |> with_derived_title(fn ->
+          # Validate the upload size first, bounding even a single long line by
+          # the paste limit; do not load the entire file just to find its title.
+          path |> File.stream!() |> Enum.find_value(&Paste.derive_title/1)
+        end)
 
       if changeset.valid? do
         store_paste_file(scope, changeset, path, metadata)
@@ -685,16 +690,12 @@ defmodule Textbin.Pastes do
 
   # Only creation derives a title. Live validation leaves the field alone so the
   # form does not overwrite what the person is typing.
-  defp attrs_with_derived_title(attrs) do
-    title = Map.get(attrs, "title") || Map.get(attrs, :title)
-
-    if is_binary(title) and String.trim(title) != "" do
-      attrs
+  defp with_derived_title(changeset, derive) do
+    if changeset.valid? and is_nil(Ecto.Changeset.get_field(changeset, :title)) and
+         ContentType.textual?(Ecto.Changeset.get_field(changeset, :content_type)) do
+      Ecto.Changeset.put_change(changeset, :title, derive.())
     else
-      case Paste.derive_title(attr_data(attrs)) do
-        nil -> attrs
-        derived -> Map.put(attrs, attr_key(attrs, "title", :title), derived)
-      end
+      changeset
     end
   end
 

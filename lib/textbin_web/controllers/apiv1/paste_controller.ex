@@ -83,6 +83,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # CLI/stdin data can be consumed here.
   defp paste_attrs(conn, params)
        when map_size(params) == 0 or is_map_key(params, "syntax_highlight") or
+              is_map_key(params, "title") or is_map_key(params, "reference_url") or
               is_map_key(params, "content_type") or
               is_map_key(params, "audience") or is_map_key(params, "visibility") or
               is_map_key(params, "expires_in") or is_map_key(params, "ttl") do
