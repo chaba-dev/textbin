@@ -136,13 +136,12 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end)
   end
 
-  # Treat create as "store the request body as paste data" while still accepting
-  # common JSON client shapes. This keeps CLI usage simple without making API
-  # clients wrap data unless they want to.
+  # Exact application/json is a validated object; every other upload media
+  # type is left unread by RawPasteParser and spooled as the paste itself.
   operation :create, @create_spec
 
   def create(conn, params) do
-    request_params = Map.drop(params, Map.keys(conn.path_params))
+    request_params = Map.merge(conn.query_params, conn.body_params)
 
     case paste_attrs(conn, request_params) do
       {:ok, {:data, paste_attrs}, conn} ->
@@ -166,16 +165,21 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end
   end
 
+  # Any other content type is the paste itself, left unread by Plug.Parsers so
+  # streamed CLI/stdin data can be spooled here. Its fields arrive as query
+  # parameters, already validated.
+  defp paste_attrs(%{private: %{raw_paste_upload: true}} = conn, _params),
+    do: raw_paste_attrs(conn, conn.query_params)
+
   # A JSON body has been validated against CreatePasteRequest, so it is an
   # object with string data.
   defp paste_attrs(conn, %{"data" => data} = params) when is_binary(data) do
     {:ok, {:data, build_paste_attrs(data, params)}, conn}
   end
 
-  # Any other content type is the paste itself, left unread by Plug.Parsers so
-  # streamed CLI/stdin data can be spooled here. Its fields arrive as query
-  # parameters, already validated.
-  defp paste_attrs(conn, params) do
+  defp paste_attrs(conn, _params), do: raw_paste_attrs(conn, conn.query_params)
+
+  defp raw_paste_attrs(conn, params) do
     case read_request_body(conn) do
       {:ok, path, metadata, conn} ->
         paste_attrs =
@@ -416,7 +420,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
     with_paste_scope(conn, params, fn current_scope ->
       # Deleting only marks the paste removed; stored content stays until
       # the purge, so there is no storage failure to report here.
-      case delete_scoped_paste(current_scope, %Paste{id: id}, params) do
+      case delete_scoped_paste(current_scope, %Paste{id: id}, conn.path_params) do
         {:ok, _paste} -> send_resp(conn, :no_content, "")
         {:error, :not_found} -> send_resp(conn, :no_content, "")
       end
@@ -575,9 +579,10 @@ defmodule TextbinWeb.ApiV1.PasteController do
     Application.get_env(:textbin, :upload_tmp_dir, System.tmp_dir!())
   end
 
-  defp with_paste_scope(conn, params, fun) do
+  defp with_paste_scope(conn, _params, fun) do
     with_api_scope(conn, fn scope ->
-      case resolve_paste_scope(scope, params) do
+      # Scope belongs to the route, never a body/query parameter with the same name.
+      case resolve_paste_scope(scope, conn.path_params) do
         {:ok, paste_scope} -> fun.(paste_scope)
         {:error, :not_found} -> render_workspace_not_found(conn)
       end

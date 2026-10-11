@@ -132,11 +132,57 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert_stored_paste(scope, id, "some data", "elixir")
     end
 
-    test "rejects JSON that is not a paste object", %{conn: conn} do
-      for body <- [Jason.encode!("json string data"), Jason.encode!(%{paste: %{data: "x"}})] do
+    test "rejects JSON that is not a paste object", %{conn: conn, scope: scope} do
+      for body <- [
+            Jason.encode!("json string data"),
+            Jason.encode!(%{paste: %{data: "x"}}),
+            Jason.encode!(%{_json: %{data: "validated"}}),
+            Jason.encode!(%{_json: %{data: "validated"}, data: "stored", surprise: true}),
+            Jason.encode!(%{_json: %{data: "validated"}, data: 12})
+          ] do
         response_conn = post(conn, ~p"/api/v1/pastes", body)
 
         assert %{"errors" => %{}} = json_response(response_conn, 422)
+      end
+
+      assert Pastes.list_pastes(scope) == []
+    end
+
+    test "raw media types preserve exact bytes and take metadata only from the query", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Raw team", slug: "raw-team"})
+
+      [workspace] = organization.workspaces
+      {:ok, team_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+
+      for {path, paste_scope} <- [
+            {~p"/api/v1/pastes", scope},
+            {~p"/api/v1/workspaces/#{workspace.id}/pastes", team_scope}
+          ],
+          {content_type, bytes, stored_type} <- [
+            {"application/x-www-form-urlencoded", "data=hello&title=body&audience=public",
+             "application/x-www-form-urlencoded"},
+            {"application/vnd.example+json", ~s({"data":"hello","surprise":true}),
+             "application/vnd.example+json"},
+            {"application/vnd.example+json", <<0, 255, 1, 2>>, "application/octet-stream"},
+            {"multipart/form-data; boundary=review",
+             "--review\r\nContent-Disposition: form-data; name=\"data\"\r\n\r\nhello\r\n--review--\r\n",
+             "multipart/form-data"}
+          ] do
+        response =
+          conn
+          |> put_req_header("content-type", content_type)
+          |> post(path <> "?title=Query&audience=workspace", bytes)
+
+        assert %{"data" => %{"id" => id}} = json_response(response, 201)
+        paste = Pastes.get_paste!(paste_scope, id)
+        assert paste.data == bytes
+        assert paste.title == "Query"
+        assert paste.audience == "workspace"
+        assert paste.content_type == stored_type
       end
     end
 
@@ -529,6 +575,31 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   end
 
   describe "removed pastes" do
+    test "personal lifecycle routes reject body-injected workspace scopes", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Body team", slug: "body-team"})
+
+      [workspace] = organization.workspaces
+      {:ok, team_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+      {:ok, active} = Pastes.create_paste(team_scope, %{data: "active team paste"})
+      {:ok, removed} = Pastes.create_paste(team_scope, %{data: "removed team paste"})
+      {:ok, _} = Pastes.delete_paste(team_scope, removed)
+      body = %{workspace_id: workspace.id}
+
+      assert conn |> delete(~p"/api/v1/pastes/#{active.id}", body) |> json_response(422)
+
+      assert conn
+             |> post(~p"/api/v1/pastes/deleted/#{removed.id}/restore", body)
+             |> json_response(422)
+
+      assert conn |> delete(~p"/api/v1/pastes/deleted/#{removed.id}", body) |> json_response(422)
+      assert Pastes.get_paste!(team_scope, active.id).data == "active team paste"
+      assert Repo.get!(Paste, removed.id).removal_reason == "deleted"
+    end
+
     test "lists deleted and expired pastes with their reason and purge date", %{
       conn: conn,
       scope: scope

@@ -16,6 +16,23 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
   end
 
   describe "create token" do
+    test "rejects _json wrappers rather than validating different credentials", %{
+      conn: conn,
+      user: user
+    } do
+      credentials = %{email: user.email, password: valid_user_password()}
+
+      for body <- [
+            %{_json: credentials},
+            Map.merge(credentials, %{_json: credentials, surprise: true}),
+            %{_json: credentials, email: 12, password: false}
+          ] do
+        assert conn
+               |> post(~p"/api/v1/auth/tokens", Jason.encode!(body))
+               |> json_response(422)
+      end
+    end
+
     test "creates and returns a named token from valid credentials", %{conn: conn, user: user} do
       conn =
         post(conn, ~p"/api/v1/auth/tokens", %{

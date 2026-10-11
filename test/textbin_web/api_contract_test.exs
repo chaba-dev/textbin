@@ -76,6 +76,25 @@ defmodule TextbinWeb.ApiContractTest do
       end
     end
 
+    test "bodyless mutation operations reject both JSON and unread raw bodies", %{token: token} do
+      for {method, path, operation} <- api_operations(),
+          method in [:post, :delete],
+          is_nil(operation.requestBody),
+          {content_type, bytes} <- [
+            {"application/json", Jason.encode!(%{workspace_id: Ecto.UUID.generate()})},
+            {"application/octet-stream", "undeclared body"}
+          ] do
+        path = Regex.replace(~r/\{\w+\}/, path, fn _ -> Ecto.UUID.generate() end)
+
+        conn =
+          authorized(token)
+          |> put_req_header("content-type", content_type)
+          |> dispatch(@endpoint, method, path, bytes)
+
+        assert conn.status == 422, "#{operation.operationId} answered #{conn.status}"
+      end
+    end
+
     test "answers unknown ids with each documented 404", %{token: token} do
       for {method, path, operation} <- api_operations(), Map.has_key?(operation.responses, 404) do
         conn = request(authorized(token), method, path, operation)
