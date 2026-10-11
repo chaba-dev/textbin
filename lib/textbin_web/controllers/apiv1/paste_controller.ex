@@ -1,5 +1,8 @@
 defmodule TextbinWeb.ApiV1.PasteController do
   use TextbinWeb, :controller
+  use OpenApiSpex.ControllerSpecs
+
+  import TextbinWeb.ApiDocs
 
   alias Textbin.Accounts.Scope
   alias Textbin.Organizations
@@ -17,15 +20,111 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # :max_paste_bytes.
   @default_max_paste_bytes 1_048_576
 
-  # Workspace-scoped routes share the personal actions' behaviour; the
-  # workspace_id path parameter is what selects the scope.
+  tags ["Pastes"]
+
+  # Every paste operation exists twice: for the caller's personal workspace,
+  # and under /workspaces/{workspace_id}. The workspace_* actions share the
+  # personal actions' behaviour and spec; the workspace_id path parameter is
+  # what selects the scope.
+  @index_spec [
+    operation_id: "listPastes",
+    summary: "List pastes in your personal workspace",
+    responses: with_scope_errors(%{200 => response("Pastes, newest first", "PasteList")})
+  ]
+
+  @create_spec [
+    operation_id: "createPaste",
+    summary: "Create a paste in your personal workspace",
+    description:
+      "Send JSON, or send the content itself as the request body (any other content type) with the fields as query parameters.",
+    parameters: paste_field_parameters(),
+    request_body: create_paste_body(),
+    responses:
+      with_scope_errors(%{
+        201 => response("The new paste, without its content", "PasteMetadataResponse"),
+        400 => error("The request body could not be read"),
+        413 => error("The content is larger than the server allows"),
+        422 => response("Rejected fields", "ValidationError"),
+        503 => error("Paste storage is temporarily unavailable")
+      })
+  ]
+
+  @show_spec [
+    operation_id: "getPaste",
+    summary: "Show a paste with its content",
+    parameters: [id: uuid_path("Paste id")],
+    responses:
+      with_scope_errors(%{
+        200 => response("The paste", "PasteResponse"),
+        400 => error("The id is not a UUID"),
+        404 => error("Paste or workspace not found")
+      })
+  ]
+
+  @delete_spec [
+    operation_id: "deletePaste",
+    summary: "Delete a paste; it stays restorable for the workspace's recovery window",
+    parameters: [id: uuid_path("Paste id")],
+    responses:
+      with_scope_errors(%{
+        204 => no_content("Deleted, or nothing to delete"),
+        503 => error("The deletion could not be completed")
+      })
+  ]
+
+  @deleted_spec [
+    operation_id: "listRemovedPastes",
+    summary: "List deleted and expired pastes that can still be restored",
+    responses: with_scope_errors(%{200 => response("Restorable pastes", "RemovedPasteList")})
+  ]
+
+  @restore_spec [
+    operation_id: "restorePaste",
+    summary: "Restore a deleted or expired paste",
+    parameters: [id: uuid_path("Paste id")],
+    responses:
+      with_scope_errors(%{
+        200 => response("The restored paste, without its content", "PasteMetadataResponse"),
+        400 => error("The id is not a UUID"),
+        404 => error("No restorable paste you can manage has this id")
+      })
+  ]
+
+  @purge_spec [
+    operation_id: "purgePaste",
+    summary: "Delete a removed paste for good",
+    parameters: [id: uuid_path("Paste id")],
+    responses:
+      with_scope_errors(%{
+        204 => no_content("Deleted for good"),
+        400 => error("The id is not a UUID"),
+        404 => error("No removed paste you can manage has this id"),
+        503 => error("The stored content could not be deleted; try again")
+      })
+  ]
+
+  operation :workspace_index, in_workspace(@index_spec)
   def workspace_index(conn, params), do: index(conn, params)
+
+  operation :workspace_create, in_workspace(@create_spec)
   def workspace_create(conn, params), do: create(conn, params)
+
+  operation :workspace_show, in_workspace(@show_spec)
   def workspace_show(conn, params), do: show(conn, params)
+
+  operation :workspace_delete, in_workspace(@delete_spec)
   def workspace_delete(conn, params), do: delete(conn, params)
+
+  operation :workspace_deleted, in_workspace(@deleted_spec)
   def workspace_deleted(conn, params), do: deleted(conn, params)
+
+  operation :workspace_restore, in_workspace(@restore_spec)
   def workspace_restore(conn, params), do: restore(conn, params)
+
+  operation :workspace_purge, in_workspace(@purge_spec)
   def workspace_purge(conn, params), do: purge(conn, params)
+
+  operation :index, @index_spec
 
   def index(conn, params) do
     with_paste_scope(conn, params, fn paste_scope ->
@@ -46,6 +145,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # Treat create as "store the request body as paste data" while still accepting
   # common JSON client shapes. This keeps CLI usage simple without making API
   # clients wrap data unless they want to.
+  operation :create, @create_spec
+
   def create(conn, params) do
     request_params = Map.drop(params, Map.keys(conn.path_params))
 
@@ -314,6 +415,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end
   end
 
+  operation :show, @show_spec
+
   def show(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, &show_scoped_paste(conn, &1, id))
   end
@@ -331,6 +434,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
       nil -> render_paste_not_found(conn)
     end
   end
+
+  operation :delete, @delete_spec
 
   def delete(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, fn current_scope ->
@@ -360,6 +465,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
   defp delete_scoped_paste(scope, paste, _params),
     do: Pastes.delete_personal_paste(scope, paste)
 
+  operation :deleted, @deleted_spec
+
   def deleted(conn, params) do
     with_paste_scope(conn, params, fn scope ->
       render(conn, :deleted,
@@ -374,6 +481,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # Restoring and deleting for good answer 404 alike for an unknown id, a paste
   # the caller cannot manage, and one whose recovery window has passed, so the
   # response never confirms another member's paste exists.
+  operation :restore, @restore_spec
+
   def restore(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, fn scope ->
       with {:ok, paste_id} <- Ecto.UUID.cast(id),
@@ -389,6 +498,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
       end
     end)
   end
+
+  operation :purge, @purge_spec
 
   def purge(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, fn scope ->

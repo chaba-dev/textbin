@@ -1,8 +1,25 @@
 defmodule TextbinWeb.ApiV1.AuthController do
   use TextbinWeb, :controller
+  use OpenApiSpex.ControllerSpecs
+
+  import TextbinWeb.ApiDocs
 
   alias Textbin.Accounts
   alias Textbin.Accounts.{Scope, User, UserToken}
+
+  tags ["Authentication"]
+
+  operation :create,
+    operation_id: "createApiToken",
+    summary: "Create an API token with an email and password",
+    security: [],
+    request_body: json_body("CreateTokenRequest"),
+    responses: %{
+      201 => response("The token and the account it belongs to", "CreatedTokenResponse"),
+      400 => error("Email or password missing"),
+      401 => error("Wrong email or password"),
+      422 => error("The token could not be created")
+    }
 
   def create(conn, %{"email" => email, "password" => password} = params)
       when is_binary(email) and is_binary(password) do
@@ -18,10 +35,23 @@ defmodule TextbinWeb.ApiV1.AuthController do
     |> json(%{errors: %{detail: "Email and password are required"}})
   end
 
+  operation :show,
+    operation_id: "getIdentity",
+    summary: "Show the authenticated account and token",
+    responses: %{
+      200 => response("The current identity", "IdentityResponse"),
+      401 => unauthorized()
+    }
+
   def show(%{assigns: %{current_scope: %Scope{user: %User{} = user}}} = conn, _params) do
     user_token = conn.assigns.current_api_token
     json(conn, %{data: identity_data(user, user_token)})
   end
+
+  operation :delete,
+    operation_id: "revokeCurrentToken",
+    summary: "Revoke the token used for this request",
+    responses: %{204 => no_content("Revoked, or already gone"), 401 => unauthorized()}
 
   def delete(
         %{assigns: %{current_scope: %Scope{user: %User{} = user}, current_api_token: user_token}} =

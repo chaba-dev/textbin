@@ -968,7 +968,6 @@
     "/api/v1/auth/tokens": {
       "post": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "createApiToken",
         "parameters": [],
         "requestBody": {
@@ -1033,7 +1032,6 @@
     "/api/v1/me": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "getIdentity",
         "parameters": [],
         "responses": {
@@ -1067,7 +1065,6 @@
     "/api/v1/me/token": {
       "delete": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "revokeCurrentToken",
         "parameters": [],
         "responses": {
@@ -1094,7 +1091,6 @@
     "/api/v1/organizations": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "listOrganizations",
         "parameters": [],
         "responses": {
@@ -1128,7 +1124,6 @@
     "/api/v1/organizations/{id}/audit-events": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "listAuditEvents",
         "parameters": [
           {
@@ -1202,7 +1197,6 @@
     "/api/v1/organizations/{id}/workspaces": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "listOrganizationWorkspaces",
         "parameters": [
           {
@@ -1257,7 +1251,6 @@
     "/api/v1/pastes": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "listPastes",
         "parameters": [],
         "responses": {
@@ -1299,7 +1292,6 @@
       },
       "post": {
         "callbacks": {},
-        "deprecated": false,
         "description": "Send JSON, or send the content itself as the request body (any other content type) with the fields as query parameters.",
         "operationId": "createPaste",
         "parameters": [
@@ -1319,6 +1311,7 @@
             }
           },
           {
+            "description": "",
             "in": "query",
             "name": "content_type",
             "required": false,
@@ -1350,6 +1343,7 @@
             }
           },
           {
+            "description": "",
             "in": "query",
             "name": "syntax_highlight",
             "required": false,
@@ -1493,7 +1487,6 @@
     "/api/v1/pastes/deleted": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "listRemovedPastes",
         "parameters": [],
         "responses": {
@@ -1537,7 +1530,6 @@
     "/api/v1/pastes/deleted/{id}": {
       "delete": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "purgePaste",
         "parameters": [
           {
@@ -1605,7 +1597,6 @@
     "/api/v1/pastes/deleted/{id}/restore": {
       "post": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "restorePaste",
         "parameters": [
           {
@@ -1670,7 +1661,6 @@
     "/api/v1/pastes/{id}": {
       "delete": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "deletePaste",
         "parameters": [
           {
@@ -1726,7 +1716,6 @@
       },
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "getPaste",
         "parameters": [
           {
@@ -1791,7 +1780,6 @@
     "/api/v1/workspaces/{workspace_id}/pastes": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "listPastesInWorkspace",
         "parameters": [
           {
@@ -1844,7 +1832,6 @@
       },
       "post": {
         "callbacks": {},
-        "deprecated": false,
         "description": "Send JSON, or send the content itself as the request body (any other content type) with the fields as query parameters.",
         "operationId": "createPasteInWorkspace",
         "parameters": [
@@ -1874,6 +1861,7 @@
             }
           },
           {
+            "description": "",
             "in": "query",
             "name": "content_type",
             "required": false,
@@ -1905,6 +1893,7 @@
             }
           },
           {
+            "description": "",
             "in": "query",
             "name": "syntax_highlight",
             "required": false,
@@ -2048,7 +2037,6 @@
     "/api/v1/workspaces/{workspace_id}/pastes/deleted": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "listRemovedPastesInWorkspace",
         "parameters": [
           {
@@ -2103,7 +2091,6 @@
     "/api/v1/workspaces/{workspace_id}/pastes/deleted/{id}": {
       "delete": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "purgePasteInWorkspace",
         "parameters": [
           {
@@ -2181,7 +2168,6 @@
     "/api/v1/workspaces/{workspace_id}/pastes/deleted/{id}/restore": {
       "post": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "restorePasteInWorkspace",
         "parameters": [
           {
@@ -2256,7 +2242,6 @@
     "/api/v1/workspaces/{workspace_id}/pastes/{id}": {
       "delete": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "deletePasteInWorkspace",
         "parameters": [
           {
@@ -2322,7 +2307,6 @@
       },
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "getPasteInWorkspace",
         "parameters": [
           {
@@ -2397,7 +2381,6 @@
     "/api/v1/workspaces/{workspace_id}/recovery": {
       "post": {
         "callbacks": {},
-        "deprecated": false,
         "operationId": "recoverWorkspaceAccess",
         "parameters": [
           {
@@ -2452,7 +2435,6 @@
     "/pastes/{id}/raw": {
       "get": {
         "callbacks": {},
-        "deprecated": false,
         "description": "Uses the browser session or the paste's link, not a bearer token. Text that is safe to show inline is served with its content type; anything else downloads.",
         "operationId": "getRawPaste",
         "parameters": [

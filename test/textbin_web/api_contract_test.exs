@@ -1,8 +1,8 @@
 defmodule TextbinWeb.ApiContractTest do
   @moduledoc """
-  Keeps `TextbinWeb.ApiSpec` and the server in step: the document covers
-  every API route, the exported `priv/openapi.json` is current, and each
-  operation's real responses match their documented schemas.
+  Keeps `TextbinWeb.ApiSpec` and the server in step: every API action
+  declares its operation, the exported `priv/openapi.json` is current, and
+  each operation's real responses match their documented schemas.
   """
 
   use TextbinWeb.ConnCase, async: false
@@ -19,21 +19,15 @@ defmodule TextbinWeb.ApiContractTest do
   @exported_spec Path.expand("../../priv/openapi.json", __DIR__)
 
   describe "the document" do
-    test "documents every API route and nothing else" do
-      routed =
-        for route <- Phoenix.Router.routes(TextbinWeb.Router),
-            String.starts_with?(route.path, "/api/") or route.path == "/pastes/:id/raw",
-            into: MapSet.new(),
-            do: {route.verb, Regex.replace(~r/:(\w+)/, route.path, "{\\1}")}
-
-      documented =
-        MapSet.new(ApiSpec.operations(), fn {method, path, _operation} -> {method, path} end)
-
-      assert MapSet.difference(routed, documented) == MapSet.new(),
-             "routes missing from TextbinWeb.ApiSpec"
-
-      assert MapSet.difference(documented, routed) == MapSet.new(),
-             "operations in TextbinWeb.ApiSpec with no route"
+    test "every API route's action declares its operation" do
+      # The document is built from the router, so an action without an
+      # `operation` would silently drop out of it instead of failing.
+      for route <- Phoenix.Router.routes(TextbinWeb.Router),
+          String.starts_with?(route.path, "/api/") or route.path == "/pastes/:id/raw" do
+        assert function_exported?(route.plug, :open_api_operation, 1) and
+                 match?(%OpenApiSpex.Operation{}, route.plug.open_api_operation(route.plug_opts)),
+               "#{inspect(route.plug)}.#{route.plug_opts} (#{route.verb} #{route.path}) has no `operation` spec"
+      end
     end
 
     test "gives each operation a unique id and resolves every schema reference" do
