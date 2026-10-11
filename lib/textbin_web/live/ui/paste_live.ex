@@ -8,6 +8,7 @@ defmodule TextbinWeb.UI.PasteLive do
   alias Textbin.Pastes
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
+  alias TextbinWeb.Sharing
   alias TextbinWeb.UI.Removal
 
   embed_templates "paste_live/*"
@@ -347,47 +348,21 @@ defmodule TextbinWeb.UI.PasteLive do
   defp audience_options(scope) do
     policy = scope.workspace.external_sharing_policy
 
-    [
-      audience_option("workspace", true),
-      audience_option("unlisted", policy in ["unlisted", "public"]),
-      audience_option("public", policy == "public")
-    ]
+    for audience <- Sharing.audiences() do
+      %{
+        value: audience,
+        label: Sharing.audience_label(audience),
+        description: Sharing.audience_description(audience),
+        allowed?: Pastes.audience_allowed?(audience, policy)
+      }
+    end
   end
 
-  defp audience_option("workspace", allowed?),
-    do: %{
-      value: "workspace",
-      label: "Workspace",
-      description: "Everyone in the workspace",
-      allowed?: allowed?
-    }
+  defp audience_sentence(%Paste{audience: audience}, scope),
+    do: Sharing.audience_sentence(audience, scope_workspace_name(scope))
 
-  defp audience_option("unlisted", allowed?),
-    do: %{
-      value: "unlisted",
-      label: "Anyone with the link",
-      description: "Not listed anywhere; the link is the key",
-      allowed?: allowed?
-    }
-
-  defp audience_option("public", allowed?),
-    do: %{
-      value: "public",
-      label: "Public",
-      description: "Open to everyone",
-      allowed?: allowed?
-    }
-
-  defp audience_sentence(%Paste{audience: "workspace"}, %{workspace: %{name: name}}),
-    do: "Everyone in #{name} can see this paste."
-
-  defp audience_sentence(%Paste{audience: "workspace"}, _scope),
-    do: "Everyone in the workspace can see this paste."
-
-  defp audience_sentence(%Paste{audience: "unlisted"}, _scope),
-    do: "Anyone with the link can see this paste."
-
-  defp audience_sentence(%Paste{audience: "public"}, _scope), do: "This paste is public."
+  defp scope_workspace_name(%{workspace: %{name: name}}), do: name
+  defp scope_workspace_name(_scope), do: nil
 
   defp expiry_sentence(nil), do: "It never expires."
 

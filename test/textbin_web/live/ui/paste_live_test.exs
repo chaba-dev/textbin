@@ -337,7 +337,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
     assert has_element?(view, "#paste_audience_workspace:not([disabled])")
     assert has_element?(view, "#paste_audience_unlisted:not([disabled])")
     assert has_element?(view, "#paste_audience_public[disabled]")
-    assert has_element?(view, "#paste-audience", "Not allowed by the workspace sharing policy")
+    assert has_element?(view, "#paste-audience", "Sharing outside the team")
   end
 
   test "the editor spells out the removal date for the chosen expiry", %{
@@ -496,7 +496,7 @@ defmodule TextbinWeb.UI.PasteLiveTest do
   end
 
   test "anonymous viewers can open unlisted and public pastes", %{scope: scope} do
-    for visibility <- ["unlisted", "public"] do
+    for {visibility, label} <- [{"unlisted", "Anyone with the link"}, {"public", "Public"}] do
       {:ok, paste} =
         Pastes.create_paste(scope, %{
           data: "#{visibility} paste",
@@ -506,7 +506,8 @@ defmodule TextbinWeb.UI.PasteLiveTest do
 
       {:ok, view, _html} = live(build_conn(), ~p"/pastes/#{paste.id}")
 
-      assert has_element?(view, "#paste-audience", String.capitalize(visibility))
+      assert has_element?(view, "#paste-audience", label)
+      assert has_element?(view, "#paste-audience-sentence", "Anyone")
       assert has_element?(view, "#paste-data .l-line[data-line='1']")
       assert has_element?(view, "#paste-data", "#{visibility} paste")
       assert has_element?(view, "#copy-paste-content[phx-hook='CopyToClipboard']")
