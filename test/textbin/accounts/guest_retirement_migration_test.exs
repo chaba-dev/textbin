@@ -9,7 +9,7 @@ defmodule Textbin.Accounts.GuestRetirementMigrationTest do
 
   test "hides guest content, schedules it for purging and leaves accounts alone" do
     start_migration_repo!("textbin_guest_migration_#{Ecto.UUID.generate()}")
-    migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
+    migrations = MigrationRepo.migrations()
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @before_retirement, log: false)
 
     guest = insert_account("guest")
@@ -30,7 +30,7 @@ defmodule Textbin.Accounts.GuestRetirementMigrationTest do
 
   test "deletes guests and their inline pastes, leaving stored content to the cleaner" do
     start_migration_repo!("textbin_guest_deletion_#{Ecto.UUID.generate()}")
-    migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
+    migrations = MigrationRepo.migrations()
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @before_retirement, log: false)
 
     inline_guest = insert_account("guest")

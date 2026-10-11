@@ -22,7 +22,7 @@ defmodule Textbin.Pastes.WorkspaceOwnershipMigrationTest do
     Process.unlink(repo)
     on_exit(fn -> if Process.alive?(repo), do: GenServer.stop(repo) end)
 
-    migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
+    migrations = MigrationRepo.migrations()
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @before_organizations_version)
 
     user_id = Ecto.UUID.generate()

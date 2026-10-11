@@ -28,7 +28,7 @@ defmodule Textbin.Administration.MigrationTest do
     Process.unlink(repo)
     on_exit(fn -> if Process.alive?(repo), do: GenServer.stop(repo) end)
 
-    migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
+    migrations = MigrationRepo.migrations()
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @foundation_version)
 
     paste_id = insert_legacy_inline_paste()
