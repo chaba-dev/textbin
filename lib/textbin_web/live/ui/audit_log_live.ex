@@ -3,6 +3,7 @@ defmodule TextbinWeb.UI.AuditLogLive do
 
   alias Textbin.Organizations
   alias Textbin.Organizations.{AuditEvent, Organization}
+  alias TextbinWeb.Sharing
 
   @page_size 25
 
@@ -206,10 +207,10 @@ defmodule TextbinWeb.UI.AuditLogLive do
   defp event_title("workspace.membership.added"), do: "Workspace member added"
   defp event_title("workspace.membership.removed"), do: "Workspace member removed"
   defp event_title("workspace.membership.role_changed"), do: "Workspace role changed"
-  defp event_title("workspace.visibility_changed"), do: "Workspace visibility changed"
+  defp event_title("workspace.visibility_changed"), do: "Who can join changed"
 
   defp event_title("workspace.external_sharing_policy_changed"),
-    do: "External sharing policy changed"
+    do: "Sharing outside the team changed"
 
   defp event_title("workspace.recovery_window_changed"), do: "Recovery window changed"
   defp event_title("workspace.recovery_access_granted"), do: "Workspace access recovered"
@@ -225,7 +226,7 @@ defmodule TextbinWeb.UI.AuditLogLive do
          action: "workspace.created",
          metadata: %{"visibility" => visibility}
        }),
-       do: "Created #{visibility_article(visibility)} #{visibility} workspace."
+       do: "Created a workspace. Who can join: #{Sharing.join_policy_label(visibility)}."
 
   defp event_description(%AuditEvent{
          action: "workspace.deleted",
@@ -289,13 +290,15 @@ defmodule TextbinWeb.UI.AuditLogLive do
          action: "workspace.visibility_changed",
          metadata: %{"old" => old, "new" => new}
        }),
-       do: "Changed workspace visibility from #{old} to #{new}."
+       do:
+         "Changed who can join from #{Sharing.join_policy_label(old)} to #{Sharing.join_policy_label(new)}."
 
   defp event_description(%AuditEvent{
          action: "workspace.external_sharing_policy_changed",
          metadata: %{"old" => old, "new" => new}
        }),
-       do: "Changed external sharing from #{old} to #{new}."
+       do:
+         "Changed sharing outside the team from #{Sharing.sharing_policy_label(old)} to #{Sharing.sharing_policy_label(new)}."
 
   defp event_description(%AuditEvent{
          action: "workspace.recovery_window_changed",
@@ -336,9 +339,6 @@ defmodule TextbinWeb.UI.AuditLogLive do
 
   defp short_id(id) when is_binary(id), do: String.slice(id, 0, 8)
   defp short_id(_id), do: "unknown"
-
-  defp visibility_article("open"), do: "an"
-  defp visibility_article(_visibility), do: "a"
 
   defp workspace_description(%{"workspace_name" => name}), do: " in “#{name}”"
   defp workspace_description(_metadata), do: ""

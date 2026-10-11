@@ -1098,10 +1098,16 @@ defmodule Textbin.Pastes do
     end
   end
 
-  defp audience_allowed?("workspace", _policy), do: true
-  defp audience_allowed?("unlisted", policy), do: policy in ["unlisted", "public"]
-  defp audience_allowed?("public", "public"), do: true
-  defp audience_allowed?(_audience, _policy), do: false
+  @doc """
+  Whether a workspace's external sharing policy permits a paste audience.
+
+  Public so the editor can show forbidden audiences as disabled using the same
+  rule the changeset enforces.
+  """
+  def audience_allowed?("workspace", _policy), do: true
+  def audience_allowed?("unlisted", policy), do: policy in ["unlisted", "public"]
+  def audience_allowed?("public", "public"), do: true
+  def audience_allowed?(_audience, _policy), do: false
 
   defp lock_authorized_workspace(scope, workspace_id) do
     lock_authorized_workspace(scope, workspace_id, "FOR UPDATE")

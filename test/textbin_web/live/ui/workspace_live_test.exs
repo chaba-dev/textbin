@@ -158,6 +158,23 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
     assert Repo.reload!(context.workspace).visibility == "open"
   end
 
+  test "each sharing setting explains the option being considered", context do
+    {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
+
+    assert has_element?(view, "#workspace-join-policy-sentence", "Only workspace members")
+    assert has_element?(view, "#workspace-join-policy-sentence", "Existing members keep access")
+
+    view
+    |> form("#workspace-settings-form", %{
+      "workspace" => %{"visibility" => "open", "external_sharing_policy" => "disabled"}
+    })
+    |> render_change()
+
+    assert has_element?(view, "#workspace-join-policy-sentence", "Everyone in the organization")
+    assert has_element?(view, "#workspace-sharing-policy-sentence", "Links shared earlier stop")
+    assert Repo.reload!(context.workspace).visibility == "private"
+  end
+
   test "workspace owners tighten external sharing and clamp existing paste audiences", context do
     old_updated_at = DateTime.add(DateTime.utc_now(), -60, :second)
 
@@ -219,7 +236,7 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
     conn = log_in_user(build_conn(), member)
     {:ok, view, _html} = live(conn, workspace_path(context, "settings"))
 
-    assert has_element?(view, "#workspace-settings-readonly", "Private")
+    assert has_element?(view, "#workspace-settings-readonly", "Who can join: Invite only")
     refute has_element?(view, "#workspace-settings-form")
     render_submit(view, "update_settings", %{"workspace" => %{"visibility" => "open"}})
     assert Repo.reload!(context.workspace).visibility == "private"

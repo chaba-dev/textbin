@@ -4,6 +4,7 @@ defmodule TextbinWeb.UI.OrganizationLive do
   alias Textbin.Accounts
   alias Textbin.Organizations
   alias Textbin.Organizations.{Organization, OrganizationMembership, Policy}
+  alias TextbinWeb.Sharing
 
   @impl true
   def mount(_params, _session, socket), do: {:ok, socket}
@@ -428,15 +429,10 @@ defmodule TextbinWeb.UI.OrganizationLive do
               </div>
               <div class="mt-5 flex items-center gap-2 text-xs text-base-content/60">
                 <.icon
-                  name={
-                    if(workspace.visibility == "private",
-                      do: "hero-lock-closed",
-                      else: "hero-globe-alt"
-                    )
-                  }
+                  name={Sharing.join_policy_icon(workspace.visibility)}
                   class="size-4"
                 />
-                <span>{String.capitalize(workspace.visibility)}</span>
+                <span>{Sharing.join_policy_label(workspace.visibility)}</span>
               </div>
             </.link>
           </div>

@@ -54,7 +54,13 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
     assert has_element?(view, "#organization-audit-log-page")
     assert has_element?(view, "#audit-events")
     assert has_element?(view, "#audit-events article", "Workspace created")
-    assert has_element?(view, "#audit-events article", "Created a private workspace.")
+
+    assert has_element?(
+             view,
+             "#audit-events article",
+             "Created a workspace. Who can join: Invite only."
+           )
+
     assert has_element?(view, "#audit-events article .break-all", context.owner.email)
 
     assert has_element?(
@@ -65,6 +71,32 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
 
     assert has_element?(view, "#sidebar-navigation-manage[aria-current='page']")
     assert has_element?(view, "#mobile-navigation-more[aria-current='page']")
+  end
+
+  test "sharing setting changes read in the settings' own words", context do
+    {:ok, _workspace} =
+      Organizations.change_workspace_settings(context.owner_scope, context.workspace, %{
+        visibility: "open",
+        external_sharing_policy: "unlisted"
+      })
+
+    {:ok, view, _html} = live(context.conn, audit_log_path(context.organization))
+
+    assert has_element?(view, "#audit-events article", "Who can join changed")
+
+    assert has_element?(
+             view,
+             "#audit-events article",
+             "Changed who can join from Invite only to Anyone in the organization."
+           )
+
+    assert has_element?(view, "#audit-events article", "Sharing outside the team changed")
+
+    assert has_element?(
+             view,
+             "#audit-events article",
+             "Changed sharing outside the team from Members only to Members may share a link."
+           )
   end
 
   test "keeps actor, target, and workspace labels from the time of the event", context do
@@ -154,7 +186,13 @@ defmodule TextbinWeb.UI.AuditLogLiveTest do
     {:ok, view, _html} = live(context.conn, audit_log_path(context.organization))
 
     assert element_count(view, "#audit-events article") == 25
-    assert has_element?(view, "#audit-events article", "Created an open workspace.")
+
+    assert has_element?(
+             view,
+             "#audit-events article",
+             "Created a workspace. Who can join: Anyone in the organization."
+           )
+
     assert has_element?(view, "#load-more-audit-events")
 
     view

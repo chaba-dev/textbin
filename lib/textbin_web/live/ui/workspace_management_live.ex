@@ -3,6 +3,7 @@ defmodule TextbinWeb.UI.WorkspaceManagementLive do
 
   alias Textbin.Organizations
   alias Textbin.Organizations.{Organization, Policy, Workspace}
+  alias TextbinWeb.Sharing
 
   @impl true
   def mount(_params, _session, socket), do: {:ok, socket}
@@ -144,8 +145,8 @@ defmodule TextbinWeb.UI.WorkspaceManagementLive do
               Workspaces
             </h1>
             <p class="mt-3 max-w-2xl text-sm leading-6 text-base-content/60">
-              Open workspaces are available to everyone in the organization. Private workspaces
-              appear only after an owner adds you.
+              Some workspaces are open to anyone in the organization. Invite-only workspaces
+              appear here once an owner adds you.
             </p>
           </div>
           <.link
@@ -183,12 +184,7 @@ defmodule TextbinWeb.UI.WorkspaceManagementLive do
               <div class="flex min-w-0 items-start gap-4">
                 <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-base-200 text-base-content/55">
                   <.icon
-                    name={
-                      if(row.workspace.visibility == "private",
-                        do: "hero-lock-closed",
-                        else: "hero-globe-alt"
-                      )
-                    }
+                    name={Sharing.join_policy_icon(row.workspace.visibility)}
                     class="size-5"
                   />
                 </div>
@@ -203,8 +199,8 @@ defmodule TextbinWeb.UI.WorkspaceManagementLive do
                   <p class="mt-1 truncate font-mono text-xs text-base-content/45">
                     /{row.workspace.slug}
                   </p>
-                  <p class="mt-2 text-xs capitalize text-base-content/55">
-                    {row.workspace.visibility} workspace
+                  <p class="mt-2 text-xs text-base-content/55">
+                    Who can join: {Sharing.join_policy_label(row.workspace.visibility)}
                   </p>
                 </div>
               </div>
@@ -311,14 +307,14 @@ defmodule TextbinWeb.UI.WorkspaceManagementLive do
               <.input
                 field={@workspace_form[:visibility]}
                 type="select"
-                label="Who can find and join this workspace?"
-                options={[
-                  {"Everyone in the organization", "open"},
-                  {"Invited members only", "private"}
-                ]}
+                label="Who can join"
+                options={Sharing.join_policy_options()}
               />
-              <p class="mt-1.5 text-xs leading-5 text-base-content/50">
-                Private workspaces stay hidden from organization members who have not been invited.
+              <p
+                id="workspace-join-policy-sentence"
+                class="mt-1.5 text-xs leading-5 text-base-content/50"
+              >
+                {Sharing.join_policy_sentence(@workspace_form[:visibility].value)}
               </p>
             </div>
 
