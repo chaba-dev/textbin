@@ -220,12 +220,16 @@ is enough to cause the problem.
 | `20261011100000` add paste lifecycle | Older code treats a paste as live unless it has expired. It would show pastes deleted under the new code, and its cleaner would hard-delete expired pastes that are still restorable. |
 | `20261011110000` retire guest users | Older code still creates guest accounts, and a guest created after this migration runs is never retired. |
 
-Two later migrations are safe to roll out normally but cannot be undone, so
-take the backup in step 1:
+The guest migrations below are irreversible; take the backup in step 1:
 
 - `20261011110000` retire guest users marks guest workspaces for deletion, and
   the cleaner purges them on its next run.
 - `20261012090000` delete retired guest users removes guest accounts with their
-  inline pastes. A guest whose pastes are in local or S3 storage is kept until
-  the cleaner has purged them. If you upgrade across both guest migrations at
-  once, some guests may stay as inert rows; they cannot sign in.
+  inline pastes. This migration supports a normal rolling deployment only when
+  all running instances already use guest-free, lifecycle-aware code. When
+  upgrading across the lifecycle or retirement migration, follow the stop-all
+  sequence above instead.
+  Guests with local or S3 stored pastes are skipped so the cleaner can purge
+  their objects first. Those user rows remain pending a later cleanup even
+  after the cleaner purges their pastes; the cleaner does not delete users.
+  These retired accounts cannot sign in.

@@ -31,7 +31,7 @@ defmodule Textbin.Accounts.GuestRetirementMigrationTest do
   test "deletes guests and their inline pastes, leaving stored content to the cleaner" do
     start_migration_repo!("textbin_guest_deletion_#{Ecto.UUID.generate()}")
     migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
-    Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @retirement, log: false)
+    Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @before_retirement, log: false)
 
     inline_guest = insert_account("guest")
     stored_guest = insert_account("guest")
@@ -52,9 +52,16 @@ defmodule Textbin.Accounts.GuestRetirementMigrationTest do
     # Its object is outside the database, so only the cleaner may remove it.
     assert row?("pastes", stored_guest.paste_id)
     assert row?("users", stored_guest.user_id)
+    assert deletion_requested?("workspaces", stored_guest.workspace_id)
+    assert deletion_requested?("organizations", stored_guest.organization_id)
+    assert expired?(stored_guest.paste_id)
+    assert token_count(stored_guest.user_id) == 0
 
     assert row?("users", registered.user_id)
     assert row?("pastes", registered.paste_id)
+    refute deletion_requested?("workspaces", registered.workspace_id)
+    refute expired?(registered.paste_id)
+    assert token_count(registered.user_id) == 1
   end
 
   defp start_migration_repo!(database) do
