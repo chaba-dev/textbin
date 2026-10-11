@@ -413,6 +413,7 @@ defmodule Textbin.Pastes do
                struct(p, [
                  :id,
                  :title,
+                 :reference_url,
                  :content_type,
                  :syntax_highlight,
                  :audience,
