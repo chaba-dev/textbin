@@ -65,11 +65,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
     operation_id: "deletePaste",
     summary: "Delete a paste; it stays restorable for the workspace's recovery window",
     parameters: [id: uuid_path("Paste id")],
-    responses:
-      with_scope_errors(%{
-        204 => no_content("Deleted, or nothing to delete"),
-        503 => error("The deletion could not be completed")
-      })
+    responses: with_scope_errors(%{204 => no_content("Deleted, or nothing to delete")})
   ]
 
   @deleted_spec [
@@ -418,17 +414,11 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   def delete(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, fn current_scope ->
+      # Deleting only marks the paste removed; stored content stays until
+      # the purge, so there is no storage failure to report here.
       case delete_scoped_paste(current_scope, %Paste{id: id}, params) do
-        {:error, :not_found} ->
-          send_resp(conn, :no_content, "")
-
-        {:error, _reason} ->
-          conn
-          |> put_status(:service_unavailable)
-          |> json(%{errors: %{detail: "Paste deletion could not be completed"}})
-
-        _result ->
-          send_resp(conn, :no_content, "")
+        {:ok, _paste} -> send_resp(conn, :no_content, "")
+        {:error, :not_found} -> send_resp(conn, :no_content, "")
       end
     end)
   end

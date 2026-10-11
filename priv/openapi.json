@@ -1316,16 +1316,6 @@
             },
             "description": "Missing, invalid or revoked API token"
           },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Workspace not found"
-          },
           "422": {
             "content": {
               "application/json": {
@@ -1489,16 +1479,6 @@
             },
             "description": "Missing, invalid or revoked API token"
           },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Workspace not found"
-          },
           "413": {
             "content": {
               "application/json": {
@@ -1561,16 +1541,6 @@
               }
             },
             "description": "Missing, invalid or revoked API token"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Workspace not found"
           },
           "422": {
             "content": {
@@ -1750,16 +1720,6 @@
             },
             "description": "Missing, invalid or revoked API token"
           },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Workspace not found"
-          },
           "422": {
             "content": {
               "application/json": {
@@ -1769,16 +1729,6 @@
               }
             },
             "description": "The parameters or body do not match this operation"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The deletion could not be completed"
           }
         },
         "summary": "Delete a paste; it stays restorable for the workspace's recovery window",
@@ -2390,16 +2340,6 @@
               }
             },
             "description": "The parameters or body do not match this operation"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The deletion could not be completed"
           }
         },
         "summary": "Delete a paste; it stays restorable for the workspace's recovery window",

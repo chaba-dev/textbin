@@ -53,12 +53,9 @@ defmodule TextbinWeb.ApiDocs do
     Map.merge(%{401 => unauthorized(), 422 => invalid_request()}, responses)
   end
 
-  @doc "`with_common_errors/1` plus the 404 for a workspace the caller cannot reach."
-  def with_scope_errors(responses) do
-    responses
-    |> Map.put_new(404, error("Workspace not found"))
-    |> with_common_errors()
-  end
+  # Paste operations share these. The personal workspace always exists, so
+  # the "Workspace not found" 404 is added by in_workspace/1 only.
+  def with_scope_errors(responses), do: with_common_errors(responses)
 
   @doc "The optional paste fields as query parameters, for raw-body uploads."
   def paste_field_parameters do
@@ -85,6 +82,7 @@ defmodule TextbinWeb.ApiDocs do
 
     spec
     |> Keyword.update(:parameters, [workspace_id], &[workspace_id | &1])
+    |> Keyword.update!(:responses, &Map.put_new(&1, 404, error("Workspace not found")))
     |> Keyword.update!(:operation_id, &(&1 <> "InWorkspace"))
     |> Keyword.update!(:summary, &String.replace(&1, "your personal workspace", "a workspace"))
   end
