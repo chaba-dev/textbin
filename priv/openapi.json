@@ -204,9 +204,9 @@
               }
             },
             "required": [
+              "api_token",
               "token",
-              "user",
-              "api_token"
+              "user"
             ],
             "type": "object"
           }
@@ -444,6 +444,7 @@
         "required": [
           "audience",
           "content_type",
+          "data",
           "expires_at",
           "id",
           "inserted_at",
@@ -455,8 +456,7 @@
           "updated_at",
           "url",
           "visibility",
-          "workspace_id",
-          "data"
+          "workspace_id"
         ],
         "title": "Paste",
         "type": "object"

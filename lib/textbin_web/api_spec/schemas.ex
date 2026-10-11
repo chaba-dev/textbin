@@ -103,7 +103,7 @@ defmodule TextbinWeb.ApiSpec.Schemas do
       data: %Schema{
         identity
         | title: nil,
-          required: identity.required ++ [:api_token],
+          required: Enum.sort([:api_token | identity.required]),
           properties:
             Map.put(identity.properties, :api_token, %Schema{
               type: :string,
@@ -188,7 +188,7 @@ defmodule TextbinWeb.ApiSpec.Schemas do
       title: "PasteMetadata",
       description: "A paste without its content.",
       type: :object,
-      required: Map.keys(paste_metadata_properties()),
+      required: required(paste_metadata_properties()),
       additionalProperties: false,
       properties: paste_metadata_properties()
     }
@@ -214,7 +214,7 @@ defmodule TextbinWeb.ApiSpec.Schemas do
       title: "Paste",
       description: "A paste with its content.",
       type: :object,
-      required: Map.keys(paste_metadata_properties()) ++ [:data],
+      required: paste_metadata_properties() |> Map.put(:data, nil) |> required(),
       additionalProperties: false,
       properties: properties
     }
@@ -240,7 +240,7 @@ defmodule TextbinWeb.ApiSpec.Schemas do
       description:
         "A deleted or expired paste that can still be restored. Content is never included.",
       type: :object,
-      required: Map.keys(properties),
+      required: required(properties),
       additionalProperties: false,
       properties: properties
     }
@@ -327,6 +327,11 @@ defmodule TextbinWeb.ApiSpec.Schemas do
     }
   end
 
+  # Map key order is not stable across OTP releases (atom-keyed maps stopped
+  # iterating alphabetically in OTP 26), and the exported document must be
+  # byte-for-byte the same wherever it is generated.
+  defp required(properties), do: properties |> Map.keys() |> Enum.sort()
+
   # A closed object whose listed properties are all required.
   defp object(title, description, properties) do
     properties = Map.new(properties)
@@ -335,7 +340,7 @@ defmodule TextbinWeb.ApiSpec.Schemas do
       title: title,
       description: description,
       type: :object,
-      required: Map.keys(properties),
+      required: required(properties),
       additionalProperties: false,
       properties: properties
     }

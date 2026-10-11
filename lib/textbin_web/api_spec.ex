@@ -208,7 +208,7 @@ defmodule TextbinWeb.ApiSpec do
 
   defp create_paste(scope) do
     fields =
-      for {name, schema} <- Schemas.create_paste_fields() do
+      for {name, schema} <- Enum.sort(Schemas.create_paste_fields()) do
         query(name, schema, schema.description)
       end
 
