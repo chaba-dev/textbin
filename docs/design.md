@@ -95,8 +95,10 @@ interface as a sentence:
 - **Who can see this** (per paste): everyone in the workspace, anyone with the
   link, or public.
 - **Sharing outside the team** (per workspace): members only, members may
-  share a link, members may also publish. Tightening it never changes pastes
-  already shared.
+  share a link, members may also publish. Tightening it also narrows pastes
+  already shared: links stop working, or public pastes become link-only.
+  Loosening it later does not re-share them, so an owner can shut off outside
+  access in one step without a later change quietly reopening it.
 - **Who can join** (per workspace): anyone in the organization, or invite
   only.
 
