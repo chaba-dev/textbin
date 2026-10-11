@@ -1,0 +1,2420 @@
+{
+  "components": {
+    "schemas": {
+      "AuditEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "example": "workspace.created",
+            "type": "string"
+          },
+          "actor_user_id": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inserted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "target_id": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "target_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actor_user_id",
+          "id",
+          "inserted_at",
+          "metadata",
+          "target_id",
+          "target_type"
+        ],
+        "title": "AuditEvent",
+        "type": "object"
+      },
+      "AuditEventPage": {
+        "additionalProperties": false,
+        "description": "Newest first. Pass next_cursor back as cursor for older events.",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "next_cursor"
+        ],
+        "title": "AuditEventPage",
+        "type": "object"
+      },
+      "CreatePasteRequest": {
+        "description": "JSON form of a new paste. To upload raw bytes instead, send them as the request body with any other content type and pass these fields as query parameters.",
+        "properties": {
+          "audience": {
+            "description": "Who can see this: the workspace, anyone with the link, or the public. Limited by the workspace's external sharing policy.",
+            "enum": [
+              "workspace",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "content_type": {
+            "example": "text/plain",
+            "type": "string"
+          },
+          "data": {
+            "description": "The paste content",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "One of 10m, 1h, 6h, 12h, 1d, 7d, 30d, never",
+            "example": "1d",
+            "type": "string"
+          },
+          "reference_url": {
+            "description": "A ticket or incident link",
+            "format": "uri",
+            "type": "string"
+          },
+          "syntax_highlight": {
+            "example": "elixir",
+            "type": "string"
+          },
+          "title": {
+            "description": "Taken from the first line when blank",
+            "type": "string"
+          },
+          "ttl": {
+            "deprecated": true,
+            "description": "Use expires_in.",
+            "type": "string"
+          },
+          "visibility": {
+            "deprecated": true,
+            "description": "Use audience. private means workspace.",
+            "enum": [
+              "private",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CreatePasteRequest",
+        "type": "object"
+      },
+      "CreateTokenRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "name": {
+            "description": "Defaults to \"Textbin CLI\"",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "CreateTokenRequest",
+        "type": "object"
+      },
+      "CreatedTokenResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "description": "The account and API token a request is authenticated as.",
+            "properties": {
+              "api_token": {
+                "description": "The bearer token. Store it now; it is not shown again.",
+                "type": "string"
+              },
+              "token": {
+                "additionalProperties": false,
+                "description": "The token's metadata. The secret is only returned once, on creation.",
+                "properties": {
+                  "id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "inserted_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "inserted_at",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "user": {
+                "additionalProperties": false,
+                "properties": {
+                  "email": {
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "id"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "token",
+              "user",
+              "api_token"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CreatedTokenResponse",
+        "type": "object"
+      },
+      "Error": {
+        "additionalProperties": false,
+        "description": "A request the server could not complete.",
+        "properties": {
+          "errors": {
+            "additionalProperties": false,
+            "properties": {
+              "detail": {
+                "description": "Human-readable reason",
+                "type": "string"
+              }
+            },
+            "required": [
+              "detail"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "errors"
+        ],
+        "title": "Error",
+        "type": "object"
+      },
+      "Identity": {
+        "additionalProperties": false,
+        "description": "The account and API token a request is authenticated as.",
+        "properties": {
+          "token": {
+            "additionalProperties": false,
+            "description": "The token's metadata. The secret is only returned once, on creation.",
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "inserted_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "inserted_at",
+              "name"
+            ],
+            "type": "object"
+          },
+          "user": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "format": "email",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "email",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "token",
+          "user"
+        ],
+        "title": "Identity",
+        "type": "object"
+      },
+      "IdentityResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Identity"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "IdentityResponse",
+        "type": "object"
+      },
+      "Organization": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "personal",
+              "team"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "slug"
+        ],
+        "title": "Organization",
+        "type": "object"
+      },
+      "OrganizationList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "OrganizationList",
+        "type": "object"
+      },
+      "Paste": {
+        "additionalProperties": false,
+        "description": "A paste with its content.",
+        "properties": {
+          "audience": {
+            "enum": [
+              "workspace",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "data": {
+            "description": "The content as text, or null when it is binary",
+            "nullable": true,
+            "type": "string"
+          },
+          "data_base64": {
+            "description": "Present only for binary content",
+            "format": "byte",
+            "type": "string"
+          },
+          "data_encoding": {
+            "enum": [
+              "base64"
+            ],
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inserted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "raw_url": {
+            "description": "The exact stored bytes",
+            "format": "uri",
+            "type": "string"
+          },
+          "reference_url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "syntax_highlight": {
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "description": "The page to share",
+            "format": "uri",
+            "type": "string"
+          },
+          "visibility": {
+            "deprecated": true,
+            "description": "Use audience. private means workspace.",
+            "enum": [
+              "private",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audience",
+          "content_type",
+          "expires_at",
+          "id",
+          "inserted_at",
+          "organization_id",
+          "raw_url",
+          "reference_url",
+          "syntax_highlight",
+          "title",
+          "updated_at",
+          "url",
+          "visibility",
+          "workspace_id",
+          "data"
+        ],
+        "title": "Paste",
+        "type": "object"
+      },
+      "PasteList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Paste"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "PasteList",
+        "type": "object"
+      },
+      "PasteMetadata": {
+        "additionalProperties": false,
+        "description": "A paste without its content.",
+        "properties": {
+          "audience": {
+            "enum": [
+              "workspace",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inserted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "raw_url": {
+            "description": "The exact stored bytes",
+            "format": "uri",
+            "type": "string"
+          },
+          "reference_url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "syntax_highlight": {
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "description": "The page to share",
+            "format": "uri",
+            "type": "string"
+          },
+          "visibility": {
+            "deprecated": true,
+            "description": "Use audience. private means workspace.",
+            "enum": [
+              "private",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audience",
+          "content_type",
+          "expires_at",
+          "id",
+          "inserted_at",
+          "organization_id",
+          "raw_url",
+          "reference_url",
+          "syntax_highlight",
+          "title",
+          "updated_at",
+          "url",
+          "visibility",
+          "workspace_id"
+        ],
+        "title": "PasteMetadata",
+        "type": "object"
+      },
+      "PasteMetadataResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PasteMetadata"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "PasteMetadataResponse",
+        "type": "object"
+      },
+      "PasteResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Paste"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "PasteResponse",
+        "type": "object"
+      },
+      "RemovedPaste": {
+        "additionalProperties": false,
+        "description": "A deleted or expired paste that can still be restored. Content is never included.",
+        "properties": {
+          "audience": {
+            "enum": [
+              "workspace",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inserted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "purge_after": {
+            "description": "When the paste is deleted for good unless restored",
+            "format": "date-time",
+            "type": "string"
+          },
+          "raw_url": {
+            "description": "The exact stored bytes",
+            "format": "uri",
+            "type": "string"
+          },
+          "reference_url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "removal_reason": {
+            "enum": [
+              "deleted",
+              "expired",
+              "moderated",
+              "purging"
+            ],
+            "type": "string"
+          },
+          "removed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "syntax_highlight": {
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "description": "The page to share",
+            "format": "uri",
+            "type": "string"
+          },
+          "visibility": {
+            "deprecated": true,
+            "description": "Use audience. private means workspace.",
+            "enum": [
+              "private",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audience",
+          "content_type",
+          "expires_at",
+          "id",
+          "inserted_at",
+          "organization_id",
+          "purge_after",
+          "raw_url",
+          "reference_url",
+          "removal_reason",
+          "removed_at",
+          "syntax_highlight",
+          "title",
+          "updated_at",
+          "url",
+          "visibility",
+          "workspace_id"
+        ],
+        "title": "RemovedPaste",
+        "type": "object"
+      },
+      "RemovedPasteList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RemovedPaste"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "RemovedPasteList",
+        "type": "object"
+      },
+      "ValidationError": {
+        "additionalProperties": false,
+        "description": "Rejected input, as messages keyed by field.",
+        "properties": {
+          "errors": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "errors"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "Workspace": {
+        "additionalProperties": false,
+        "properties": {
+          "external_sharing_policy": {
+            "description": "Sharing outside the team: members only, members may share a link, or members may also publish",
+            "enum": [
+              "disabled",
+              "unlisted",
+              "public"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "visibility": {
+            "description": "Who can join: open to anyone in the organization, or private (invite only)",
+            "enum": [
+              "open",
+              "private"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "external_sharing_policy",
+          "id",
+          "is_default",
+          "name",
+          "organization_id",
+          "slug",
+          "visibility"
+        ],
+        "title": "Workspace",
+        "type": "object"
+      },
+      "WorkspaceList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Workspace"
+            },
+            "type": "array"
+          },
+          "organization": {
+            "$ref": "#/components/schemas/Organization"
+          }
+        },
+        "required": [
+          "data",
+          "organization"
+        ],
+        "title": "WorkspaceList",
+        "type": "object"
+      },
+      "WorkspaceRecovery": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "role": {
+                "enum": [
+                  "owner",
+                  "member"
+                ],
+                "type": "string"
+              },
+              "user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "workspace_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "user_id",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "WorkspaceRecovery",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Authenticate with `Authorization: Bearer <token>`. Create a token with POST /api/v1/auth/tokens or in account settings.",
+    "title": "Textbin API",
+    "version": "1"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/auth/tokens": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "createApiToken",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedTokenResponse"
+                }
+              }
+            },
+            "description": "The token and the account it belongs to"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Email or password missing"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Wrong email or password"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The token could not be created"
+          }
+        },
+        "security": [],
+        "summary": "Create an API token with an email and password",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "getIdentity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              }
+            },
+            "description": "The current identity"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          }
+        },
+        "summary": "Show the authenticated account and token",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/me/token": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "revokeCurrentToken",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Revoked, or already gone"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          }
+        },
+        "summary": "Revoke the token used for this request",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/organizations": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "listOrganizations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationList"
+                }
+              }
+            },
+            "description": "Organizations"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          }
+        },
+        "summary": "List the organizations you belong to",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
+    "/api/v1/organizations/{id}/audit-events": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "listAuditEvents",
+        "parameters": [
+          {
+            "description": "Organization id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Events per page",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "next_cursor from the previous page",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventPage"
+                }
+              }
+            },
+            "description": "A page of audit events"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Organization not found, or you cannot read its audit log"
+          }
+        },
+        "summary": "Page through an organization's audit log",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
+    "/api/v1/organizations/{id}/workspaces": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "listOrganizationWorkspaces",
+        "parameters": [
+          {
+            "description": "Organization id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceList"
+                }
+              }
+            },
+            "description": "The organization and its workspaces"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Organization not found"
+          }
+        },
+        "summary": "List workspaces you have joined or can join",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
+    "/api/v1/pastes": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "listPastes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteList"
+                }
+              }
+            },
+            "description": "Pastes, newest first"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          }
+        },
+        "summary": "List pastes in your personal workspace",
+        "tags": [
+          "Pastes"
+        ]
+      },
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Send JSON, or send the content itself as the request body (any other content type) with the fields as query parameters.",
+        "operationId": "createPaste",
+        "parameters": [
+          {
+            "description": "Who can see this: the workspace, anyone with the link, or the public. Limited by the workspace's external sharing policy.",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "description": "Who can see this: the workspace, anyone with the link, or the public. Limited by the workspace's external sharing policy.",
+              "enum": [
+                "workspace",
+                "unlisted",
+                "public"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_type",
+            "required": false,
+            "schema": {
+              "example": "text/plain",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of 10m, 1h, 6h, 12h, 1d, 7d, 30d, never",
+            "in": "query",
+            "name": "expires_in",
+            "required": false,
+            "schema": {
+              "description": "One of 10m, 1h, 6h, 12h, 1d, 7d, 30d, never",
+              "example": "1d",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket or incident link",
+            "in": "query",
+            "name": "reference_url",
+            "required": false,
+            "schema": {
+              "description": "A ticket or incident link",
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "syntax_highlight",
+            "required": false,
+            "schema": {
+              "example": "elixir",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Taken from the first line when blank",
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "description": "Taken from the first line when blank",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Use expires_in.",
+            "in": "query",
+            "name": "ttl",
+            "required": false,
+            "schema": {
+              "deprecated": true,
+              "description": "Use expires_in.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Use audience. private means workspace.",
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "deprecated": true,
+              "description": "Use audience. private means workspace.",
+              "enum": [
+                "private",
+                "unlisted",
+                "public"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "*/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePasteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteMetadataResponse"
+                }
+              }
+            },
+            "description": "The new paste, without its content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The request body could not be read"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The content is larger than the server allows"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "Rejected fields"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Paste storage is temporarily unavailable"
+          }
+        },
+        "summary": "Create a paste in your personal workspace",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/pastes/deleted": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "listRemovedPastes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovedPasteList"
+                }
+              }
+            },
+            "description": "Restorable pastes"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          }
+        },
+        "summary": "List deleted and expired pastes that can still be restored",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/pastes/deleted/{id}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "purgePaste",
+        "parameters": [
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted for good"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The id is not a UUID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No removed paste you can manage has this id"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The stored content could not be deleted; try again"
+          }
+        },
+        "summary": "Delete a removed paste for good",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/pastes/deleted/{id}/restore": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "restorePaste",
+        "parameters": [
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteMetadataResponse"
+                }
+              }
+            },
+            "description": "The restored paste, without its content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The id is not a UUID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No restorable paste you can manage has this id"
+          }
+        },
+        "summary": "Restore a deleted or expired paste",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/pastes/{id}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "deletePaste",
+        "parameters": [
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted, or nothing to delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The deletion could not be completed"
+          }
+        },
+        "summary": "Delete a paste; it stays restorable for the workspace's recovery window",
+        "tags": [
+          "Pastes"
+        ]
+      },
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "getPaste",
+        "parameters": [
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteResponse"
+                }
+              }
+            },
+            "description": "The paste"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The id is not a UUID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Paste or workspace not found"
+          }
+        },
+        "summary": "Show a paste with its content",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/pastes": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "listPastesInWorkspace",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteList"
+                }
+              }
+            },
+            "description": "Pastes, newest first"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          }
+        },
+        "summary": "List pastes in a workspace",
+        "tags": [
+          "Pastes"
+        ]
+      },
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Send JSON, or send the content itself as the request body (any other content type) with the fields as query parameters.",
+        "operationId": "createPasteInWorkspace",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Who can see this: the workspace, anyone with the link, or the public. Limited by the workspace's external sharing policy.",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "description": "Who can see this: the workspace, anyone with the link, or the public. Limited by the workspace's external sharing policy.",
+              "enum": [
+                "workspace",
+                "unlisted",
+                "public"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_type",
+            "required": false,
+            "schema": {
+              "example": "text/plain",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of 10m, 1h, 6h, 12h, 1d, 7d, 30d, never",
+            "in": "query",
+            "name": "expires_in",
+            "required": false,
+            "schema": {
+              "description": "One of 10m, 1h, 6h, 12h, 1d, 7d, 30d, never",
+              "example": "1d",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A ticket or incident link",
+            "in": "query",
+            "name": "reference_url",
+            "required": false,
+            "schema": {
+              "description": "A ticket or incident link",
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "syntax_highlight",
+            "required": false,
+            "schema": {
+              "example": "elixir",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Taken from the first line when blank",
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "description": "Taken from the first line when blank",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Use expires_in.",
+            "in": "query",
+            "name": "ttl",
+            "required": false,
+            "schema": {
+              "deprecated": true,
+              "description": "Use expires_in.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Use audience. private means workspace.",
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "deprecated": true,
+              "description": "Use audience. private means workspace.",
+              "enum": [
+                "private",
+                "unlisted",
+                "public"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "*/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePasteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteMetadataResponse"
+                }
+              }
+            },
+            "description": "The new paste, without its content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The request body could not be read"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The content is larger than the server allows"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "Rejected fields"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Paste storage is temporarily unavailable"
+          }
+        },
+        "summary": "Create a paste in a workspace",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/pastes/deleted": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "listRemovedPastesInWorkspace",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovedPasteList"
+                }
+              }
+            },
+            "description": "Restorable pastes"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          }
+        },
+        "summary": "List deleted and expired pastes that can still be restored",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/pastes/deleted/{id}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "purgePasteInWorkspace",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted for good"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The id is not a UUID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No removed paste you can manage has this id"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The stored content could not be deleted; try again"
+          }
+        },
+        "summary": "Delete a removed paste for good",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/pastes/deleted/{id}/restore": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "restorePasteInWorkspace",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteMetadataResponse"
+                }
+              }
+            },
+            "description": "The restored paste, without its content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The id is not a UUID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No restorable paste you can manage has this id"
+          }
+        },
+        "summary": "Restore a deleted or expired paste",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/pastes/{id}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "deletePasteInWorkspace",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted, or nothing to delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The deletion could not be completed"
+          }
+        },
+        "summary": "Delete a paste; it stays restorable for the workspace's recovery window",
+        "tags": [
+          "Pastes"
+        ]
+      },
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "getPasteInWorkspace",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasteResponse"
+                }
+              }
+            },
+            "description": "The paste"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The id is not a UUID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Paste or workspace not found"
+          }
+        },
+        "summary": "Show a paste with its content",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/recovery": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "operationId": "recoverWorkspaceAccess",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceRecovery"
+                }
+              }
+            },
+            "description": "Your new membership"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or revoked API token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Workspace not found, or you cannot recover it"
+          }
+        },
+        "summary": "Make yourself owner of a workspace in an organization you own",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
+    "/pastes/{id}/raw": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Uses the browser session or the paste's link, not a bearer token. Text that is safe to show inline is served with its content type; anything else downloads.",
+        "operationId": "getRawPaste",
+        "parameters": [
+          {
+            "description": "Paste id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Present to download even safe text",
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The stored bytes"
+          },
+          "404": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Not found, or not shared with you"
+          }
+        },
+        "security": [],
+        "summary": "Download a paste's exact stored bytes",
+        "tags": [
+          "Pastes"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "/",
+      "variables": {}
+    }
+  ],
+  "tags": []
+}

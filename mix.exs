@@ -57,6 +57,7 @@ defmodule Textbin.MixProject do
       {:swoosh, "~> 1.16"},
       # http client
       {:req, "~> 0.5"},
+      {:open_api_spex, "~> 3.22"},
 
       # Telemetry
       {:telemetry_metrics, "~> 1.0"},
@@ -95,6 +96,10 @@ defmodule Textbin.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       "ecto.migration": ["ecto.migrate", "ecto.dump"],
+      # Rewrites the committed API contract; ApiContractTest fails until it is current.
+      "openapi.export": [
+        "openapi.spec.json --spec TextbinWeb.ApiSpec --pretty=true --vendor-extensions=false --start-app=false priv/openapi.json"
+      ],
       test: [
         "ecto.create --quiet",
         "ecto.migrate --quiet",
