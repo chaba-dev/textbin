@@ -6,7 +6,7 @@ use lumis::themes;
 use std::io::{self, IsTerminal, Write};
 use textbin_client::Paste;
 
-use crate::base::output::print_json;
+use crate::output::print_json;
 use crate::settings::Settings;
 
 #[derive(Args)]

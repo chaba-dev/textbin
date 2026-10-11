@@ -1,5 +1,6 @@
 mod auth;
 mod base;
+mod output;
 mod settings;
 
 use std::path::PathBuf;

@@ -334,19 +334,19 @@ impl CreatedApiToken {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Identity {
     pub user: AuthenticatedUser,
     pub token: ApiTokenMetadata,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthenticatedUser {
     pub id: String,
     pub email: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ApiTokenMetadata {
     pub id: String,
     pub name: String,
