@@ -538,7 +538,15 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       conn: conn,
       scope: scope
     } do
-      {:ok, deleted} = Pastes.create_paste(scope, %{data: "deleted", title: "Gone"})
+      reference_url = "https://tracker.example.com/INC-2041"
+
+      {:ok, deleted} =
+        Pastes.create_paste(scope, %{
+          data: "deleted",
+          title: "Gone",
+          reference_url: reference_url
+        })
+
       {:ok, _} = Pastes.delete_paste(scope, deleted)
       {:ok, expired} = Pastes.create_paste(scope, %{data: "expired"})
 
@@ -553,8 +561,11 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       gone = Enum.find(removed, &(&1["id"] == deleted.id))
       assert gone["title"] == "Gone"
+      assert gone["reference_url"] == reference_url
       assert gone["removal_reason"] == "deleted"
       refute Map.has_key?(gone, "data")
+      refute Map.has_key?(gone, "data_base64")
+      refute Map.has_key?(gone, "data_encoding")
 
       {:ok, removed_at, _} = DateTime.from_iso8601(gone["removed_at"])
       {:ok, purge_after, _} = DateTime.from_iso8601(gone["purge_after"])
