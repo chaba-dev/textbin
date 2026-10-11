@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict ncDbxlj9PmQf1gUaRU86LkDzv7pm6WsvEpDIMJ4ZZZ4WawWqkoe2w5t3evP7qa7
+\restrict cImSyHZAWbAghyGgud9HIaerU8LBObzpYTSaFHghkHyGZpJOuOvdauc4p5hRdua
 
--- Dumped from database version 17.10
--- Dumped by pg_dump version 17.10
+-- Dumped from database version 17.11 (Ubuntu 17.11-1.pgdg24.04+2)
+-- Dumped by pg_dump version 17.11 (Ubuntu 17.11-1.pgdg24.04+2)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -117,7 +117,13 @@ CREATE TABLE public.pastes (
     content_type character varying(255) DEFAULT 'text/plain'::character varying NOT NULL,
     workspace_id uuid NOT NULL,
     created_by_user_id uuid,
+    title text,
+    reference_url text,
+    removed_at timestamp without time zone,
+    removal_reason text,
+    removed_by_user_id uuid,
     CONSTRAINT pastes_content_location_check CHECK (((data IS NOT NULL) OR (storage_key IS NOT NULL))),
+    CONSTRAINT pastes_removal_reason_check CHECK ((((removed_at IS NULL) AND (removal_reason IS NULL)) OR ((removed_at IS NOT NULL) AND (removal_reason = ANY (ARRAY['deleted'::text, 'moderated'::text, 'purging'::text]))))),
     CONSTRAINT pastes_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['workspace'::character varying, 'unlisted'::character varying, 'public'::character varying])::text[])))
 );
 
@@ -128,8 +134,8 @@ CREATE TABLE public.pastes (
 
 CREATE TABLE public.pending_uploads (
     storage_key character varying(255) NOT NULL,
-    inserted_at timestamp without time zone NOT NULL,
-    claimed_at timestamp(6) without time zone
+    claimed_at timestamp without time zone,
+    inserted_at timestamp without time zone NOT NULL
 );
 
 
@@ -200,6 +206,9 @@ CREATE TABLE public.users (
     kind character varying(255) DEFAULT 'registered'::character varying NOT NULL,
     platform_role character varying(255),
     suspended_at timestamp(0) without time zone,
+    last_workspace_id uuid,
+    theme text DEFAULT 'harbor'::text NOT NULL,
+    color_mode text DEFAULT 'auto'::text NOT NULL,
     CONSTRAINT users_platform_role_must_be_supported CHECK (((platform_role IS NULL) OR ((platform_role)::text = 'admin'::text)))
 );
 
@@ -254,8 +263,10 @@ CREATE TABLE public.workspaces (
     updated_at timestamp(0) without time zone NOT NULL,
     external_sharing_policy character varying(255) DEFAULT 'disabled'::character varying NOT NULL,
     deletion_requested_at timestamp without time zone,
+    recovery_window_days integer DEFAULT 30 NOT NULL,
     CONSTRAINT workspaces_default_visibility_check CHECK (((NOT is_default) OR ((visibility)::text = 'open'::text))),
     CONSTRAINT workspaces_external_sharing_policy_check CHECK (((external_sharing_policy)::text = ANY ((ARRAY['disabled'::character varying, 'unlisted'::character varying, 'public'::character varying])::text[]))),
+    CONSTRAINT workspaces_recovery_window_days_check CHECK (((recovery_window_days >= 1) AND (recovery_window_days <= 365))),
     CONSTRAINT workspaces_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['open'::character varying, 'private'::character varying])::text[])))
 );
 
@@ -462,6 +473,13 @@ CREATE INDEX pastes_workspace_id_inserted_at_index ON public.pastes USING btree 
 
 
 --
+-- Name: pastes_workspace_id_removed_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pastes_workspace_id_removed_at_index ON public.pastes USING btree (workspace_id, removed_at) WHERE (removed_at IS NOT NULL);
+
+
+--
 -- Name: pending_uploads_inserted_at_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -634,11 +652,27 @@ ALTER TABLE ONLY public.pastes
 
 
 --
+-- Name: pastes pastes_removed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pastes
+    ADD CONSTRAINT pastes_removed_by_user_id_fkey FOREIGN KEY (removed_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: pastes pastes_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pastes
     ADD CONSTRAINT pastes_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: users users_last_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_last_workspace_id_fkey FOREIGN KEY (last_workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
 
 
 --
@@ -693,7 +727,7 @@ ALTER TABLE ONLY public.workspaces
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ncDbxlj9PmQf1gUaRU86LkDzv7pm6WsvEpDIMJ4ZZZ4WawWqkoe2w5t3evP7qa7
+\unrestrict cImSyHZAWbAghyGgud9HIaerU8LBObzpYTSaFHghkHyGZpJOuOvdauc4p5hRdua
 
 INSERT INTO public."schema_migrations" (version) VALUES (20260706061942);
 INSERT INTO public."schema_migrations" (version) VALUES (20260709081001);
@@ -718,3 +752,9 @@ INSERT INTO public."schema_migrations" (version) VALUES (20260814082000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260822090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260826090000);
 INSERT INTO public."schema_migrations" (version) VALUES (20260826130000);
+INSERT INTO public."schema_migrations" (version) VALUES (20261010120000);
+INSERT INTO public."schema_migrations" (version) VALUES (20261011090000);
+INSERT INTO public."schema_migrations" (version) VALUES (20261011100000);
+INSERT INTO public."schema_migrations" (version) VALUES (20261011110000);
+INSERT INTO public."schema_migrations" (version) VALUES (20261011120000);
+INSERT INTO public."schema_migrations" (version) VALUES (20261012090000);

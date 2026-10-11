@@ -5,26 +5,10 @@ defmodule Textbin.Accounts.GuestRetirementMigrationTest do
 
   @before_retirement 20_261_011_100_000
   @retirement 20_261_011_110_000
+  @guest_deletion 20_261_012_090_000
 
   test "hides guest content, schedules it for purging and leaves accounts alone" do
-    database = "textbin_guest_migration_#{Ecto.UUID.generate()}"
-    {:ok, admin} = Postgrex.start_link(admin_config())
-    Process.unlink(admin)
-    Postgrex.query!(admin, ~s(CREATE DATABASE "#{database}"), [])
-
-    on_exit(fn ->
-      Postgrex.query!(admin, "DROP DATABASE IF EXISTS \"#{database}\" WITH (FORCE)", [])
-      if Process.alive?(admin), do: GenServer.stop(admin)
-    end)
-
-    previous_config = Application.get_env(:textbin, MigrationRepo)
-    Application.put_env(:textbin, MigrationRepo, repo_config(database))
-    on_exit(fn -> restore_repo_config(previous_config) end)
-
-    {:ok, repo} = MigrationRepo.start_link()
-    Process.unlink(repo)
-    on_exit(fn -> if Process.alive?(repo), do: GenServer.stop(repo) end)
-
+    start_migration_repo!("textbin_guest_migration_#{Ecto.UUID.generate()}")
     migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
     Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @before_retirement, log: false)
 
@@ -42,6 +26,70 @@ defmodule Textbin.Accounts.GuestRetirementMigrationTest do
     refute deletion_requested?("organizations", registered.organization_id)
     refute expired?(registered.paste_id)
     assert token_count(registered.user_id) == 1
+  end
+
+  test "deletes guests and their inline pastes, leaving stored content to the cleaner" do
+    start_migration_repo!("textbin_guest_deletion_#{Ecto.UUID.generate()}")
+    migrations = Path.expand("../../../priv/repo/migrations", __DIR__)
+    Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @before_retirement, log: false)
+
+    inline_guest = insert_account("guest")
+    stored_guest = insert_account("guest")
+    registered = insert_account("registered")
+
+    MigrationRepo.query!(
+      "UPDATE pastes SET data = NULL, storage_key = 'pastes/' || id::text WHERE id = $1::uuid",
+      [uuid(stored_guest.paste_id)]
+    )
+
+    Ecto.Migrator.run(MigrationRepo, migrations, :up, to: @guest_deletion, log: false)
+
+    refute row?("pastes", inline_guest.paste_id)
+    refute row?("users", inline_guest.user_id)
+    refute row?("organizations", inline_guest.organization_id)
+    refute row?("workspaces", inline_guest.workspace_id)
+
+    # Its object is outside the database, so only the cleaner may remove it.
+    assert row?("pastes", stored_guest.paste_id)
+    assert row?("users", stored_guest.user_id)
+    assert deletion_requested?("workspaces", stored_guest.workspace_id)
+    assert deletion_requested?("organizations", stored_guest.organization_id)
+    assert expired?(stored_guest.paste_id)
+    assert token_count(stored_guest.user_id) == 0
+
+    assert row?("users", registered.user_id)
+    assert row?("pastes", registered.paste_id)
+    refute deletion_requested?("workspaces", registered.workspace_id)
+    refute expired?(registered.paste_id)
+    assert token_count(registered.user_id) == 1
+  end
+
+  defp start_migration_repo!(database) do
+    {:ok, admin} = Postgrex.start_link(admin_config())
+    Process.unlink(admin)
+    Postgrex.query!(admin, ~s(CREATE DATABASE "#{database}"), [])
+
+    on_exit(fn ->
+      Postgrex.query!(admin, "DROP DATABASE IF EXISTS \"#{database}\" WITH (FORCE)", [])
+      if Process.alive?(admin), do: GenServer.stop(admin)
+    end)
+
+    previous_config = Application.get_env(:textbin, MigrationRepo)
+    Application.put_env(:textbin, MigrationRepo, repo_config(database))
+    on_exit(fn -> restore_repo_config(previous_config) end)
+
+    {:ok, repo} = MigrationRepo.start_link()
+    Process.unlink(repo)
+    on_exit(fn -> if Process.alive?(repo), do: GenServer.stop(repo) end)
+  end
+
+  defp row?(table, id) do
+    %{rows: [[present?]]} =
+      MigrationRepo.query!("SELECT EXISTS (SELECT 1 FROM #{table} WHERE id = $1::uuid)", [
+        uuid(id)
+      ])
+
+    present?
   end
 
   defp insert_account(kind) do
