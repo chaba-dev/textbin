@@ -8,6 +8,7 @@ This is a web application written using the Phoenix web framework.
 - When Jujutsu is available for the workspace, use `jj` to record changes with detailed explanations; use Git commits only when `jj` is unavailable
 - Add concise comments or module/function docs that explain intent, domain boundaries, security decisions, or non-obvious tradeoffs. Avoid comments that merely restate what the code does
 - The API contract lives next to the code: each API controller action declares its OpenAPI operation with `operation` (helpers in `TextbinWeb.ApiDocs`, schemas in `TextbinWeb.ApiSpec.Schemas`). Requests that do not match it are rejected, every API response in the test suite is checked against it, and a full `mix test` fails if a documented response is never produced. After changing an operation, run `mix openapi.export` and commit `priv/openapi.json`
+- CI fails when a locked dependency has a published security advisory (`mix hex.audit` and `cargo audit`, on every pull request and daily). Fix it by upgrading; acknowledge an advisory that does not affect Textbin only in `hex: [ignore_advisories: ...]` in `mix.exs` or `.cargo/audit.toml`, with a comment explaining why
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 
 ### Phoenix v1.8 guidelines
