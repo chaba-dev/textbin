@@ -10,7 +10,7 @@ repository = "https://github.com/chaba2/textbin"
 
 [workspace.metadata.dist]
 allow-dirty = ["ci"]
-cargo-dist-version = "0.31.0"
+cargo-dist-version = "0.32.0"
 ci = "github"
 github-release = "announce"
 hosting = "github"
