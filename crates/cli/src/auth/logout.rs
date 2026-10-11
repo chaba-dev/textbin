@@ -1,7 +1,9 @@
 use anyhow::{Context, Result, bail};
 use clap::Args;
+use serde::Serialize;
 use textbin_client::Client;
 
+use crate::output::print_json;
 use crate::settings::{Settings, environment_token};
 
 #[derive(Args)]
@@ -13,6 +15,20 @@ pub struct LogoutArgs {
     /// Configuration profile to log out
     #[arg(long)]
     profile: Option<String>,
+
+    /// Print the outcome as JSON
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+/// `profile` is absent when TEXTBIN_TOKEN was revoked, since no stored
+/// profile was involved; `server` is present only when a token was revoked.
+#[derive(Serialize)]
+struct LogoutOutput<'a> {
+    profile: Option<&'a str>,
+    server: Option<&'a str>,
+    revoked: bool,
+    logged_out: bool,
 }
 
 pub fn handle(args: &LogoutArgs, settings: &Settings) -> Result<()> {
@@ -34,6 +50,16 @@ pub fn handle(args: &LogoutArgs, settings: &Settings) -> Result<()> {
         };
         let client = Client::try_new(server_url)?.with_api_token(Some(token));
         client.revoke_current_token()?;
+
+        if args.json {
+            return print_json(&LogoutOutput {
+                profile: None,
+                server: Some(client.base_url()),
+                revoked: true,
+                logged_out: false,
+            });
+        }
+
         println!("Revoked the API token on {}", client.base_url());
         println!("TEXTBIN_TOKEN is still set but now references a revoked token");
         return Ok(());
@@ -45,15 +71,29 @@ pub fn handle(args: &LogoutArgs, settings: &Settings) -> Result<()> {
         .unwrap_or(settings.active_profile_name()?);
     settings.validate_profile_name(&profile_name)?;
 
-    if args.revoke {
+    let revoked_on = if args.revoke {
         let client = settings
             .stored_client(&profile_name)?
             .context("profile is not authenticated; run `textbin auth login`")?;
         client.revoke_current_token()?;
-        println!("Revoked the API token on {}", client.base_url());
-    }
+        if !args.json {
+            println!("Revoked the API token on {}", client.base_url());
+        }
+        Some(client.base_url().to_string())
+    } else {
+        None
+    };
 
     let removed = settings.forget_login(&profile_name)?;
+
+    if args.json {
+        return print_json(&LogoutOutput {
+            profile: Some(&profile_name),
+            server: revoked_on.as_deref(),
+            revoked: revoked_on.is_some(),
+            logged_out: removed,
+        });
+    }
 
     if removed {
         println!("Logged out of profile {profile_name}");
@@ -100,6 +140,7 @@ mod tests {
             &LogoutArgs {
                 revoke: true,
                 profile: Some("demo".to_string()),
+                json: false,
             },
             &settings,
         );
@@ -145,6 +186,7 @@ mod tests {
             &LogoutArgs {
                 revoke: false,
                 profile: Some("demo".to_string()),
+                json: false,
             },
             &settings,
         );
@@ -178,6 +220,7 @@ mod tests {
             &LogoutArgs {
                 revoke: true,
                 profile: None,
+                json: false,
             },
             &settings,
         );

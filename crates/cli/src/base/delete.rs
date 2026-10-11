@@ -1,4 +1,4 @@
-use crate::base::output::print_json;
+use crate::output::print_json;
 use crate::settings::Settings;
 use clap::Args;
 use serde::Serialize;

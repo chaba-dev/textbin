@@ -13,13 +13,13 @@ pub enum Commands {
     /// Log out of a Textbin server
     Logout(logout::LogoutArgs),
     /// Show the authenticated account
-    Whoami,
+    Whoami(whoami::WhoamiArgs),
 }
 
 pub fn handle(command: &Commands, settings: &Settings) -> anyhow::Result<()> {
     match command {
         Commands::Login(args) => login::handle(args, settings),
         Commands::Logout(args) => logout::handle(args, settings),
-        Commands::Whoami => whoami::handle(settings),
+        Commands::Whoami(args) => whoami::handle(args, settings),
     }
 }

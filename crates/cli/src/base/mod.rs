@@ -1,7 +1,6 @@
 mod create;
 mod delete;
 mod deleted;
-mod output;
 mod restore;
 mod show;
 

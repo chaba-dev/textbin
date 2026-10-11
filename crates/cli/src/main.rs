@@ -1,5 +1,6 @@
 mod auth;
 mod base;
+mod output;
 mod settings;
 
 use std::path::PathBuf;
@@ -137,5 +138,16 @@ mod tests {
             ])
             .is_ok()
         );
+    }
+
+    #[test]
+    fn parses_auth_json_output() {
+        for args in [
+            &["textbin", "auth", "whoami", "--json"][..],
+            &["textbin", "auth", "login", "--with-token", "--json"],
+            &["textbin", "auth", "logout", "--revoke", "--json"],
+        ] {
+            assert!(TextbinCli::try_parse_from(args).is_ok(), "{args:?}");
+        }
     }
 }
