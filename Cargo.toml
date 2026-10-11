@@ -10,7 +10,7 @@ repository = "https://github.com/chaba2/textbin"
 
 [workspace.metadata.dist]
 allow-dirty = ["ci"]
-cargo-dist-version = "0.31.0"
+cargo-dist-version = "0.32.0"
 ci = "github"
 github-release = "announce"
 hosting = "github"
@@ -36,16 +36,16 @@ lto = "thin"
 
 [workspace.dependencies]
 anyhow = "1.0.100"
-base64 = "0.22.1"
+base64 = "0.23.1"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 directories = "6.0.0"
 keyring = "4.1.5"
-lumis = { version = "0.12.0", features = ["all-languages"] }
-reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+lumis = { version = "0.17.1", features = ["all-languages"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "query", "rustls"] }
 rpassword = "7.5.4"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 textbin-client = { path = "crates/client" }
-toml = "0.9.8"
+toml = "1.1.8"
 uuid = { version = "1.24.0", features = ["v4"] }
 webbrowser = { version = "1.2.2", features = ["hardened"] }
