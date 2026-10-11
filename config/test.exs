@@ -40,6 +40,10 @@ config :textbin, Textbin.Mailer, adapter: Swoosh.Adapters.Test
 
 config :textbin, Textbin.Storage, adapter: Textbin.Storage.Memory
 
+# Every API response a test produces is checked against the operation its
+# action declares (see TextbinWeb.ApiResponseCheck).
+config :textbin, :api_response_check, TextbinWeb.ApiContract
+
 # Cleanup is exercised explicitly so the global worker does not race SQL sandbox tests.
 config :textbin, expiration_cleanup_enabled: false
 

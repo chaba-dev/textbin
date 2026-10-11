@@ -7,6 +7,7 @@ This is a web application written using the Phoenix web framework.
 - Use Conventional Commits style for pull request titles, such as `feat: add workspace membership controls`
 - When Jujutsu is available for the workspace, use `jj` to record changes with detailed explanations; use Git commits only when `jj` is unavailable
 - Add concise comments or module/function docs that explain intent, domain boundaries, security decisions, or non-obvious tradeoffs. Avoid comments that merely restate what the code does
+- The API contract lives next to the code: each API controller action declares its OpenAPI operation with `operation` (helpers in `TextbinWeb.ApiDocs`, schemas in `TextbinWeb.ApiSpec.Schemas`). Requests that do not match it are rejected, every API response in the test suite is checked against it, and a full `mix test` fails if a documented response is never produced. After changing an operation, run `mix openapi.export` and commit `priv/openapi.json`
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 
 ### Phoenix v1.8 guidelines

@@ -14,6 +14,7 @@ defmodule TextbinWeb.Router do
   end
 
   pipeline :api do
+    plug TextbinWeb.ApiResponseCheck
     plug :accepts, ["json"]
     plug :fetch_current_scope_for_api_token
     # API controllers validate each request against this document.
