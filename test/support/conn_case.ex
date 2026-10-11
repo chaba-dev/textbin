@@ -37,6 +37,15 @@ defmodule TextbinWeb.ConnCase do
   end
 
   @doc """
+  A connection that sends JSON, the only request body the API accepts.
+  Phoenix.ConnTest would otherwise send map params as multipart form data,
+  which API request validation rejects.
+  """
+  def json_conn(conn \\ Phoenix.ConnTest.build_conn()) do
+    Plug.Conn.put_req_header(conn, "content-type", "application/json")
+  end
+
+  @doc """
   Setup helper that registers and logs in users.
 
       setup :register_and_log_in_user

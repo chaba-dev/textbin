@@ -16,6 +16,8 @@ defmodule TextbinWeb.Router do
   pipeline :api do
     plug :accepts, ["json"]
     plug :fetch_current_scope_for_api_token
+    # API controllers validate each request against this document.
+    plug OpenApiSpex.Plug.PutApiSpec, module: TextbinWeb.ApiSpec
   end
 
   pipeline :require_authenticated_api do

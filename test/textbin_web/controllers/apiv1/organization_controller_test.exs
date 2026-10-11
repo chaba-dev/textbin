@@ -8,6 +8,9 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
 
   import Textbin.AccountsFixtures
 
+  # The API accepts JSON bodies only.
+  setup %{conn: conn}, do: %{conn: json_conn(conn)}
+
   setup do
     user = user_fixture()
     scope = user_scope_fixture(user)
@@ -89,10 +92,16 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
     assert %{"errors" => %{"detail" => "Organization not found"}} = json_response(conn, 404)
   end
 
-  test "returns not found for an invalid organization id", %{conn: conn} do
+  test "rejects an organization id that is not a UUID", %{conn: conn} do
     conn = get(conn, ~p"/api/v1/organizations/not-a-uuid/workspaces")
 
-    assert %{"errors" => %{"detail" => "Organization not found"}} = json_response(conn, 404)
+    assert %{"errors" => %{"id" => [_message]}} = json_response(conn, 422)
+  end
+
+  test "rejects query parameters the operation does not declare", %{conn: conn} do
+    conn = get(conn, ~p"/api/v1/organizations?unexpected=1")
+
+    assert %{"errors" => %{"unexpected" => [_message]}} = json_response(conn, 422)
   end
 
   test "organization owners recover private workspace ownership and read the audit event",
@@ -221,13 +230,13 @@ defmodule TextbinWeb.ApiV1.OrganizationControllerTest do
   end
 
   test "requires an API token" do
-    conn = get(build_conn(), ~p"/api/v1/organizations")
+    conn = get(json_conn(), ~p"/api/v1/organizations")
 
     assert %{"errors" => %{"detail" => "API token required"}} = json_response(conn, 401)
   end
 
   defp api_conn(user) do
     {:ok, {token, _user_token}} = Accounts.create_user_api_token(user, %{"name" => "API"})
-    put_req_header(build_conn(), "authorization", "Bearer #{token}")
+    put_req_header(json_conn(), "authorization", "Bearer #{token}")
   end
 end

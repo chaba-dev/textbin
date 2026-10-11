@@ -22,6 +22,8 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   tags ["Pastes"]
 
+  plug TextbinWeb.ApiRequestValidation
+
   # Every paste operation exists twice: for the caller's personal workspace,
   # and under /workspaces/{workspace_id}. The workspace_* actions share the
   # personal actions' behaviour and spec; the workspace_id path parameter is
@@ -44,7 +46,6 @@ defmodule TextbinWeb.ApiV1.PasteController do
         201 => response("The new paste, without its content", "PasteMetadataResponse"),
         400 => error("The request body could not be read"),
         413 => error("The content is larger than the server allows"),
-        422 => response("Rejected fields", "ValidationError"),
         503 => error("Paste storage is temporarily unavailable")
       })
   ]
@@ -56,7 +57,6 @@ defmodule TextbinWeb.ApiV1.PasteController do
     responses:
       with_scope_errors(%{
         200 => response("The paste", "PasteResponse"),
-        400 => error("The id is not a UUID"),
         404 => error("Paste or workspace not found")
       })
   ]
@@ -85,7 +85,6 @@ defmodule TextbinWeb.ApiV1.PasteController do
     responses:
       with_scope_errors(%{
         200 => response("The restored paste, without its content", "PasteMetadataResponse"),
-        400 => error("The id is not a UUID"),
         404 => error("No restorable paste you can manage has this id")
       })
   ]
@@ -97,7 +96,6 @@ defmodule TextbinWeb.ApiV1.PasteController do
     responses:
       with_scope_errors(%{
         204 => no_content("Deleted for good"),
-        400 => error("The id is not a UUID"),
         404 => error("No removed paste you can manage has this id"),
         503 => error("The stored content could not be deleted; try again")
       })
@@ -172,47 +170,27 @@ defmodule TextbinWeb.ApiV1.PasteController do
     end
   end
 
-  # Preferred JSON shape for API clients that already send objects.
+  # A JSON body has been validated against CreatePasteRequest, so it is an
+  # object with string data.
   defp paste_attrs(conn, %{"data" => data} = params) when is_binary(data) do
     {:ok, {:data, build_paste_attrs(data, params)}, conn}
   end
 
-  # Keep Phoenix generator-style wrapped params working for conventional clients
-  # and tests.
-  defp paste_attrs(conn, %{"paste" => %{"data" => data} = params}) when is_binary(data) do
-    {:ok, {:data, build_paste_attrs(data, params)}, conn}
-  end
-
-  # Plug puts non-object JSON bodies, such as `"hello"`, under "_json". This is
-  # useful for callers that want JSON content negotiation without an object
-  # envelope.
-  defp paste_attrs(conn, %{"_json" => data} = params) when is_binary(data) do
-    {:ok, {:data, build_paste_attrs(data, params)}, conn}
-  end
-
-  # Non-JSON uploads keep the body unread after Plug.Parsers, so streamed
-  # CLI/stdin data can be consumed here.
+  # Any other content type is the paste itself, left unread by Plug.Parsers so
+  # streamed CLI/stdin data can be spooled here. Its fields arrive as query
+  # parameters, already validated.
   defp paste_attrs(conn, params) do
-    metadata_keys =
-      ~w(title reference_url syntax_highlight content_type audience visibility expires_in ttl)
+    case read_request_body(conn) do
+      {:ok, path, metadata, conn} ->
+        paste_attrs =
+          params
+          |> build_paste_attrs()
+          |> Map.put_new("content_type", request_content_type(conn))
 
-    if map_size(params) == 0 or Enum.any?(metadata_keys, &Map.has_key?(params, &1)) do
-      case read_request_body(conn) do
-        {:ok, path, metadata, conn} ->
-          paste_attrs =
-            params
-            |> build_paste_attrs()
-            |> Map.put_new("content_type", request_content_type(conn))
+        {:ok, {:file, path, metadata, paste_attrs}, conn}
 
-          {:ok, {:file, path, metadata, paste_attrs}, conn}
-
-        {:error, reason, conn} ->
-          {:error, reason, conn}
-      end
-    else
-      # Let the changeset produce the canonical "data can't be blank" error for
-      # unsupported payload shapes instead of inventing a separate controller error.
-      {:ok, {:data, %{"data" => nil}}, conn}
+      {:error, reason, conn} ->
+        {:error, reason, conn}
     end
   end
 
@@ -421,17 +399,18 @@ defmodule TextbinWeb.ApiV1.PasteController do
     with_paste_scope(conn, params, &show_scoped_paste(conn, &1, id))
   end
 
+  # Paste ids are UUIDs here: ApiRequestValidation rejects anything else.
   defp show_scoped_paste(conn, current_scope, id) do
-    with {:ok, paste_id} <- Ecto.UUID.cast(id),
-         %{} = paste <- Pastes.get_paste(current_scope, paste_id) do
-      render(conn, :show,
-        paste: paste,
-        organization_id: current_scope.organization.id,
-        workspace_id: current_scope.workspace.id
-      )
-    else
-      :error -> render_invalid_paste_id(conn)
-      nil -> render_paste_not_found(conn)
+    case Pastes.get_paste(current_scope, id) do
+      %{} = paste ->
+        render(conn, :show,
+          paste: paste,
+          organization_id: current_scope.organization.id,
+          workspace_id: current_scope.workspace.id
+        )
+
+      nil ->
+        render_paste_not_found(conn)
     end
   end
 
@@ -439,12 +418,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   def delete(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, fn current_scope ->
-      result =
-        with {:ok, paste_id} <- Ecto.UUID.cast(id) do
-          delete_scoped_paste(current_scope, %Paste{id: paste_id}, params)
-        end
-
-      case result do
+      case delete_scoped_paste(current_scope, %Paste{id: id}, params) do
         {:error, :not_found} ->
           send_resp(conn, :no_content, "")
 
@@ -485,16 +459,16 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   def restore(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, fn scope ->
-      with {:ok, paste_id} <- Ecto.UUID.cast(id),
-           {:ok, paste} <- Pastes.restore_paste(scope, paste_id) do
-        render(conn, :restored,
-          paste: paste,
-          organization_id: scope.organization.id,
-          workspace_id: scope.workspace.id
-        )
-      else
-        :error -> render_invalid_paste_id(conn)
-        {:error, _reason} -> render_removed_paste_not_found(conn)
+      case Pastes.restore_paste(scope, id) do
+        {:ok, paste} ->
+          render(conn, :restored,
+            paste: paste,
+            organization_id: scope.organization.id,
+            workspace_id: scope.workspace.id
+          )
+
+        {:error, _reason} ->
+          render_removed_paste_not_found(conn)
       end
     end)
   end
@@ -503,12 +477,9 @@ defmodule TextbinWeb.ApiV1.PasteController do
 
   def purge(conn, %{"id" => id} = params) do
     with_paste_scope(conn, params, fn scope ->
-      with {:ok, paste_id} <- Ecto.UUID.cast(id),
-           {:ok, _paste} <- Pastes.purge_paste(scope, paste_id) do
-        send_resp(conn, :no_content, "")
-      else
-        :error ->
-          render_invalid_paste_id(conn)
+      case Pastes.purge_paste(scope, id) do
+        {:ok, _paste} ->
+          send_resp(conn, :no_content, "")
 
         {:error, :not_found} ->
           render_removed_paste_not_found(conn)
@@ -576,12 +547,6 @@ defmodule TextbinWeb.ApiV1.PasteController do
   defp then_chmod(:ok, path), do: File.chmod(path, 0o700)
   defp then_chmod({:error, reason}, _path), do: {:error, reason}
 
-  defp render_invalid_paste_id(conn) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{errors: %{detail: "Paste id must be a valid UUID"}})
-  end
-
   defp render_paste_not_found(conn) do
     conn
     |> put_status(:not_found)
@@ -598,9 +563,7 @@ defmodule TextbinWeb.ApiV1.PasteController do
   end
 
   defp maybe_alias_legacy_visibility_errors(changeset, params) do
-    params = Map.get(params, "paste", params)
-
-    if is_map(params) and Map.has_key?(params, "visibility") and
+    if Map.has_key?(params, "visibility") and
          not Map.has_key?(params, "audience") do
       errors =
         Enum.map(changeset.errors, fn

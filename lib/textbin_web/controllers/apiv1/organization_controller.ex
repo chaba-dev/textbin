@@ -10,10 +10,12 @@ defmodule TextbinWeb.ApiV1.OrganizationController do
 
   tags ["Organizations"]
 
+  plug TextbinWeb.ApiRequestValidation
+
   operation :index,
     operation_id: "listOrganizations",
     summary: "List the organizations you belong to",
-    responses: %{200 => response("Organizations", "OrganizationList"), 401 => unauthorized()}
+    responses: with_common_errors(%{200 => response("Organizations", "OrganizationList")})
 
   def index(conn, _params) do
     with_api_scope(conn, fn scope ->
@@ -25,11 +27,11 @@ defmodule TextbinWeb.ApiV1.OrganizationController do
     operation_id: "listOrganizationWorkspaces",
     summary: "List workspaces you have joined or can join",
     parameters: [id: uuid_path("Organization id")],
-    responses: %{
-      200 => response("The organization and its workspaces", "WorkspaceList"),
-      401 => unauthorized(),
-      404 => error("Organization not found")
-    }
+    responses:
+      with_common_errors(%{
+        200 => response("The organization and its workspaces", "WorkspaceList"),
+        404 => error("Organization not found")
+      })
 
   def workspaces(conn, %{"id" => id}) do
     with_api_scope(conn, fn scope ->
@@ -53,11 +55,11 @@ defmodule TextbinWeb.ApiV1.OrganizationController do
       limit: query(%Schema{type: :integer, minimum: 1}, "Events per page"),
       cursor: query(%Schema{type: :string}, "next_cursor from the previous page")
     ],
-    responses: %{
-      200 => response("A page of audit events", "AuditEventPage"),
-      401 => unauthorized(),
-      404 => error("Organization not found, or you cannot read its audit log")
-    }
+    responses:
+      with_common_errors(%{
+        200 => response("A page of audit events", "AuditEventPage"),
+        404 => error("Organization not found, or you cannot read its audit log")
+      })
 
   def audit_events(conn, %{"id" => id}) do
     with_api_scope(conn, fn scope ->
@@ -81,11 +83,11 @@ defmodule TextbinWeb.ApiV1.OrganizationController do
     operation_id: "recoverWorkspaceAccess",
     summary: "Make yourself owner of a workspace in an organization you own",
     parameters: [workspace_id: uuid_path("Workspace id")],
-    responses: %{
-      201 => response("Your new membership", "WorkspaceRecovery"),
-      401 => unauthorized(),
-      404 => error("Workspace not found, or you cannot recover it")
-    }
+    responses:
+      with_common_errors(%{
+        201 => response("Your new membership", "WorkspaceRecovery"),
+        404 => error("Workspace not found, or you cannot recover it")
+      })
 
   def recover_workspace(conn, %{"workspace_id" => workspace_id}) do
     with_api_scope(conn, fn scope ->

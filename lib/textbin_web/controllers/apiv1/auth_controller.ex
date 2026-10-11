@@ -9,6 +9,8 @@ defmodule TextbinWeb.ApiV1.AuthController do
 
   tags ["Authentication"]
 
+  plug TextbinWeb.ApiRequestValidation
+
   operation :create,
     operation_id: "createApiToken",
     summary: "Create an API token with an email and password",
@@ -16,32 +18,22 @@ defmodule TextbinWeb.ApiV1.AuthController do
     request_body: json_body("CreateTokenRequest"),
     responses: %{
       201 => response("The token and the account it belongs to", "CreatedTokenResponse"),
-      400 => error("Email or password missing"),
       401 => error("Wrong email or password"),
-      422 => error("The token could not be created")
+      422 => invalid_request()
     }
 
-  def create(conn, %{"email" => email, "password" => password} = params)
-      when is_binary(email) and is_binary(password) do
+  # The body has been validated against CreateTokenRequest.
+  def create(conn, %{"email" => email, "password" => password} = params) do
     case Accounts.get_user_by_email_and_password(email, password) do
       %User{} = user -> create_token(conn, user, params)
       nil -> render_invalid_credentials(conn)
     end
   end
 
-  def create(conn, _params) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{errors: %{detail: "Email and password are required"}})
-  end
-
   operation :show,
     operation_id: "getIdentity",
     summary: "Show the authenticated account and token",
-    responses: %{
-      200 => response("The current identity", "IdentityResponse"),
-      401 => unauthorized()
-    }
+    responses: with_common_errors(%{200 => response("The current identity", "IdentityResponse")})
 
   def show(%{assigns: %{current_scope: %Scope{user: %User{} = user}}} = conn, _params) do
     user_token = conn.assigns.current_api_token
@@ -51,7 +43,7 @@ defmodule TextbinWeb.ApiV1.AuthController do
   operation :delete,
     operation_id: "revokeCurrentToken",
     summary: "Revoke the token used for this request",
-    responses: %{204 => no_content("Revoked, or already gone"), 401 => unauthorized()}
+    responses: with_common_errors(%{204 => no_content("Revoked, or already gone")})
 
   def delete(
         %{assigns: %{current_scope: %Scope{user: %User{} = user}, current_api_token: user_token}} =
@@ -77,10 +69,11 @@ defmodule TextbinWeb.ApiV1.AuthController do
         |> put_status(:created)
         |> json(%{data: Map.put(identity_data(user, user_token), :api_token, token)})
 
-      {:error, _changeset} ->
+      {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)
-        |> json(%{errors: %{detail: "Could not create API token"}})
+        |> put_view(json: TextbinWeb.ChangesetJSON)
+        |> render(:error, changeset: changeset)
     end
   end
 

@@ -7,6 +7,9 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
 
   import Textbin.AccountsFixtures
 
+  # The API accepts JSON bodies only.
+  setup %{conn: conn}, do: %{conn: json_conn(conn)}
+
   setup do
     user = user_fixture() |> set_password()
     %{user: user}
@@ -48,17 +51,23 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
     test "requires email and password", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/auth/tokens", %{})
 
-      assert %{"errors" => %{"detail" => "Email and password are required"}} =
-               json_response(conn, 400)
+      assert %{"errors" => %{"email" => [_], "password" => [_]}} = json_response(conn, 422)
     end
 
-    test "uses the default token name for malformed names", %{conn: conn, user: user} do
+    test "rejects a name that is not a string", %{conn: conn, user: user} do
       conn =
         post(conn, ~p"/api/v1/auth/tokens", %{
           email: user.email,
           password: valid_user_password(),
           name: %{unexpected: "value"}
         })
+
+      assert %{"errors" => %{"name" => [_]}} = json_response(conn, 422)
+    end
+
+    test "uses the default token name when none is given", %{conn: conn, user: user} do
+      conn =
+        post(conn, ~p"/api/v1/auth/tokens", %{email: user.email, password: valid_user_password()})
 
       assert %{"token" => %{"name" => "Textbin CLI"}} = json_response(conn, 201)["data"]
     end
@@ -69,7 +78,7 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
       {:ok, {token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
 
       %{
-        conn: put_req_header(conn, "authorization", "Bearer #{token}"),
+        conn: put_req_header(json_conn(conn), "authorization", "Bearer #{token}"),
         token: token,
         user_token: user_token
       }
@@ -94,7 +103,7 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
     end
 
     test "requires an API token" do
-      conn = get(build_conn(), ~p"/api/v1/me")
+      conn = get(json_conn(), ~p"/api/v1/me")
 
       assert %{"errors" => %{"detail" => "API token required"}} = json_response(conn, 401)
     end
@@ -106,7 +115,7 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
       refute Repo.get(UserToken, user_token.id)
 
       conn =
-        build_conn()
+        json_conn()
         |> put_req_header("authorization", "Bearer #{token}")
         |> get(~p"/api/v1/me")
 
@@ -115,7 +124,7 @@ defmodule TextbinWeb.ApiV1.AuthControllerTest do
 
     test "concurrent revocation is idempotent", %{user: user, user_token: user_token} do
       revoke = fn ->
-        build_conn()
+        json_conn()
         |> Plug.Conn.assign(:current_scope, Accounts.Scope.for_user(user))
         |> Plug.Conn.assign(:current_api_token, user_token)
         |> TextbinWeb.ApiV1.AuthController.delete(%{})

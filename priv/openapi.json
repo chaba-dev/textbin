@@ -69,6 +69,7 @@
         "type": "object"
       },
       "CreatePasteRequest": {
+        "additionalProperties": false,
         "description": "JSON form of a new paste. To upload raw bytes instead, send them as the request body with any other content type and pass these fields as query parameters.",
         "properties": {
           "audience": {
@@ -129,6 +130,7 @@
         "type": "object"
       },
       "CreateTokenRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "format": "email",
@@ -991,16 +993,6 @@
             },
             "description": "The token and the account it belongs to"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Email or password missing"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1015,11 +1007,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             },
-            "description": "The token could not be created"
+            "description": "The parameters or body do not match this operation"
           }
         },
         "security": [],
@@ -1054,6 +1046,16 @@
               }
             },
             "description": "Missing, invalid or revoked API token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Show the authenticated account and token",
@@ -1080,6 +1082,16 @@
               }
             },
             "description": "Missing, invalid or revoked API token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Revoke the token used for this request",
@@ -1113,6 +1125,16 @@
               }
             },
             "description": "Missing, invalid or revoked API token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "List the organizations you belong to",
@@ -1186,6 +1208,16 @@
               }
             },
             "description": "Organization not found, or you cannot read its audit log"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Page through an organization's audit log",
@@ -1240,6 +1272,16 @@
               }
             },
             "description": "Organization not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "List workspaces you have joined or can join",
@@ -1283,6 +1325,16 @@
               }
             },
             "description": "Workspace not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "List pastes in your personal workspace",
@@ -1465,7 +1517,7 @@
                 }
               }
             },
-            "description": "Rejected fields"
+            "description": "The parameters or body do not match this operation"
           },
           "503": {
             "content": {
@@ -1519,6 +1571,16 @@
               }
             },
             "description": "Workspace not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "List deleted and expired pastes that can still be restored",
@@ -1547,16 +1609,6 @@
           "204": {
             "description": "Deleted for good"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The id is not a UUID"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1576,6 +1628,16 @@
               }
             },
             "description": "No removed paste you can manage has this id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           },
           "503": {
             "content": {
@@ -1621,16 +1683,6 @@
             },
             "description": "The restored paste, without its content"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The id is not a UUID"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1650,6 +1702,16 @@
               }
             },
             "description": "No restorable paste you can manage has this id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Restore a deleted or expired paste",
@@ -1698,6 +1760,16 @@
             },
             "description": "Workspace not found"
           },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1740,16 +1812,6 @@
             },
             "description": "The paste"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The id is not a UUID"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1769,6 +1831,16 @@
               }
             },
             "description": "Paste or workspace not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Show a paste with its content",
@@ -1823,6 +1895,16 @@
               }
             },
             "description": "Workspace not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "List pastes in a workspace",
@@ -2015,7 +2097,7 @@
                 }
               }
             },
-            "description": "Rejected fields"
+            "description": "The parameters or body do not match this operation"
           },
           "503": {
             "content": {
@@ -2080,6 +2162,16 @@
               }
             },
             "description": "Workspace not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "List deleted and expired pastes that can still be restored",
@@ -2118,16 +2210,6 @@
           "204": {
             "description": "Deleted for good"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The id is not a UUID"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2147,6 +2229,16 @@
               }
             },
             "description": "No removed paste you can manage has this id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           },
           "503": {
             "content": {
@@ -2202,16 +2294,6 @@
             },
             "description": "The restored paste, without its content"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The id is not a UUID"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2231,6 +2313,16 @@
               }
             },
             "description": "No restorable paste you can manage has this id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Restore a deleted or expired paste",
@@ -2289,6 +2381,16 @@
             },
             "description": "Workspace not found"
           },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2341,16 +2443,6 @@
             },
             "description": "The paste"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The id is not a UUID"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2370,6 +2462,16 @@
               }
             },
             "description": "Paste or workspace not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Show a paste with its content",
@@ -2424,6 +2526,16 @@
               }
             },
             "description": "Workspace not found, or you cannot recover it"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "The parameters or body do not match this operation"
           }
         },
         "summary": "Make yourself owner of a workspace in an organization you own",

@@ -45,11 +45,19 @@ defmodule TextbinWeb.ApiDocs do
   end
 
   @doc """
-  Adds the responses every paste operation shares. An operation's own
-  wording for a status wins.
+  Adds the responses every authenticated, validated operation shares: a
+  missing token, and a request that does not match the operation. An
+  operation's own wording for a status wins.
   """
+  def with_common_errors(responses) do
+    Map.merge(%{401 => unauthorized(), 422 => invalid_request()}, responses)
+  end
+
+  @doc "`with_common_errors/1` plus the 404 for a workspace the caller cannot reach."
   def with_scope_errors(responses) do
-    Map.merge(%{401 => unauthorized(), 404 => error("Workspace not found")}, responses)
+    responses
+    |> Map.put_new(404, error("Workspace not found"))
+    |> with_common_errors()
   end
 
   @doc "The optional paste fields as query parameters, for raw-body uploads."

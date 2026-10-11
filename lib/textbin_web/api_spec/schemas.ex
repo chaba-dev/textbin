@@ -5,8 +5,8 @@ defmodule TextbinWeb.ApiSpec.Schemas do
   Response objects set `additionalProperties: false` on purpose: the contract
   tests cast real responses against these schemas, so a field added to a JSON
   view without being documented here fails the build instead of drifting
-  silently. Request objects stay open because the server ignores unknown
-  fields.
+  silently. Request objects are closed too: request validation rejects any
+  field the document does not describe.
   """
 
   alias OpenApiSpex.{Reference, Schema}
@@ -73,6 +73,7 @@ defmodule TextbinWeb.ApiSpec.Schemas do
     %Schema{
       title: "CreateTokenRequest",
       type: :object,
+      additionalProperties: false,
       required: [:email, :password],
       properties: %{
         email: %Schema{type: :string, format: :email},
@@ -259,6 +260,7 @@ defmodule TextbinWeb.ApiSpec.Schemas do
         "JSON form of a new paste. To upload raw bytes instead, send them as the request body with any other content type and pass these fields as query parameters.",
       type: :object,
       required: [:data],
+      additionalProperties: false,
       properties:
         Map.merge(create_paste_fields(), %{
           data: %Schema{type: :string, description: "The paste content"}

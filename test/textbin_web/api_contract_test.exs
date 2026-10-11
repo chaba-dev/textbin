@@ -62,22 +62,22 @@ defmodule TextbinWeb.ApiContractTest do
     test "createApiToken" do
       user = user_fixture()
 
-      build_conn()
+      json_conn()
       |> post(~p"/api/v1/auth/tokens", %{email: user.email, password: valid_user_password()})
       |> assert_api_response("createApiToken")
 
-      build_conn()
+      json_conn()
       |> post(~p"/api/v1/auth/tokens", %{email: user.email, password: "wrong password"})
       |> assert_api_response("createApiToken")
 
-      build_conn()
+      json_conn()
       |> post(~p"/api/v1/auth/tokens", %{})
       |> assert_api_response("createApiToken")
     end
 
     test "getIdentity and revokeCurrentToken", %{conn: conn} do
       conn |> get(~p"/api/v1/me") |> assert_api_response("getIdentity")
-      build_conn() |> get(~p"/api/v1/me") |> assert_api_response("getIdentity")
+      json_conn() |> get(~p"/api/v1/me") |> assert_api_response("getIdentity")
       conn |> delete(~p"/api/v1/me/token") |> assert_api_response("revokeCurrentToken")
     end
   end
@@ -203,7 +203,7 @@ defmodule TextbinWeb.ApiContractTest do
       conn |> get(~p"/api/v1/pastes/not-a-uuid") |> assert_api_response("getPaste")
       conn |> get(~p"/api/v1/pastes/#{Ecto.UUID.generate()}") |> assert_api_response("getPaste")
       conn |> delete(~p"/api/v1/pastes/#{id}") |> assert_api_response("deletePaste")
-      build_conn() |> get(~p"/api/v1/pastes") |> assert_api_response("listPastes")
+      json_conn() |> get(~p"/api/v1/pastes") |> assert_api_response("listPastes")
     end
 
     test "list, restore and purge removed pastes", %{conn: conn, scope: scope} do
@@ -229,9 +229,9 @@ defmodule TextbinWeb.ApiContractTest do
     test "getRawPaste", %{scope: scope} do
       {:ok, paste} = Pastes.create_paste(scope, %{data: "shared", audience: "unlisted"})
 
-      build_conn() |> get(~p"/pastes/#{paste.id}/raw") |> assert_api_response("getRawPaste")
+      json_conn() |> get(~p"/pastes/#{paste.id}/raw") |> assert_api_response("getRawPaste")
 
-      build_conn()
+      json_conn()
       |> get(~p"/pastes/#{Ecto.UUID.generate()}/raw")
       |> assert_api_response("getRawPaste")
     end
@@ -289,7 +289,7 @@ defmodule TextbinWeb.ApiContractTest do
     %{
       user: user,
       scope: user_scope_fixture(user),
-      conn: put_req_header(build_conn(), "authorization", "Bearer #{token}")
+      conn: put_req_header(json_conn(), "authorization", "Bearer #{token}")
     }
   end
 
