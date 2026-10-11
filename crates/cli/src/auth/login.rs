@@ -1,8 +1,10 @@
 use anyhow::{Context, Result, anyhow};
 use clap::Args;
+use serde::Serialize;
 use std::io::{self, Write};
-use textbin_client::Client;
+use textbin_client::{ApiTokenMetadata, AuthenticatedUser, Client, Identity};
 
+use crate::output::print_json;
 use crate::settings::{Settings, environment_token};
 
 #[derive(Args)]
@@ -22,6 +24,29 @@ pub struct LoginArgs {
     /// Import an existing API token through a hidden prompt
     #[arg(long)]
     with_token: bool,
+
+    /// Print the outcome as JSON; prompts still go to the terminal
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+/// How the profile came to be authenticated. The API token itself is never
+/// printed; scripts that need it should pass it in through TEXTBIN_TOKEN.
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum LoginStatus {
+    LoggedIn,
+    AlreadyLoggedIn,
+    Environment,
+}
+
+#[derive(Serialize)]
+struct LoginOutput<'a> {
+    status: LoginStatus,
+    profile: &'a str,
+    server: &'a str,
+    user: &'a AuthenticatedUser,
+    token: &'a ApiTokenMetadata,
 }
 
 pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
@@ -41,12 +66,13 @@ pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
         let client = Client::try_new(&server_url)?.with_api_token(Some(token));
         let identity = client.identity()?;
         settings.save_environment_login(&profile_name, &server_url, &identity)?;
-        print_identity(
-            "Authenticated through TEXTBIN_TOKEN",
+        return report(
+            args,
+            LoginStatus::Environment,
+            &profile_name,
             &server_url,
-            &identity.user.email,
+            &identity,
         );
-        return Ok(());
     }
 
     if args.server.is_none()
@@ -57,8 +83,13 @@ pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
             Ok(identity) => {
                 settings.migrate_login(&profile_name, &identity)?;
                 settings.activate_profile(&profile_name)?;
-                print_identity("Already logged in", client.base_url(), &identity.user.email);
-                return Ok(());
+                return report(
+                    args,
+                    LoginStatus::AlreadyLoggedIn,
+                    &profile_name,
+                    client.base_url(),
+                    &identity,
+                );
             }
             Err(error) if error.unauthorized() => {
                 settings.forget_login(&profile_name)?;
@@ -99,14 +130,20 @@ pub fn handle(args: &LoginArgs, settings: &Settings) -> Result<()> {
         return Err(storage_error);
     }
 
-    print_identity("Logged in", &server_url, &identity.user.email);
-
-    Ok(())
+    report(
+        args,
+        LoginStatus::LoggedIn,
+        &profile_name,
+        &server_url,
+        &identity,
+    )
 }
 
+// Prompts go to stderr so stdout carries only the result, which `--json`
+// relies on. rpassword already reads the password from the terminal.
 fn prompt(label: &str) -> Result<String> {
-    print!("{label}");
-    io::stdout().flush().context("could not write prompt")?;
+    eprint!("{label}");
+    io::stderr().flush().context("could not write prompt")?;
 
     let mut value = String::new();
     io::stdin()
@@ -115,8 +152,30 @@ fn prompt(label: &str) -> Result<String> {
     Ok(value.trim().to_string())
 }
 
-fn print_identity(prefix: &str, server_url: &str, email: &str) {
-    println!("{prefix} as {email} on {server_url}");
+fn report(
+    args: &LoginArgs,
+    status: LoginStatus,
+    profile: &str,
+    server: &str,
+    identity: &Identity,
+) -> Result<()> {
+    if args.json {
+        return print_json(&LoginOutput {
+            status,
+            profile,
+            server,
+            user: &identity.user,
+            token: &identity.token,
+        });
+    }
+
+    let prefix = match status {
+        LoginStatus::LoggedIn => "Logged in",
+        LoginStatus::AlreadyLoggedIn => "Already logged in",
+        LoginStatus::Environment => "Authenticated through TEXTBIN_TOKEN",
+    };
+    println!("{prefix} as {} on {server}", identity.user.email);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -159,6 +218,7 @@ mod tests {
                 profile: Some("demo".to_string()),
                 name: "Textbin CLI".to_string(),
                 with_token: false,
+                json: false,
             },
             &settings,
         );
@@ -173,6 +233,25 @@ mod tests {
         assert_eq!(settings.profile("demo").unwrap().unwrap().url, server_url);
 
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn json_output_names_the_outcome_without_the_secret() {
+        let identity = identity();
+        let output = serde_json::to_value(LoginOutput {
+            status: LoginStatus::AlreadyLoggedIn,
+            profile: "demo",
+            server: "https://textbin.example.com",
+            user: &identity.user,
+            token: &identity.token,
+        })
+        .unwrap();
+
+        assert_eq!(output["status"], "already_logged_in");
+        assert_eq!(output["profile"], "demo");
+        assert_eq!(output["user"]["email"], identity.user.email);
+        assert_eq!(output["token"]["id"], identity.token.id);
+        assert!(output["token"].get("api_token").is_none());
     }
 
     #[test]
@@ -200,6 +279,7 @@ mod tests {
                 profile: Some("demo".to_string()),
                 name: "Textbin CLI".to_string(),
                 with_token: false,
+                json: false,
             },
             &settings,
         );
