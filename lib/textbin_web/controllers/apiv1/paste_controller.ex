@@ -17,6 +17,16 @@ defmodule TextbinWeb.ApiV1.PasteController do
   # :max_paste_bytes.
   @default_max_paste_bytes 1_048_576
 
+  # Workspace-scoped routes share the personal actions' behaviour; the
+  # workspace_id path parameter is what selects the scope.
+  def workspace_index(conn, params), do: index(conn, params)
+  def workspace_create(conn, params), do: create(conn, params)
+  def workspace_show(conn, params), do: show(conn, params)
+  def workspace_delete(conn, params), do: delete(conn, params)
+  def workspace_deleted(conn, params), do: deleted(conn, params)
+  def workspace_restore(conn, params), do: restore(conn, params)
+  def workspace_purge(conn, params), do: purge(conn, params)
+
   def index(conn, params) do
     with_paste_scope(conn, params, fn paste_scope ->
       case Pastes.list_pastes_with_access(paste_scope) do
