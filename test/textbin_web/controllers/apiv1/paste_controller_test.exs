@@ -22,7 +22,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     {:ok, {token, user_token}} = Accounts.create_user_api_token(user, %{"name" => "CLI"})
 
     %{
-      conn: put_req_header(conn, "authorization", "Bearer #{token}"),
+      conn: put_req_header(json_conn(conn), "authorization", "Bearer #{token}"),
       scope: scope,
       user_token: user_token
     }
@@ -45,7 +45,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
 
     test "requires an API token", %{conn: _conn} do
-      conn = get(build_conn(), ~p"/api/v1/pastes")
+      conn = get(json_conn(), ~p"/api/v1/pastes")
 
       assert %{"errors" => %{"detail" => "API token required"}} = json_response(conn, 401)
     end
@@ -53,7 +53,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
   describe "create paste" do
     test "renders paste when data is valid", %{conn: conn, scope: scope} do
-      conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
+      conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
       personal_organization = Organizations.get_personal_organization!(scope.user)
       personal_workspace = Organizations.get_personal_default_workspace!(scope.user)
 
@@ -132,17 +132,58 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert_stored_paste(scope, id, "some data", "elixir")
     end
 
-    test "renders paste from JSON string body", %{conn: conn, scope: scope} do
-      conn =
-        conn
-        |> put_req_header("content-type", "application/json")
-        |> post(~p"/api/v1/pastes", Jason.encode!("json string data"))
+    test "rejects JSON that is not a paste object", %{conn: conn, scope: scope} do
+      for body <- [
+            Jason.encode!("json string data"),
+            Jason.encode!(%{paste: %{data: "x"}}),
+            Jason.encode!(%{_json: %{data: "validated"}}),
+            Jason.encode!(%{_json: %{data: "validated"}, data: "stored", surprise: true}),
+            Jason.encode!(%{_json: %{data: "validated"}, data: 12})
+          ] do
+        response_conn = post(conn, ~p"/api/v1/pastes", body)
 
-      assert %{"id" => id} = response_data = json_response(conn, 201)["data"]
-      assert response_data["syntax_highlight"] == "plain"
-      assert is_nil(response_data["expires_at"])
-      refute Map.has_key?(response_data, "data")
-      assert_stored_paste(scope, id, "json string data", "plain")
+        assert %{"errors" => %{}} = json_response(response_conn, 422)
+      end
+
+      assert Pastes.list_pastes(scope) == []
+    end
+
+    test "raw media types preserve exact bytes and take metadata only from the query", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Raw team", slug: "raw-team"})
+
+      [workspace] = organization.workspaces
+      {:ok, team_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+
+      for {path, paste_scope} <- [
+            {~p"/api/v1/pastes", scope},
+            {~p"/api/v1/workspaces/#{workspace.id}/pastes", team_scope}
+          ],
+          {content_type, bytes, stored_type} <- [
+            {"application/x-www-form-urlencoded", "data=hello&title=body&audience=public",
+             "application/x-www-form-urlencoded"},
+            {"application/vnd.example+json", ~s({"data":"hello","surprise":true}),
+             "application/vnd.example+json"},
+            {"application/vnd.example+json", <<0, 255, 1, 2>>, "application/octet-stream"},
+            {"multipart/form-data; boundary=review",
+             "--review\r\nContent-Disposition: form-data; name=\"data\"\r\n\r\nhello\r\n--review--\r\n",
+             "multipart/form-data"}
+          ] do
+        response =
+          conn
+          |> put_req_header("content-type", content_type)
+          |> post(path <> "?title=Query&audience=workspace", bytes)
+
+        assert %{"data" => %{"id" => id}} = json_response(response, 201)
+        paste = Pastes.get_paste!(paste_scope, id)
+        assert paste.data == bytes
+        assert paste.title == "Query"
+        assert paste.audience == "workspace"
+        assert paste.content_type == stored_type
+      end
     end
 
     test "renders paste from raw request body", %{conn: conn, scope: scope} do
@@ -196,6 +237,25 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
         assert paste.title == Map.get(params, "title", "first line")
         assert paste.data == body
       end
+    end
+
+    # Raw uploads skip body validation (open_api_spex matches bodies by exact
+    # content type), so the controller must still find the body unread and
+    # spool all of it, past several read chunks, with validated query fields.
+    test "streams a multi-chunk raw body past request validation", %{conn: conn, scope: scope} do
+      body = :crypto.strong_rand_bytes(300_000)
+
+      response =
+        conn
+        |> put_req_header("content-type", "application/octet-stream")
+        |> post(~p"/api/v1/pastes?title=Streamed&syntax_highlight=elixir", body)
+        |> json_response(201)
+
+      assert %{"title" => "Streamed", "syntax_highlight" => "elixir"} = response["data"]
+
+      assert Pastes.get_paste!(scope, response["data"]["id"])
+             |> Pastes.load_data()
+             |> Map.fetch!(:data) == body
     end
 
     test "renders paste from raw request body with syntax highlight", %{conn: conn, scope: scope} do
@@ -313,7 +373,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       {:ok, _user} =
         Accounts.update_user_paste_defaults(scope.user, %{default_paste_ttl: "30d"})
 
-      conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
+      conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 
       assert %{"id" => id, "expires_at" => expires_at} = json_response(conn, 201)["data"]
       assert_millisecond_timestamp(expires_at)
@@ -339,7 +399,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
 
     test "accepts a valid API bearer token", %{conn: conn, scope: scope, user_token: user_token} do
-      conn = post(conn, ~p"/api/v1/pastes", paste: @create_attrs)
+      conn = post(conn, ~p"/api/v1/pastes", @create_attrs)
 
       assert %{"id" => id} = json_response(conn, 201)["data"]
       assert_stored_paste(scope, id, "some data", "elixir")
@@ -348,31 +408,31 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
     test "rejects an invalid API bearer token" do
       conn =
-        build_conn()
+        json_conn()
         |> put_req_header("authorization", "Bearer txb_invalid")
-        |> post(~p"/api/v1/pastes", paste: @create_attrs)
+        |> post(~p"/api/v1/pastes", @create_attrs)
 
       assert %{"errors" => %{"detail" => "Invalid API token"}} = json_response(conn, 401)
     end
 
     test "rejects a malformed authorization header" do
       conn =
-        build_conn()
+        json_conn()
         |> put_req_header("authorization", "Token invalid")
-        |> post(~p"/api/v1/pastes", paste: @create_attrs)
+        |> post(~p"/api/v1/pastes", @create_attrs)
 
       assert %{"errors" => %{"detail" => "Invalid authorization header"}} =
                json_response(conn, 401)
     end
 
     test "renders errors when data is invalid", %{conn: conn} do
-      conn = post(conn, ~p"/api/v1/pastes", paste: @invalid_attrs)
+      conn = post(conn, ~p"/api/v1/pastes", @invalid_attrs)
 
       assert %{"data" => [_]} = json_response(conn, 422)["errors"]
     end
 
     test "renders errors when expiration is invalid", %{conn: conn} do
-      conn = post(conn, ~p"/api/v1/pastes", paste: Map.put(@create_attrs, :expires_in, "forever"))
+      conn = post(conn, ~p"/api/v1/pastes", Map.put(@create_attrs, :expires_in, "forever"))
 
       assert %{"expires_at" => ["must use one of: never, 10m, 1h, 6h, 12h, 1d, 7d, 30d"]} =
                json_response(conn, 422)["errors"]
@@ -381,7 +441,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     test "renders errors when visibility is invalid", %{conn: conn} do
       conn = post(conn, ~p"/api/v1/pastes", Map.put(@create_attrs, :visibility, "secret"))
 
-      assert %{"visibility" => ["is invalid"]} = json_response(conn, 422)["errors"]
+      assert %{"visibility" => [_message]} = json_response(conn, 422)["errors"]
     end
 
     test "rejects JSON data over the configured size limit", %{conn: conn} do
@@ -485,14 +545,14 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   end
 
   describe "show paste" do
-    test "returns bad request when id is not a UUID", %{conn: conn} do
+    test "rejects an id that is not a UUID", %{conn: conn} do
       conn = get(conn, ~p"/api/v1/pastes/not-a-uuid")
 
       assert %{
                "errors" => %{
-                 "detail" => "Paste id must be a valid UUID"
+                 "id" => [_message]
                }
-             } = json_response(conn, 400)
+             } = json_response(conn, 422)
     end
 
     test "returns not found when paste does not exist", %{conn: conn} do
@@ -534,6 +594,31 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
   end
 
   describe "removed pastes" do
+    test "personal lifecycle routes reject body-injected workspace scopes", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "Body team", slug: "body-team"})
+
+      [workspace] = organization.workspaces
+      {:ok, team_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+      {:ok, active} = Pastes.create_paste(team_scope, %{data: "active team paste"})
+      {:ok, removed} = Pastes.create_paste(team_scope, %{data: "removed team paste"})
+      {:ok, _} = Pastes.delete_paste(team_scope, removed)
+      body = %{workspace_id: workspace.id}
+
+      assert conn |> delete(~p"/api/v1/pastes/#{active.id}", body) |> json_response(422)
+
+      assert conn
+             |> post(~p"/api/v1/pastes/deleted/#{removed.id}/restore", body)
+             |> json_response(422)
+
+      assert conn |> delete(~p"/api/v1/pastes/deleted/#{removed.id}", body) |> json_response(422)
+      assert Pastes.get_paste!(team_scope, active.id).data == "active team paste"
+      assert Repo.get!(Paste, removed.id).removal_reason == "deleted"
+    end
+
     test "lists deleted and expired pastes with their reason and purge date", %{
       conn: conn,
       scope: scope
@@ -608,7 +693,7 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
       assert Pastes.get_paste(scope, active.id)
       assert Repo.get(Paste, other.id)
-      assert conn |> post(~p"/api/v1/pastes/deleted/not-a-uuid/restore") |> json_response(400)
+      assert conn |> post(~p"/api/v1/pastes/deleted/not-a-uuid/restore") |> json_response(422)
     end
 
     test "workspace routes act on that workspace's removed pastes", %{
@@ -711,10 +796,10 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       assert Repo.get(Paste, paste.id)
     end
 
-    test "returns no content when id is not a UUID", %{conn: conn} do
+    test "rejects an id that is not a UUID", %{conn: conn} do
       conn = delete(conn, ~p"/api/v1/pastes/not-a-uuid")
 
-      assert response(conn, 204) == ""
+      assert %{"errors" => %{"id" => [_message]}} = json_response(conn, 422)
     end
 
     test "returns no content when paste does not exist", %{conn: conn} do
@@ -895,12 +980,13 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       outsider_scope = user_scope_fixture()
       outsider_workspace = Organizations.get_personal_default_workspace!(outsider_scope.user)
 
-      for workspace_id <- ["not-a-uuid", outsider_workspace.id] do
-        response_conn = get(conn, ~p"/api/v1/workspaces/#{workspace_id}/pastes")
+      response_conn = get(conn, ~p"/api/v1/workspaces/#{outsider_workspace.id}/pastes")
 
-        assert %{"errors" => %{"detail" => "Workspace not found"}} =
-                 json_response(response_conn, 404)
-      end
+      assert %{"errors" => %{"detail" => "Workspace not found"}} =
+               json_response(response_conn, 404)
+
+      response_conn = get(conn, ~p"/api/v1/workspaces/not-a-uuid/pastes")
+      assert %{"errors" => %{"workspace_id" => [_message]}} = json_response(response_conn, 422)
     end
   end
 
@@ -950,6 +1036,6 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
 
   defp api_conn(user) do
     {:ok, {token, _user_token}} = Accounts.create_user_api_token(user, %{"name" => "API"})
-    put_req_header(build_conn(), "authorization", "Bearer #{token}")
+    put_req_header(json_conn(), "authorization", "Bearer #{token}")
   end
 end

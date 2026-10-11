@@ -14,8 +14,11 @@ defmodule TextbinWeb.Router do
   end
 
   pipeline :api do
+    plug TextbinWeb.ApiResponseCheck
     plug :accepts, ["json"]
     plug :fetch_current_scope_for_api_token
+    # API controllers validate each request against this document.
+    plug OpenApiSpex.Plug.PutApiSpec, module: TextbinWeb.ApiSpec
   end
 
   pipeline :require_authenticated_api do
@@ -46,17 +49,28 @@ defmodule TextbinWeb.Router do
     post "/workspaces/:workspace_id/recovery", OrganizationController, :recover_workspace
     # Removed pastes are their own collection so "deleted" never collides
     # with a paste id; these routes must precede the /:id routes below.
-    get "/workspaces/:workspace_id/pastes/deleted", PasteController, :deleted
-    post "/workspaces/:workspace_id/pastes/deleted/:id/restore", PasteController, :restore
-    delete "/workspaces/:workspace_id/pastes/deleted/:id", PasteController, :purge
+    #
+    # Personal-workspace and workspace-scoped routes use separate actions so
+    # each has its own operation in the OpenAPI document (an operation is
+    # looked up by controller action, not by route).
+    get "/workspaces/:workspace_id/pastes/deleted", PasteController, :workspace_deleted
+
+    post "/workspaces/:workspace_id/pastes/deleted/:id/restore",
+         PasteController,
+         :workspace_restore
+
+    delete "/workspaces/:workspace_id/pastes/deleted/:id", PasteController, :workspace_purge
     get "/pastes/deleted", PasteController, :deleted
     post "/pastes/deleted/:id/restore", PasteController, :restore
     delete "/pastes/deleted/:id", PasteController, :purge
-    get "/workspaces/:workspace_id/pastes", PasteController, :index
-    post "/workspaces/:workspace_id/pastes", PasteController, :create
-    get "/workspaces/:workspace_id/pastes/:id", PasteController, :show
-    delete "/workspaces/:workspace_id/pastes/:id", PasteController, :delete
-    resources "/pastes", PasteController, except: [:new, :edit, :update]
+    get "/workspaces/:workspace_id/pastes", PasteController, :workspace_index
+    post "/workspaces/:workspace_id/pastes", PasteController, :workspace_create
+    get "/workspaces/:workspace_id/pastes/:id", PasteController, :workspace_show
+    delete "/workspaces/:workspace_id/pastes/:id", PasteController, :workspace_delete
+    get "/pastes", PasteController, :index
+    post "/pastes", PasteController, :create
+    get "/pastes/:id", PasteController, :show
+    delete "/pastes/:id", PasteController, :delete
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
