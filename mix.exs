@@ -74,8 +74,10 @@ defmodule Textbin.MixProject do
        compile: false,
        depth: 1},
 
-      # syntax highlighting
-      {:lumis, "~> 0.3"},
+      # syntax highlighting. Held at 0.7: from 0.9 parsers are separate
+      # WebAssembly packages, and a language without one renders as plain
+      # text, so upgrading means choosing the parsers to ship.
+      {:lumis, "~> 0.7.0"},
 
       # Dev or Test deps
       {:phoenix_live_reload, "~> 1.2", only: :dev},
