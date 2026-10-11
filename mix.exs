@@ -46,11 +46,11 @@ defmodule Textbin.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.1"},
-      {:phoenix_live_view, "~> 1.1.0"},
-      {:phoenix_live_dashboard, "~> 0.8.3"},
-      {:gettext, "~> 0.26"},
+      {:phoenix_live_view, "~> 1.2.12"},
+      {:phoenix_live_dashboard, "~> 0.9.1"},
+      {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
-      {:dns_cluster, "~> 0.2.0"},
+      {:dns_cluster, "~> 0.3.1"},
       {:bandit, "~> 1.5"},
 
       # email
@@ -74,8 +74,10 @@ defmodule Textbin.MixProject do
        compile: false,
        depth: 1},
 
-      # syntax highlighting
-      {:lumis, "~> 0.3"},
+      # syntax highlighting. Held at 0.7: from 0.9 parsers are separate
+      # WebAssembly packages, and a language without one renders as plain
+      # text, so upgrading means choosing the parsers to ship.
+      {:lumis, "~> 0.7.0"},
 
       # Dev or Test deps
       {:phoenix_live_reload, "~> 1.2", only: :dev},
