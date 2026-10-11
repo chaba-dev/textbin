@@ -91,6 +91,26 @@ defmodule TextbinWeb.ApiContractTest do
   describe "organizations" do
     setup [:api_user, :team_organization]
 
+    test "rejects quoted booleans, missing fields and undocumented fields", context do
+      response =
+        get(context.conn, ~p"/api/v1/organizations/#{context.organization.id}/workspaces")
+
+      body = json_response(response, 200)
+      [workspace | rest] = body["data"]
+
+      for invalid <- [
+            Map.put(workspace, "is_default", "false"),
+            Map.delete(workspace, "is_default"),
+            Map.put(workspace, "surprise", true)
+          ] do
+        malformed = %{response | resp_body: Jason.encode!(%{body | "data" => [invalid | rest]})}
+
+        assert_raise ExUnit.AssertionError, fn ->
+          assert_api_response(malformed, "listOrganizationWorkspaces")
+        end
+      end
+    end
+
     test "listOrganizations and listOrganizationWorkspaces", context do
       context.conn |> get(~p"/api/v1/organizations") |> assert_api_response("listOrganizations")
 
@@ -139,6 +159,27 @@ defmodule TextbinWeb.ApiContractTest do
 
   describe "pastes in the personal workspace" do
     setup :api_user
+
+    test "rejects incomplete and mixed paste content representations", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "text"})
+      response = get(conn, ~p"/api/v1/pastes/#{paste.id}")
+      body = json_response(response, 200)
+      metadata = Map.delete(body["data"], "data")
+
+      for fields <- [
+            %{"data" => nil},
+            %{"data" => nil, "data_base64" => "AP8BAg=="},
+            %{"data" => nil, "data_encoding" => "base64"},
+            %{"data" => "text", "data_base64" => "AP8BAg==", "data_encoding" => "base64"}
+          ] do
+        malformed = %{
+          response
+          | resp_body: Jason.encode!(%{"data" => Map.merge(metadata, fields)})
+        }
+
+        assert_raise ExUnit.AssertionError, fn -> assert_api_response(malformed, "getPaste") end
+      end
+    end
 
     test "create, list, show and delete", %{conn: conn} do
       created =

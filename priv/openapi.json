@@ -354,112 +354,214 @@
         "type": "object"
       },
       "Paste": {
-        "additionalProperties": false,
         "description": "A paste with its content.",
-        "properties": {
-          "audience": {
-            "enum": [
-              "workspace",
-              "unlisted",
-              "public"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Text content",
+            "properties": {
+              "audience": {
+                "enum": [
+                  "workspace",
+                  "unlisted",
+                  "public"
+                ],
+                "type": "string"
+              },
+              "content_type": {
+                "type": "string"
+              },
+              "data": {
+                "type": "string"
+              },
+              "expires_at": {
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "inserted_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "organization_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "raw_url": {
+                "description": "The exact stored bytes",
+                "format": "uri",
+                "type": "string"
+              },
+              "reference_url": {
+                "nullable": true,
+                "type": "string"
+              },
+              "syntax_highlight": {
+                "type": "string"
+              },
+              "title": {
+                "nullable": true,
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "description": "The page to share",
+                "format": "uri",
+                "type": "string"
+              },
+              "visibility": {
+                "deprecated": true,
+                "description": "Use audience. private means workspace.",
+                "enum": [
+                  "private",
+                  "unlisted",
+                  "public"
+                ],
+                "type": "string"
+              },
+              "workspace_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "audience",
+              "content_type",
+              "data",
+              "expires_at",
+              "id",
+              "inserted_at",
+              "organization_id",
+              "raw_url",
+              "reference_url",
+              "syntax_highlight",
+              "title",
+              "updated_at",
+              "url",
+              "visibility",
+              "workspace_id"
             ],
-            "type": "string"
+            "type": "object"
           },
-          "content_type": {
-            "type": "string"
-          },
-          "data": {
-            "description": "The content as text, or null when it is binary",
-            "nullable": true,
-            "type": "string"
-          },
-          "data_base64": {
-            "description": "Present only for binary content",
-            "format": "byte",
-            "type": "string"
-          },
-          "data_encoding": {
-            "enum": [
-              "base64"
+          {
+            "additionalProperties": false,
+            "description": "Binary content",
+            "properties": {
+              "audience": {
+                "enum": [
+                  "workspace",
+                  "unlisted",
+                  "public"
+                ],
+                "type": "string"
+              },
+              "content_type": {
+                "type": "string"
+              },
+              "data": {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              },
+              "data_base64": {
+                "format": "byte",
+                "type": "string"
+              },
+              "data_encoding": {
+                "enum": [
+                  "base64"
+                ],
+                "type": "string"
+              },
+              "expires_at": {
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "inserted_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "organization_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "raw_url": {
+                "description": "The exact stored bytes",
+                "format": "uri",
+                "type": "string"
+              },
+              "reference_url": {
+                "nullable": true,
+                "type": "string"
+              },
+              "syntax_highlight": {
+                "type": "string"
+              },
+              "title": {
+                "nullable": true,
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "description": "The page to share",
+                "format": "uri",
+                "type": "string"
+              },
+              "visibility": {
+                "deprecated": true,
+                "description": "Use audience. private means workspace.",
+                "enum": [
+                  "private",
+                  "unlisted",
+                  "public"
+                ],
+                "type": "string"
+              },
+              "workspace_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "audience",
+              "content_type",
+              "data",
+              "data_base64",
+              "data_encoding",
+              "expires_at",
+              "id",
+              "inserted_at",
+              "organization_id",
+              "raw_url",
+              "reference_url",
+              "syntax_highlight",
+              "title",
+              "updated_at",
+              "url",
+              "visibility",
+              "workspace_id"
             ],
-            "type": "string"
-          },
-          "expires_at": {
-            "format": "date-time",
-            "nullable": true,
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "inserted_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "organization_id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "raw_url": {
-            "description": "The exact stored bytes",
-            "format": "uri",
-            "type": "string"
-          },
-          "reference_url": {
-            "nullable": true,
-            "type": "string"
-          },
-          "syntax_highlight": {
-            "type": "string"
-          },
-          "title": {
-            "nullable": true,
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "url": {
-            "description": "The page to share",
-            "format": "uri",
-            "type": "string"
-          },
-          "visibility": {
-            "deprecated": true,
-            "description": "Use audience. private means workspace.",
-            "enum": [
-              "private",
-              "unlisted",
-              "public"
-            ],
-            "type": "string"
-          },
-          "workspace_id": {
-            "format": "uuid",
-            "type": "string"
+            "type": "object"
           }
-        },
-        "required": [
-          "audience",
-          "content_type",
-          "data",
-          "expires_at",
-          "id",
-          "inserted_at",
-          "organization_id",
-          "raw_url",
-          "reference_url",
-          "syntax_highlight",
-          "title",
-          "updated_at",
-          "url",
-          "visibility",
-          "workspace_id"
         ],
-        "title": "Paste",
-        "type": "object"
+        "title": "Paste"
       },
       "PasteList": {
         "additionalProperties": false,

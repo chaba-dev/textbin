@@ -2,13 +2,13 @@ defmodule TextbinWeb.ApiContract do
   @moduledoc """
   Checks a real API response against the operation it claims to implement in
   `TextbinWeb.ApiSpec`: the status must be documented for that operation, and
-  a JSON body must cast against its schema. Response schemas are closed, so an
+  a JSON body must validate without type coercion. Response schemas are closed, so an
   undocumented field fails as surely as a missing one.
   """
 
   import ExUnit.Assertions
 
-  alias OpenApiSpex.{MediaType, Response}
+  alias OpenApiSpex.{MediaType, Reference, Response, Schema}
   alias TextbinWeb.ApiSpec
 
   def assert_api_response(%Plug.Conn{} = conn, operation_id) do
@@ -25,6 +25,14 @@ defmodule TextbinWeb.ApiContract do
     case response do
       %Response{content: %{"application/json" => %MediaType{schema: schema}}} ->
         body = Jason.decode!(conn.resp_body)
+
+        # Casting enforces closed objects and formats but accepts quoted
+        # booleans/numbers. Validate the original wire types first; this API
+        # expects property keys to match the decoded JSON's string keys.
+        case Schema.validate(json_keys(schema), body, json_keys(spec.components.schemas)) do
+          :ok -> :ok
+          {:error, detail} -> flunk("#{operation_id} #{conn.status}: #{detail}")
+        end
 
         case OpenApiSpex.cast_value(body, schema, spec) do
           {:ok, _value} ->
@@ -48,6 +56,25 @@ defmodule TextbinWeb.ApiContract do
 
     conn
   end
+
+  defp json_keys(%Schema{} = schema) do
+    normalized = schema |> Map.from_struct() |> json_keys() |> then(&struct!(Schema, &1))
+
+    %{
+      normalized
+      | properties:
+          Map.new(normalized.properties || %{}, fn {key, value} -> {to_string(key), value} end),
+        required: Enum.map(normalized.required || [], &to_string/1)
+    }
+  end
+
+  defp json_keys(%Reference{} = reference), do: reference
+
+  defp json_keys(map) when is_map(map),
+    do: Map.new(map, fn {key, value} -> {key, json_keys(value)} end)
+
+  defp json_keys(list) when is_list(list), do: Enum.map(list, &json_keys/1)
+  defp json_keys(value), do: value
 
   defp operation!(operation_id) do
     Enum.find_value(ApiSpec.operations(), fn {_method, _path, operation} ->

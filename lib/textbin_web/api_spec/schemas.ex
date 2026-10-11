@@ -195,28 +195,23 @@ defmodule TextbinWeb.ApiSpec.Schemas do
   end
 
   def paste do
-    properties =
-      Map.merge(paste_metadata_properties(), %{
-        data: %Schema{
-          type: :string,
-          nullable: true,
-          description: "The content as text, or null when it is binary"
-        },
-        data_base64: %Schema{
-          type: :string,
-          format: :byte,
-          description: "Present only for binary content"
-        },
-        data_encoding: %Schema{type: :string, enum: ["base64"]}
-      })
+    metadata = paste_metadata_properties()
 
     %Schema{
       title: "Paste",
       description: "A paste with its content.",
-      type: :object,
-      required: paste_metadata_properties() |> Map.put(:data, nil) |> required(),
-      additionalProperties: false,
-      properties: properties
+      oneOf: [
+        object(nil, "Text content", Map.put(metadata, :data, %Schema{type: :string})),
+        object(
+          nil,
+          "Binary content",
+          Map.merge(metadata, %{
+            data: %Schema{type: :string, nullable: true, enum: [nil]},
+            data_base64: %Schema{type: :string, format: :byte},
+            data_encoding: %Schema{type: :string, enum: ["base64"]}
+          })
+        )
+      ]
     }
   end
 
