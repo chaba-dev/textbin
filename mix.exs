@@ -46,7 +46,7 @@ defmodule Textbin.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.1"},
-      {:phoenix_live_view, "~> 1.1.0"},
+      {:phoenix_live_view, "~> 1.2.12"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
