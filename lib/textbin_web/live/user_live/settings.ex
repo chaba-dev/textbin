@@ -54,8 +54,7 @@ defmodule TextbinWeb.UserLive.Settings do
                   <span class="w-1/3" style={"background:#{theme.surface}"}></span>
                   <span class="flex flex-1 flex-col justify-center gap-1.5 px-2">
                     <span class="h-1.5 w-3/4 rounded-full" style={"background:#{theme.ink}"}></span>
-                    <span class="h-1.5 w-1/2 rounded-full" style={"background:#{theme.accent}"}>
-                    </span>
+                    <span class="h-1.5 w-1/2 rounded-full" style={"background:#{theme.accent}"}></span>
                   </span>
                 </span>
                 <span class="mt-2 block text-sm font-medium">{theme.label}</span>
