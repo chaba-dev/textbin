@@ -239,6 +239,25 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
       end
     end
 
+    # Raw uploads skip body validation (open_api_spex matches bodies by exact
+    # content type), so the controller must still find the body unread and
+    # spool all of it, past several read chunks, with validated query fields.
+    test "streams a multi-chunk raw body past request validation", %{conn: conn, scope: scope} do
+      body = :crypto.strong_rand_bytes(300_000)
+
+      response =
+        conn
+        |> put_req_header("content-type", "application/octet-stream")
+        |> post(~p"/api/v1/pastes?title=Streamed&syntax_highlight=elixir", body)
+        |> json_response(201)
+
+      assert %{"title" => "Streamed", "syntax_highlight" => "elixir"} = response["data"]
+
+      assert Pastes.get_paste!(scope, response["data"]["id"])
+             |> Pastes.load_data()
+             |> Map.fetch!(:data) == body
+    end
+
     test "renders paste from raw request body with syntax highlight", %{conn: conn, scope: scope} do
       conn =
         conn
