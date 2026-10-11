@@ -2261,6 +2261,7 @@ dependencies = [
  "lumis",
  "rpassword",
  "serde",
+ "serde_json",
  "textbin-client",
  "toml 0.9.12+spec-1.1.0",
  "uuid",

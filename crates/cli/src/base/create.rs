@@ -1,8 +1,10 @@
+use crate::base::output::print_json;
 use crate::settings::Settings;
 use clap::{Args, ValueEnum};
 use std::fs;
 use std::io::{self, BufReader, IsTerminal};
 use std::path::PathBuf;
+use textbin_client::CreateOptions;
 
 #[derive(Args)]
 pub struct CreateArgs {
@@ -10,6 +12,14 @@ pub struct CreateArgs {
     /// When given a string with a '@' prefix, it'll treat it as a file and will attempt
     /// to read the data from the file, essentially the same as `cat <file> | textbin create`
     data: Option<String>,
+
+    /// Paste title. Without one, the server takes the first non-blank line.
+    #[arg(long)]
+    title: Option<String>,
+
+    /// Link to a related ticket or incident, e.g. https://tracker.example.com/INC-2041
+    #[arg(long, visible_alias = "ref")]
+    reference: Option<String>,
 
     /// If provided, `syntax` will be used as reference to syntax highlight the data. e.g. go, rust, json
     #[arg(long, visible_alias = "ext")]
@@ -22,6 +32,10 @@ pub struct CreateArgs {
     /// Paste visibility.
     #[arg(long, value_enum)]
     visibility: Option<Visibility>,
+
+    /// Print the created paste's metadata as JSON instead of its link
+    #[arg(long, default_value_t = false)]
+    json: bool,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -43,9 +57,13 @@ impl Visibility {
 
 pub fn handle(args: &CreateArgs, settings: &Settings) -> anyhow::Result<()> {
     let client = settings.client()?;
-    let syntax = args.syntax.as_deref();
-    let expires = args.expires.as_deref();
-    let visibility = args.visibility.as_ref().map(Visibility::as_str);
+    let options = CreateOptions {
+        title: args.title.as_deref(),
+        reference_url: args.reference.as_deref(),
+        syntax_highlight: args.syntax.as_deref(),
+        expires_in: args.expires.as_deref(),
+        visibility: args.visibility.as_ref().map(Visibility::as_str),
+    };
 
     let paste = match &args.data {
         Some(data) => match create_data_from_arg(data)? {
@@ -54,9 +72,9 @@ pub fn handle(args: &CreateArgs, settings: &Settings) -> anyhow::Result<()> {
                 let file = fs::File::open(path)?;
                 let reader = BufReader::new(file);
 
-                client.create_paste_stream(reader, syntax, expires, visibility)?
+                client.create_paste_stream(reader, &options)?
             }
-            Data::Literal(data) => client.create_paste(data, syntax, expires, visibility)?,
+            Data::Literal(data) => client.create_paste(data, &options)?,
         },
         None => {
             // If stdin is still the interactive terminal, reading from it would
@@ -67,11 +85,20 @@ pub fn handle(args: &CreateArgs, settings: &Settings) -> anyhow::Result<()> {
                 anyhow::bail!("provide paste data as an argument or pipe it on stdin");
             }
 
-            client.create_paste_stream(io::stdin(), syntax, expires, visibility)?
+            client.create_paste_stream(io::stdin(), &options)?
         }
     };
 
-    println!("{}", client.paste_url(&paste.id));
+    if args.json {
+        return print_json(&paste);
+    }
+
+    // Prefer the server's own link; older servers do not send one.
+    let url = paste
+        .url
+        .clone()
+        .unwrap_or_else(|| client.paste_url(&paste.id));
+    println!("{url}");
     Ok(())
 }
 

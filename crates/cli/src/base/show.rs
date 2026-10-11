@@ -6,6 +6,7 @@ use lumis::themes;
 use std::io::{self, IsTerminal, Write};
 use textbin_client::Paste;
 
+use crate::base::output::print_json;
 use crate::settings::Settings;
 
 #[derive(Args)]
@@ -24,6 +25,10 @@ pub struct ShowArgs {
     /// Open the paste in the default browser instead of printing it
     #[arg(long, default_value_t = false, conflicts_with = "no_color")]
     open: bool,
+
+    /// Print the paste and its metadata as JSON. Binary content is base64 encoded.
+    #[arg(long, default_value_t = false, conflicts_with_all = ["no_color", "raw", "open"])]
+    json: bool,
 }
 
 pub fn handle(args: &ShowArgs, settings: &Settings) -> Result<()> {
@@ -42,6 +47,10 @@ pub fn handle(args: &ShowArgs, settings: &Settings) -> Result<()> {
 
     let client = settings.client()?;
     let paste = client.get_paste(&args.id)?;
+
+    if args.json {
+        return print_json(&paste);
+    }
 
     if args.raw || paste.text().is_none() {
         write_raw(io::stdout().lock(), &paste.data)?;
@@ -107,6 +116,7 @@ mod tests {
             syntax_highlight: syntax_highlight.to_string(),
             visibility: "private".to_string(),
             is_text: true,
+            ..Paste::default()
         }
     }
 
