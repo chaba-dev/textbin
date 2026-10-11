@@ -4,6 +4,7 @@ defmodule TextbinWeb.UI.WorkspaceLive do
   alias Textbin.Accounts
   alias Textbin.Organizations
   alias Textbin.Organizations.{Policy, Workspace, WorkspaceMembership}
+  alias TextbinWeb.Sharing
 
   @impl true
   def mount(_params, _session, socket), do: {:ok, socket}
@@ -112,6 +113,12 @@ defmodule TextbinWeb.UI.WorkspaceLive do
     end
   end
 
+  # Re-render on change so the sentence under each setting describes the
+  # option being considered, before anything is saved.
+  def handle_event("change_settings", %{"workspace" => workspace_params}, socket) do
+    {:noreply, assign(socket, :settings_form, to_form(workspace_params, as: :workspace))}
+  end
+
   def handle_event("update_settings", %{"workspace" => workspace_params}, socket) do
     case Organizations.change_workspace_settings(
            socket.assigns.current_scope,
@@ -187,25 +194,29 @@ defmodule TextbinWeb.UI.WorkspaceLive do
             :if={@workspace_owner?}
             for={@settings_form}
             id="workspace-settings-form"
+            phx-change="change_settings"
             phx-submit="update_settings"
           >
-            <.input
-              :if={!@current_scope.workspace.is_default}
-              field={@settings_form[:visibility]}
-              type="select"
-              label="Visibility"
-              options={[{"Open", "open"}, {"Private", "private"}]}
-            />
+            <div :if={!@current_scope.workspace.is_default}>
+              <.input
+                field={@settings_form[:visibility]}
+                type="select"
+                label="Who can join"
+                options={Sharing.join_policy_options()}
+              />
+              <p id="workspace-join-policy-sentence" class="-mt-1 mb-3 text-xs text-base-content/60">
+                {Sharing.join_policy_sentence(@settings_form[:visibility].value)}
+              </p>
+            </div>
             <.input
               field={@settings_form[:external_sharing_policy]}
               type="select"
-              label="External sharing"
-              options={[
-                {"Disabled", "disabled"},
-                {"Unlisted links", "unlisted"},
-                {"Public", "public"}
-              ]}
+              label="Sharing outside the team"
+              options={Sharing.sharing_policy_options()}
             />
+            <p id="workspace-sharing-policy-sentence" class="-mt-1 mb-3 text-xs text-base-content/60">
+              {Sharing.sharing_policy_sentence(@settings_form[:external_sharing_policy].value)}
+            </p>
             <.input
               field={@settings_form[:recovery_window_days]}
               type="select"
@@ -220,7 +231,7 @@ defmodule TextbinWeb.UI.WorkspaceLive do
             id="workspace-settings-readonly"
             class="text-sm text-base-content/60"
           >
-            Visibility: {String.capitalize(@current_scope.workspace.visibility)} · External sharing: {String.capitalize(
+            Who can join: {Sharing.join_policy_label(@current_scope.workspace.visibility)} · Sharing outside the team: {Sharing.sharing_policy_label(
               @current_scope.workspace.external_sharing_policy
             )} · Removed pastes kept for {@current_scope.workspace.recovery_window_days} days
           </p>
