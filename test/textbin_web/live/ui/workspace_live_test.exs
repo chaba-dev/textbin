@@ -161,7 +161,8 @@ defmodule TextbinWeb.UI.WorkspaceLiveTest do
   test "each sharing setting explains the option being considered", context do
     {:ok, view, _html} = live(context.conn, workspace_path(context, "settings"))
 
-    assert has_element?(view, "#workspace-join-policy-sentence", "Only people an owner adds")
+    assert has_element?(view, "#workspace-join-policy-sentence", "Only workspace members")
+    assert has_element?(view, "#workspace-join-policy-sentence", "Existing members keep access")
 
     view
     |> form("#workspace-settings-form", %{

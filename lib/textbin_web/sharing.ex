@@ -56,8 +56,8 @@ defmodule TextbinWeb.Sharing do
   def sharing_policy_label("public"), do: "Members may also publish"
   def sharing_policy_label(policy), do: policy
 
-  # The settings form saves immediately, and tightening rewrites the pastes
-  # that are already shared (Organizations clamps their audience), so the
+  # Saving tighter settings rewrites the pastes that are already shared
+  # (Organizations clamps their audience), so the
   # consequence is spelled out next to the control rather than discovered.
   def sharing_policy_sentence("disabled"),
     do: "Pastes stay inside the workspace. Links shared earlier stop working."
@@ -82,7 +82,8 @@ defmodule TextbinWeb.Sharing do
     do: "Everyone in the organization can find and join this workspace."
 
   def join_policy_sentence("private"),
-    do: "Only people an owner adds can find or open this workspace."
+    do:
+      "Only workspace members can find and open this workspace. Existing members keep access; an owner must add new members."
 
   def join_policy_sentence(_visibility), do: nil
 
