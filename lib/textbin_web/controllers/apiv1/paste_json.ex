@@ -1,4 +1,6 @@
 defmodule TextbinWeb.ApiV1.PasteJSON do
+  use TextbinWeb, :verified_routes
+
   alias Textbin.Pastes.ContentType
   alias Textbin.Pastes.Paste
 
@@ -12,6 +14,28 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
 
   def show(%{paste: paste} = assigns) do
     %{data: data(paste, assigns)}
+  end
+
+  def restored(%{paste: paste} = assigns) do
+    %{data: metadata(paste, assigns)}
+  end
+
+  # Removed pastes never include content; restore one to read it again.
+  def deleted(%{pastes: pastes, recovery_window_days: window_days} = assigns) do
+    %{
+      data:
+        for paste <- pastes do
+          removed_on = Paste.removed_on(paste)
+
+          paste
+          |> metadata(assigns)
+          |> Map.merge(%{
+            removed_at: timestamp(removed_on),
+            removal_reason: Paste.removal_reason(paste),
+            purge_after: timestamp(DateTime.add(removed_on, window_days, :day))
+          })
+        end
+    }
   end
 
   defp data(%Paste{} = paste, assigns) do
@@ -31,6 +55,10 @@ defmodule TextbinWeb.ApiV1.PasteJSON do
   defp metadata(%Paste{} = paste, assigns) do
     %{
       id: paste.id,
+      # The browser link people share, and the exact stored bytes. Both are
+      # absolute so CLI and script output can be pasted anywhere.
+      url: url(~p"/pastes/#{paste.id}"),
+      raw_url: url(~p"/pastes/#{paste.id}/raw"),
       organization_id: assigns.organization_id,
       workspace_id: assigns.workspace_id,
       title: paste.title,

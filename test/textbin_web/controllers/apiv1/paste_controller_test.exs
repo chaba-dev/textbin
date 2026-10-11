@@ -519,6 +519,125 @@ defmodule TextbinWeb.ApiV1.PasteControllerTest do
     end
   end
 
+  describe "paste links" do
+    test "responses carry the share and raw URLs", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "linked"})
+
+      assert %{"data" => data} = conn |> get(~p"/api/v1/pastes/#{paste.id}") |> json_response(200)
+      assert data["url"] == "http://localhost:4002/pastes/#{paste.id}"
+      assert data["raw_url"] == "http://localhost:4002/pastes/#{paste.id}/raw"
+
+      conn = post(conn, ~p"/api/v1/pastes", %{data: "created"})
+      assert %{"data" => %{"id" => id, "url" => url}} = json_response(conn, 201)
+      assert url =~ ~r{/pastes/#{id}$}
+    end
+  end
+
+  describe "removed pastes" do
+    test "lists deleted and expired pastes with their reason and purge date", %{
+      conn: conn,
+      scope: scope
+    } do
+      reference_url = "https://tracker.example.com/INC-2041"
+
+      {:ok, deleted} =
+        Pastes.create_paste(scope, %{
+          data: "deleted",
+          title: "Gone",
+          reference_url: reference_url
+        })
+
+      {:ok, _} = Pastes.delete_paste(scope, deleted)
+      {:ok, expired} = Pastes.create_paste(scope, %{data: "expired"})
+
+      expired
+      |> Ecto.Changeset.change(expires_at: DateTime.add(Paste.utc_now_ms(), -1, :day))
+      |> Repo.update!()
+
+      {:ok, _active} = Pastes.create_paste(scope, %{data: "still here"})
+
+      assert %{"data" => removed} = conn |> get(~p"/api/v1/pastes/deleted") |> json_response(200)
+      assert Enum.map(removed, & &1["id"]) |> Enum.sort() == Enum.sort([deleted.id, expired.id])
+
+      gone = Enum.find(removed, &(&1["id"] == deleted.id))
+      assert gone["title"] == "Gone"
+      assert gone["reference_url"] == reference_url
+      assert gone["removal_reason"] == "deleted"
+      refute Map.has_key?(gone, "data")
+      refute Map.has_key?(gone, "data_base64")
+      refute Map.has_key?(gone, "data_encoding")
+
+      {:ok, removed_at, _} = DateTime.from_iso8601(gone["removed_at"])
+      {:ok, purge_after, _} = DateTime.from_iso8601(gone["purge_after"])
+      assert DateTime.diff(purge_after, removed_at, :day) == 30
+
+      assert Enum.find(removed, &(&1["id"] == expired.id))["removal_reason"] == "expired"
+    end
+
+    test "restores a deleted paste so it can be read again", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "bring back"})
+      {:ok, _} = Pastes.delete_paste(scope, paste)
+
+      conn = post(conn, ~p"/api/v1/pastes/deleted/#{paste.id}/restore")
+      assert %{"data" => %{"id" => id}} = json_response(conn, 200)
+      assert id == paste.id
+      assert Pastes.get_paste(scope, paste.id)
+    end
+
+    test "permanently deletes a removed paste", %{conn: conn, scope: scope} do
+      {:ok, paste} = Pastes.create_paste(scope, %{data: "forget me"})
+      {:ok, _} = Pastes.delete_paste(scope, paste)
+
+      conn = delete(conn, ~p"/api/v1/pastes/deleted/#{paste.id}")
+      assert response(conn, 204)
+      refute Repo.get(Paste, paste.id)
+    end
+
+    test "active, unknown and other people's pastes are not found", %{conn: conn, scope: scope} do
+      {:ok, active} = Pastes.create_paste(scope, %{data: "active"})
+      other_scope = user_scope_fixture()
+      {:ok, other} = Pastes.create_paste(other_scope, %{data: "theirs"})
+      {:ok, _} = Pastes.delete_paste(other_scope, other)
+
+      for id <- [active.id, other.id, Ecto.UUID.generate()] do
+        assert %{"errors" => %{"detail" => "Removed paste not found"}} =
+                 conn |> post(~p"/api/v1/pastes/deleted/#{id}/restore") |> json_response(404)
+
+        assert conn |> delete(~p"/api/v1/pastes/deleted/#{id}") |> json_response(404)
+      end
+
+      assert Pastes.get_paste(scope, active.id)
+      assert Repo.get(Paste, other.id)
+      assert conn |> post(~p"/api/v1/pastes/deleted/not-a-uuid/restore") |> json_response(400)
+    end
+
+    test "workspace routes act on that workspace's removed pastes", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, organization} =
+        Organizations.create_organization(scope, %{name: "API team", slug: "api-team"})
+
+      [workspace] = organization.workspaces
+      {:ok, team_scope} = Organizations.resolve_workspace_scope(scope, workspace)
+      {:ok, paste} = Pastes.create_paste(team_scope, %{data: "team paste"})
+      {:ok, _} = Pastes.delete_paste(team_scope, paste)
+
+      assert %{"data" => []} = conn |> get(~p"/api/v1/pastes/deleted") |> json_response(200)
+
+      assert %{"data" => [%{"id" => id, "workspace_id" => workspace_id}]} =
+               conn
+               |> get(~p"/api/v1/workspaces/#{workspace.id}/pastes/deleted")
+               |> json_response(200)
+
+      assert id == paste.id and workspace_id == workspace.id
+
+      conn = post(conn, ~p"/api/v1/workspaces/#{workspace.id}/pastes/deleted/#{paste.id}/restore")
+      assert json_response(conn, 200)
+      assert Pastes.get_paste(team_scope, paste.id)
+    end
+  end
+
   describe "delete paste" do
     test "deletes chosen paste", %{conn: conn, scope: scope} do
       {:ok, paste} = Pastes.create_paste(scope, %{data: "some data"})

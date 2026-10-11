@@ -44,6 +44,14 @@ defmodule TextbinWeb.Router do
     get "/organizations/:id/workspaces", OrganizationController, :workspaces
     get "/organizations/:id/audit-events", OrganizationController, :audit_events
     post "/workspaces/:workspace_id/recovery", OrganizationController, :recover_workspace
+    # Removed pastes are their own collection so "deleted" never collides
+    # with a paste id; these routes must precede the /:id routes below.
+    get "/workspaces/:workspace_id/pastes/deleted", PasteController, :deleted
+    post "/workspaces/:workspace_id/pastes/deleted/:id/restore", PasteController, :restore
+    delete "/workspaces/:workspace_id/pastes/deleted/:id", PasteController, :purge
+    get "/pastes/deleted", PasteController, :deleted
+    post "/pastes/deleted/:id/restore", PasteController, :restore
+    delete "/pastes/deleted/:id", PasteController, :purge
     get "/workspaces/:workspace_id/pastes", PasteController, :index
     post "/workspaces/:workspace_id/pastes", PasteController, :create
     get "/workspaces/:workspace_id/pastes/:id", PasteController, :show
