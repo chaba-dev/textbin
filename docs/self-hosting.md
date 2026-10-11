@@ -206,3 +206,26 @@ For each upgrade:
 Database migrations are expected to be forward-compatible during a normal
 rolling deployment. Downgrading an image does not reverse migrations. Restore a
 coordinated pre-upgrade backup when a migration must be rolled back.
+
+### Upgrades that cannot roll
+
+Some migrations change what older application code would do with the same
+rows, so old and new instances must not run side by side. For these, stop every
+old instance before running `/app/bin/migrate`, then start the new ones. Each
+instance runs its own background cleaner, so a single old instance left running
+is enough to cause the problem.
+
+| Migration | Why old instances must stop first |
+| --- | --- |
+| `20261011100000` add paste lifecycle | Older code treats a paste as live unless it has expired. It would show pastes deleted under the new code, and its cleaner would hard-delete expired pastes that are still restorable. |
+| `20261011110000` retire guest users | Older code still creates guest accounts, and a guest created after this migration runs is never retired. |
+
+Two later migrations are safe to roll out normally but cannot be undone, so
+take the backup in step 1:
+
+- `20261011110000` retire guest users marks guest workspaces for deletion, and
+  the cleaner purges them on its next run.
+- `20261012090000` delete retired guest users removes guest accounts with their
+  inline pastes. A guest whose pastes are in local or S3 storage is kept until
+  the cleaner has purged them. If you upgrade across both guest migrations at
+  once, some guests may stay as inert rows; they cannot sign in.
