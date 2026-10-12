@@ -1,0 +1,88 @@
+---
+name: audit
+
+# Fails when a locked dependency has a published security advisory. Lock files
+# can become vulnerable without any change here, so this also runs daily on
+# main instead of only when a pull request touches them.
+#
+# To acknowledge an advisory that does not affect Textbin, list it under
+# `hex: [ignore_advisories: [...]]` in mix.exs, or under
+# `[advisories] ignore = [...]` in .cargo/audit.toml, with a comment saying why.
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OTP_VERSION: "28.5"
+  ELIXIR_VERSION: "1.20"
+  CARGO_AUDIT_VERSION: "0.22.2"
+
+jobs:
+  hex:
+    name: Hex advisories
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: mix-audit-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-audit-${{ runner.os }}-
+
+      # Hex 2.5 is the first release whose audit checks security advisories
+      # as well as retirements; installing the latest keeps that true.
+      - name: Install Hex
+        run: mix local.hex --force
+
+      # hex.audit loads the project, which needs the locked deps present.
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Audit
+        run: mix hex.audit
+
+  cargo:
+    name: RustSec advisories
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Building cargo-audit takes about three minutes; the binary only
+      # changes with its version.
+      - name: Cache cargo-audit
+        id: cargo-audit-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}-${{ env.CARGO_AUDIT_VERSION }}
+
+      - name: Install cargo-audit
+        if: steps.cargo-audit-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+
+      - name: Audit
+        run: cargo audit
