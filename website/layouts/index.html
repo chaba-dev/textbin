@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{ partial "head.html" . }}
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    {{ partial "site-header.html" . }}
+
+    <main id="main-content">
+      <section class="hero section" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">Paste · share · keep things moving</p>
+          <h1>A quieter place for <em>working text.</em></h1>
+          <p class="hero-lede">
+            Textbin gives teams one trusted scratch space for code, logs, notes, and any text
+            that needs to move. Less noise. Clearer ownership.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button button-primary"
+              href="{{ .Site.Params.repositoryURL }}#readme"
+              rel="noreferrer"
+            >
+              Start self-hosting <span aria-hidden="true">→</span>
+            </a>
+            <a class="button button-secondary" href="#how-it-works">See how it works</a>
+          </div>
+          <ul class="trust-list" aria-label="Product qualities">
+            <li><span aria-hidden="true">✓</span> Open source</li>
+            <li><span aria-hidden="true">✓</span> API and CLI first</li>
+            <li><span aria-hidden="true">✓</span> Private by default</li>
+          </ul>
+        </div>
+
+        <div class="hero-art" aria-label="A Textbin paste shared with an incident response team">
+          <div class="paste-window">
+            <div class="paste-toolbar">
+              <div>
+                <span class="file-dot" aria-hidden="true"></span>
+                <strong>nginx-error.log</strong>
+                <span class="file-meta">64 lines · 2.3 KB</span>
+              </div>
+              <div class="paste-policies">
+                <span class="policy"><span aria-hidden="true">●</span> Team only</span>
+                <span class="policy">Expires in 7 days</span>
+              </div>
+            </div>
+
+            <div class="code-block" aria-hidden="true">
+              <ol>
+                <li><code><span class="code-muted">2026/10/13 09:42:31</span> <span class="code-error">[error]</span> upstream timed out</code></li>
+                <li><code>while reading response header from upstream,</code></li>
+                <li><code>client: <span class="code-value">10.2.4.15</span>, server: api.example.com,</code></li>
+                <li><code>request: <span class="code-string">"GET /v1/users HTTP/1.1"</span>,</code></li>
+                <li><code>upstream: <span class="code-string">"http://10.0.0.12:8080"</span>,</code></li>
+                <li><code>host: <span class="code-string">"api.example.com"</span></code></li>
+                <li class="code-spacer"><code></code></li>
+                <li><code><span class="code-muted">2026/10/13 09:42:32</span> <span class="code-warn">[warn]</span> closed connection</code></li>
+                <li><code>request: <span class="code-string">"POST /v1/events HTTP/1.1"</span></code></li>
+              </ol>
+            </div>
+
+            <div class="paste-footer">
+              <div class="avatar-stack" aria-label="Shared with three teammates">
+                <span class="avatar avatar-blue">DK</span>
+                <span class="avatar avatar-gold">AM</span>
+                <span class="avatar avatar-coral">SL</span>
+                <span class="shared-label">Shared with 3 people</span>
+              </div>
+              <span class="copy-link"><span aria-hidden="true">⌁</span> Copy link</span>
+            </div>
+          </div>
+
+          <aside class="share-note">
+            <span class="note-kicker">Shared with</span>
+            <strong>Incident Response</strong>
+            <svg viewBox="0 0 80 54" aria-hidden="true">
+              <path d="M7 42C30 42 47 30 58 10"></path>
+              <path d="m50 14 9-6 3 10"></path>
+            </svg>
+          </aside>
+
+          <p class="margin-note">Get the right context<br>to the right people.</p>
+        </div>
+      </section>
+
+      <section class="workflow section" id="how-it-works">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">How Textbin works</p>
+            <h2>From clipboard to context<br>in four clear steps.</h2>
+          </div>
+          <p>
+            Keep the path from finding a problem to sharing the answer short. Textbin stays out of
+            the way until your team needs history, policy, or proof.
+          </p>
+        </div>
+
+        <ol class="workflow-grid">
+          <li>
+            <span class="step-icon" aria-hidden="true">[+]</span>
+            <span class="step-number">01.</span>
+            <h3>Paste</h3>
+            <p>Drop in code, logs, notes, or binary files. Get a clean link in one motion.</p>
+          </li>
+          <li>
+            <span class="step-icon" aria-hidden="true">↗</span>
+            <span class="step-number">02.</span>
+            <h3>Share</h3>
+            <p>Choose the workspace, the audience, and when the paste should disappear.</p>
+          </li>
+          <li>
+            <span class="step-icon" aria-hidden="true">⌕</span>
+            <span class="step-number">03.</span>
+            <h3>Find</h3>
+            <p>Search across the workspaces you belong to without hunting through chat.</p>
+          </li>
+          <li>
+            <span class="step-icon" aria-hidden="true">◇</span>
+            <span class="step-number">04.</span>
+            <h3>Govern</h3>
+            <p>Make ownership, access, expiry, recovery, and audit history visible.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="confidence" id="security">
+        <div class="confidence-inner section">
+          <div class="confidence-copy">
+            <p class="eyebrow eyebrow-light">Built for teams</p>
+            <h2>Share with confidence.</h2>
+            <p>
+              Control who can see each paste. Keep sensitive working text inside the workspace,
+              open a deliberate link when needed, and let expiry clean up the rest.
+            </p>
+            <a
+              class="button button-light"
+              href="{{ .Site.Params.repositoryURL }}/blob/main/docs/design.md"
+              rel="noreferrer"
+            >
+              Read the product principles <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+
+          <div class="share-card">
+            <div class="share-card-heading">
+              <div>
+                <span class="mini-label">Share paste</span>
+                <strong>nginx-error.log</strong>
+              </div>
+              <span aria-hidden="true">×</span>
+            </div>
+            <div class="share-url">
+              <code>textbin.dev/p/7f3a9e</code>
+              <span>Copy link</span>
+            </div>
+            <dl class="share-options">
+              <div>
+                <dt><span aria-hidden="true">◉</span> Who can see this</dt>
+                <dd>Everyone in the workspace <span aria-hidden="true">⌄</span></dd>
+              </div>
+              <div>
+                <dt><span aria-hidden="true">◷</span> Expires</dt>
+                <dd>In 7 days <span aria-hidden="true">⌄</span></dd>
+              </div>
+              <div>
+                <dt><span aria-hidden="true">♙</span> Workspace</dt>
+                <dd>Incident Response <span aria-hidden="true">⌄</span></dd>
+              </div>
+            </dl>
+            <div class="policy-message">
+              <span aria-hidden="true">✓</span>
+              This workspace allows team-only links.
+            </div>
+          </div>
+
+          <aside class="security-note">
+            <strong>Policy stays<br>in plain language.</strong>
+            <svg viewBox="0 0 72 48" aria-hidden="true">
+              <path d="M6 40C24 38 39 28 49 10"></path>
+              <path d="m42 13 8-5 2 9"></path>
+            </svg>
+          </aside>
+        </div>
+      </section>
+
+      <section class="features section" id="features">
+        <div class="section-heading">
+          <p class="eyebrow">More than a paste tool</p>
+          <h2>A home for all your working text.</h2>
+        </div>
+
+        <div class="feature-grid">
+          <article>
+            <span class="feature-icon" aria-hidden="true">⌕</span>
+            <div><h3>Global search</h3><p>Find snippets across every workspace you can access.</p></div>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">{ }</span>
+            <div><h3>Syntax highlighting</h3><p>Readable source with line numbers across common languages.</p></div>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">⌁</span>
+            <div><h3>Deliberate sharing</h3><p>Workspace, link-only, and public audiences governed by policy.</p></div>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">◷</span>
+            <div><h3>Expiry and recovery</h3><p>Clean up automatically without losing work by accident.</p></div>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">↔</span>
+            <div><h3>API and CLI</h3><p>Create, retrieve, delete, and restore pastes through the API and CLI.</p></div>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">≋</span>
+            <div><h3>Audit trail</h3><p>See the operational history without exposing paste bodies.</p></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="open-source section">
+        <div>
+          <p class="eyebrow eyebrow-light">Open source · self-hosted</p>
+          <h2>Your team’s scratch space<br>should belong to your team.</h2>
+        </div>
+        <div>
+          <p>
+            Run Textbin with PostgreSQL and the storage backend that fits your environment. The
+            deployment contract is documented, inspectable, and portable.
+          </p>
+          <a
+            class="button button-light"
+            href="{{ .Site.Params.repositoryURL }}/blob/main/docs/self-hosting.md"
+            rel="noreferrer"
+          >
+            Read the self-hosting guide <span aria-hidden="true">→</span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    {{ partial "site-footer.html" . }}
+  </body>
+</html>
