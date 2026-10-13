@@ -63,7 +63,6 @@
             shfmt
             shellcheck
             git-cliff
-            hugo
             postgresql
           ] ++ lib.optionals stdenv.isLinux [ inotify-tools ];
 
