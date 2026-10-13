@@ -1,49 +1,12 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f7f4ec">
-    <meta
-      name="description"
-      content="Textbin is a trusted scratch space for teams: paste, share, find, and govern working text without the noise."
-    >
-    <meta property="og:title" content="Textbin — A quieter place for working text">
-    <meta
-      property="og:description"
-      content="A fast, self-hostable workspace for snippets, logs, notes, and everything in between."
-    >
-    <meta property="og:type" content="website">
-    <title>Textbin — A quieter place for working text</title>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css">
+    {{ partial "head.html" . }}
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
 
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="Textbin home">
-        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8.5 4H4v16h4.5M15.5 4H20v16h-4.5M9.5 9.5h5M9.5 14.5h3"></path>
-        </svg>
-        <span>textbin</span>
-      </a>
-
-      <nav class="site-nav" aria-label="Primary navigation">
-        <a href="#how-it-works">How it works</a>
-        <a href="#features">Features</a>
-        <a href="#security">Security</a>
-      </nav>
-
-      <a
-        class="button button-small button-ink"
-        href="https://github.com/chaba-dev/textbin"
-        rel="noreferrer"
-      >
-        View on GitHub
-        <span aria-hidden="true">↗</span>
-      </a>
-    </header>
+    {{ partial "site-header.html" . }}
 
     <main id="main-content">
       <section class="hero section" id="top">
@@ -57,7 +20,7 @@
           <div class="hero-actions">
             <a
               class="button button-primary"
-              href="https://github.com/chaba-dev/textbin#readme"
+              href="{{ .Site.Params.repositoryURL }}#readme"
               rel="noreferrer"
             >
               Start self-hosting <span aria-hidden="true">→</span>
@@ -174,7 +137,7 @@
             </p>
             <a
               class="button button-light"
-              href="https://github.com/chaba-dev/textbin/blob/main/docs/design.md"
+              href="{{ .Site.Params.repositoryURL }}/blob/main/docs/design.md"
               rel="noreferrer"
             >
               Read the product principles <span aria-hidden="true">↗</span>
@@ -269,7 +232,7 @@
           </p>
           <a
             class="button button-light"
-            href="https://github.com/chaba-dev/textbin/blob/main/docs/self-hosting.md"
+            href="{{ .Site.Params.repositoryURL }}/blob/main/docs/self-hosting.md"
             rel="noreferrer"
           >
             Read the self-hosting guide <span aria-hidden="true">→</span>
@@ -278,19 +241,6 @@
       </section>
     </main>
 
-    <footer class="site-footer">
-      <a class="brand" href="#top" aria-label="Textbin home">
-        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8.5 4H4v16h4.5M15.5 4H20v16h-4.5M9.5 9.5h5M9.5 14.5h3"></path>
-        </svg>
-        <span>textbin</span>
-      </a>
-      <nav aria-label="Footer navigation">
-        <a href="#how-it-works">How it works</a>
-        <a href="#security">Security</a>
-        <a href="https://github.com/chaba-dev/textbin" rel="noreferrer">GitHub</a>
-      </nav>
-      <p>Built for people who move work forward in plain text.</p>
-    </footer>
+    {{ partial "site-footer.html" . }}
   </body>
 </html>

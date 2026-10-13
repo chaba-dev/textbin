@@ -2,6 +2,18 @@
 dev:
 	mix phx.server
 
+.PHONY: website-dev
+website-dev:
+	hugo server --source website --buildDrafts --disableFastRender
+
+.PHONY: website-build
+website-build:
+	hugo --source website --minify --cleanDestinationDir
+
+.PHONY: website-clean
+website-clean:
+	rm -rf website/public website/resources/_gen website/.hugo_build.lock
+
 .PHONY: test
 test: ex-test rs-test
 
