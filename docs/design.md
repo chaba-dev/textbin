@@ -52,6 +52,23 @@ or incident.
   share a paste outside the team by making it link-only or public, within what
   the workspace policy allows. There are no guest users.
 
+## Shared principles
+
+These hold across Textbin's
+[RFDs](https://chaba-rfds.pages.dev/?project=textbin).
+
+- Context functions enforce authorization; hiding a control in the UI is never
+  an authorization boundary.
+- Browser routes use the existing authenticated router scope when login is
+  required. API routes use bearer authentication and the same context policies.
+- Every collection is scoped in the database query rather than fetched and
+  filtered afterward.
+- Security-sensitive mutations are auditable and require recent
+  reauthentication where stolen-session risk warrants it.
+- Public API changes are specified in OpenAPI before being treated as stable.
+- Features work for hosted and self-hosted installations unless an RFD
+  explicitly identifies them as hosted-only.
+
 ## Information architecture
 
 - **Home** lands on the last-used workspace, or the personal one on first
