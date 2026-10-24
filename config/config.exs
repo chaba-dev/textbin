@@ -90,6 +90,12 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Download Lumis's precompiled NIF from its Cloudflare mirror. Since OTP
+# 28.5.0.6, :httpc rejects responses with more than 10 KiB of headers, and
+# GitHub's release-download redirect now exceeds that. The NIF is still
+# checked against the checksums shipped in the Lumis package.
+config :lumis, artifact_source: :cloudflare
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
